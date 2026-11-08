@@ -1005,9 +1005,11 @@ impl Router {
             });
         }
 
-        // hints 是显式指定，不接亲和
+        // hints 是显式指定，不接亲和。臂键与奖励侧同源归一
+        //（linucb_arm_key：trim + 小写 + auto→__global__），避免选择/奖励
+        // 写入不同臂导致 bandit 学不到
         if let Some(model_id) = preferred_model {
-            let normalized = model_id.to_lowercase();
+            let normalized = crate::router::bandit::linucb_arm_key(model_id);
             if let Some(decision) = self
                 .try_abstract_route(
                     &normalized,
