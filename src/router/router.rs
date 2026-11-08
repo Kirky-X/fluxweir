@@ -601,10 +601,7 @@ impl Router {
             // 静默空转或把「管理员关闭」误报成「模型不存在」
             if !self.config.is_global_model_enabled() {
                 return Err(GateError::Validation {
-                    field: t_args(
-                        "router-global-model-disabled",
-                        &[("model", abstract_model.to_string())],
-                    ),
+                    field: format!("global-model-disabled:{abstract_model}"),
                 });
             }
             if let Some(decision) = self
@@ -625,10 +622,7 @@ impl Router {
         }
 
         Err(GateError::Validation {
-            field: t_args(
-                "router-model-not-found",
-                &[("model", abstract_model.to_string())],
-            ),
+            field: format!("model-not-found:{abstract_model}"),
         })
     }
 
@@ -1007,10 +1001,7 @@ impl Router {
                 return Ok(decision);
             }
             return Err(GateError::Validation {
-                field: t_args(
-                    "router-vendor-unavailable",
-                    &[("vendor", vendor_id.to_string())],
-                ),
+                field: format!("vendor-unavailable:{vendor_id}"),
             });
         }
 

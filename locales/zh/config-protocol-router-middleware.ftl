@@ -92,9 +92,10 @@ protocol-anthropic-cache-breakpoints-injected = 已注入 anthropic 缓存断点
 protocol-anthropic-unknown-cache-anchor = 未知缓存断点锚点，已跳过
 
 # ---- router/router.rs ----
-router-model-not-found = 模型 { $model } 未找到
-router-global-model-disabled = 模型 { $model } 未找到：全局模型路由已关闭（[global_model].enabled=false）
-router-vendor-unavailable = 指定的厂商 { $vendor } 不可用或未配置
+# 路由 Validation 以「锚点:取值」写入 field（恒英文），本地化在此单层完成
+error-validation-model-not-found = 请求验证失败：模型 { $model } 未找到
+error-validation-global-model-disabled = 请求验证失败：模型 { $model } 未找到：全局模型路由已关闭（[global_model].enabled=false）
+error-validation-vendor-unavailable = 请求验证失败：指定的厂商 { $vendor } 不可用或未配置
 router-fail-open-engaged = 全部候选冷却中；已启用 fail-open 回落
 router-global-fail-open-engaged = 全局候选全部冷却中；已启用 fail-open 回落
 router-explain-not-in-catalog = vendor { $vendor } 不提供模型 '{ $model }'

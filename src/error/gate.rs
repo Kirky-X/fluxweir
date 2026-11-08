@@ -102,7 +102,27 @@ impl GateError {
                 t_args("error-rate-limited", &[("vendor", vendor.clone())])
             }
             GateError::Validation { field } => {
-                t_args("error-validation", &[("field", field.clone())])
+                // 路由层 Validation 以「锚点:取值」形态携带机器可读信息
+                //（field 恒英文、无本地化句子）；本地化在此单层完成，
+                // 未识别锚点走通用模板回退
+                if let Some(model) = field.strip_prefix("model-not-found:") {
+                    t_args(
+                        "error-validation-model-not-found",
+                        &[("model", model.to_string())],
+                    )
+                } else if let Some(model) = field.strip_prefix("global-model-disabled:") {
+                    t_args(
+                        "error-validation-global-model-disabled",
+                        &[("model", model.to_string())],
+                    )
+                } else if let Some(vendor) = field.strip_prefix("vendor-unavailable:") {
+                    t_args(
+                        "error-validation-vendor-unavailable",
+                        &[("vendor", vendor.to_string())],
+                    )
+                } else {
+                    t_args("error-validation", &[("field", field.clone())])
+                }
             }
             GateError::Routing { message } => {
                 t_args("error-routing", &[("message", message.clone())])
@@ -156,6 +176,56 @@ impl From<tokio::sync::oneshot::error::RecvError> for GateError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validation_anchors_localize_without_nested_sentences() {
+        // field 存语言中性锚点：Display 恒英文规范串，user_message 单层本地化
+        let not_found = GateError::Validation {
+            field: "model-not-found:GLM-4.5".to_string(),
+        };
+        assert_eq!(
+            not_found.to_string(),
+            "Request validation failed: model-not-found:GLM-4.5",
+            "Display 必须恒英文规范串，不得混入本地化句子"
+        );
+        let message = not_found.user_message();
+        assert_ne!(
+            message, "error-validation-model-not-found",
+            "键 'error-validation-model-not-found' 未注册进 FTL 目录"
+        );
+        assert!(
+            message.contains("GLM-4.5"),
+            "占位符 $model 必须被替换: {message}"
+        );
+        assert!(
+            !message.contains("model-not-found:"),
+            "本地化消息不得携带机器锚点前缀: {message}"
+        );
+
+        let vendor = GateError::Validation {
+            field: "vendor-unavailable:openai".to_string(),
+        };
+        let vendor_message = vendor.user_message();
+        assert_ne!(vendor_message, "error-validation-vendor-unavailable");
+        assert!(
+            vendor_message.contains("openai"),
+            "占位符 $vendor 必须被替换: {vendor_message}"
+        );
+        assert!(
+            !vendor_message.contains("vendor-unavailable:"),
+            "本地化消息不得携带机器锚点前缀: {vendor_message}"
+        );
+
+        // 未识别锚点原样走通用模板（既有行为）
+        let generic = GateError::Validation {
+            field: "model".to_string(),
+        }
+        .user_message();
+        assert!(
+            !generic.is_empty(),
+            "通用 field 路径必须产出非空消息: {generic}"
+        );
+    }
 
     #[test]
     fn test_user_message_uses_ftl_catalog() {

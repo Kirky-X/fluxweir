@@ -92,9 +92,10 @@ protocol-anthropic-cache-breakpoints-injected = anthropic cache breakpoints inje
 protocol-anthropic-unknown-cache-anchor = unknown cache breakpoint anchor, skipped
 
 # ---- router/router.rs ----
-router-model-not-found = Model { $model } not found
-router-global-model-disabled = Model { $model } not found: global model routing is disabled ([global_model].enabled=false)
-router-vendor-unavailable = Vendor { $vendor } unavailable or not configured
+# 路由 Validation 以「锚点:取值」写入 field（恒英文），本地化在此单层完成
+error-validation-model-not-found = Request validation failed: model { $model } not found
+error-validation-global-model-disabled = Request validation failed: model { $model } not found: global model routing is disabled ([global_model].enabled=false)
+error-validation-vendor-unavailable = Request validation failed: vendor { $vendor } unavailable or not configured
 router-fail-open-engaged = all candidates cooling; fail-open fallback engaged
 router-global-fail-open-engaged = all global candidates cooling; fail-open fallback engaged
 router-explain-not-in-catalog = Vendor { $vendor } does not provide model '{ $model }'
