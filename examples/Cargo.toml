@@ -23,30 +23,30 @@ grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost"]
 
 [dependencies]
 # 跨示例共享，非 optional（体积可控，且 rest/embedded/sdk 至少各需其一）
-tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "net", "time", "signal"] }
-serde_json = { version = "1", default-features = false, features = ["std"] }
-futures = { version = "0.3", default-features = false, features = ["std"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "signal"] }
+serde_json = { workspace = true, features = ["std"] }
+futures = { workspace = true, features = ["std"] }
 
 # 按示例门控：保住「轻 sdk 构建 / rest 不拖网关 / grpc 不引 fluxweir」的既有依赖足迹
-anyhow = { version = "1", default-features = false, features = ["std"], optional = true }
-futures-util = { version = "0.3", default-features = false, features = ["std"], optional = true }
+anyhow = { workspace = true, features = ["std"], optional = true }
+futures-util = { workspace = true, features = ["std"], optional = true }
 # default-tls 必留：rest 示例直连部署网关，缺 TLS 特性时 -p 单成员构建（--features rest）
 # 运行期 https 调用必失败；与根包口径一致（0.13 起 default-tls = rustls）
-reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "default-tls"], optional = true }
+reqwest = { workspace = true, features = ["json", "stream", "default-tls"], optional = true }
 # 最小集：http1（serve）+ json（Json）+ tokio（运行时）
-axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"], optional = true }
+axum = { workspace = true, features = ["http1", "json", "tokio"], optional = true }
 # default-features=false：由 embedded/sdk 各自精确开启，避免 full 被无条件并入 sdk 构建
-fluxweir = { path = "..", default-features = false, optional = true }
+fluxweir = { workspace = true, optional = true }
 # channel（非 transport）：本成员只消费客户端 stub——build.rs 以 build_server(false)
 # 生成，transport = [server, channel] 会白拉 h2/socket2/tokio-stream 服务端栈。
-tonic = { version = "0.14", default-features = false, features = ["channel", "codegen"], optional = true }
-tonic-prost = { version = "0.14", default-features = false, optional = true }
-prost = { version = "0.14", default-features = false, features = ["derive"], optional = true }
+tonic = { workspace = true, features = ["channel", "codegen"], optional = true }
+tonic-prost = { workspace = true, optional = true }
+prost = { workspace = true, features = ["derive"], optional = true }
 
 [build-dependencies]
 # build.rs 无条件参与编译（即便 grpc 关闭也会编译 build.rs 源码，只是不在其中运行 protoc），故代码生成器须非 optional
-tonic-build = { version = "0.14", default-features = false }
-tonic-prost-build = { version = "0.14", default-features = false }
+tonic-build = { workspace = true }
+tonic-prost-build = { workspace = true }
 
 # 八个 bin 入口点全部保留；required-features 让未被启用特性覆盖的 bin 在对应构建中被跳过。
 [[bin]]
