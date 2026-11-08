@@ -1399,6 +1399,28 @@ fn message_to_openai(msg: Message) -> Value {
     obj
 }
 
+/// MessageContent 聚合的工具调用 → OpenAI 流式 delta.tool_calls 片段数组
+/// （形状与 [`StreamChunk::ToolCall`] 编码臂对齐；index 按调用序号）
+fn tool_calls_delta_fragments(calls: &[ToolCall]) -> Value {
+    Value::Array(
+        calls
+            .iter()
+            .enumerate()
+            .map(|(i, tc)| {
+                json!({
+                    "index": i,
+                    "id": tc.id,
+                    "type": tc.call_type,
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    }
+                })
+            })
+            .collect(),
+    )
+}
+
 fn delta_to_openai(delta: MessageContent) -> Value {
     match delta {
         MessageContent::Text(s) => json!({ "content": s }),
@@ -1409,9 +1431,19 @@ fn delta_to_openai(delta: MessageContent) -> Value {
                 json!({ "content": "" })
             }
         }
-        MessageContent::ToolCalls(_) => json!({ "content": "" }),
+        // 非规范回退形状（Gemini 并行 function_call 聚帧等）：保留工具调用增量
+        MessageContent::ToolCalls(calls) => {
+            json!({ "tool_calls": tool_calls_delta_fragments(&calls) })
+        }
         MessageContent::ToolResult(result) => json!({ "content": result.content }),
-        MessageContent::TextWithToolCalls { text, .. } => json!({ "content": text }),
+        MessageContent::TextWithToolCalls {
+            text, tool_calls, ..
+        } => {
+            json!({
+                "content": text,
+                "tool_calls": tool_calls_delta_fragments(&tool_calls),
+            })
+        }
         // 流式思考增量 → delta.reasoning_content（非标字段）；
         // signature 无 OpenAI 槽 → 显性丢弃
         MessageContent::Reasoning { text, signature } => {
@@ -2096,6 +2128,61 @@ mod tests {
             })
             .expect("to external");
         assert_eq!(out["choices"][0]["delta"]["reasoning_content"], "th");
+    }
+
+    #[test]
+    fn streaming_content_with_tool_calls_emits_delta_tool_calls() {
+        let converter = OpenAIConverter::new();
+        let out = converter
+            .stream_chunk_to_external(StreamChunk::Content {
+                index: 0,
+                delta: MessageContent::ToolCalls(vec![ToolCall {
+                    id: "call_1".into(),
+                    call_type: "function".into(),
+                    function: ToolCallFunction {
+                        name: "get_weather".into(),
+                        arguments: r#"{"city":"SF"}"#.into(),
+                    },
+                }]),
+                finish_reason: Some("tool_calls".into()),
+                logprobs: None,
+            })
+            .expect("to external");
+        let calls = &out["choices"][0]["delta"]["tool_calls"];
+        assert_eq!(calls[0]["id"], "call_1");
+        assert_eq!(calls[0]["type"], "function");
+        assert_eq!(calls[0]["function"]["name"], "get_weather");
+        assert_eq!(calls[0]["function"]["arguments"], r#"{"city":"SF"}"#);
+    }
+
+    #[test]
+    fn streaming_text_with_tool_calls_keeps_both() {
+        let converter = OpenAIConverter::new();
+        let out = converter
+            .stream_chunk_to_external(StreamChunk::Content {
+                index: 0,
+                delta: MessageContent::TextWithToolCalls {
+                    text: "thinking".into(),
+                    tool_calls: vec![ToolCall {
+                        id: "call_2".into(),
+                        call_type: "function".into(),
+                        function: ToolCallFunction {
+                            name: "search".into(),
+                            arguments: "{}".into(),
+                        },
+                    }],
+                    reasoning: None,
+                },
+                finish_reason: None,
+                logprobs: None,
+            })
+            .expect("to external");
+        assert_eq!(out["choices"][0]["delta"]["content"], "thinking");
+        assert_eq!(out["choices"][0]["delta"]["tool_calls"][0]["id"], "call_2");
+        assert_eq!(
+            out["choices"][0]["delta"]["tool_calls"][0]["function"]["name"],
+            "search"
+        );
     }
 
     #[test]

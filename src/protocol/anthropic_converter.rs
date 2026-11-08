@@ -689,49 +689,6 @@ impl ProtocolConverter for AnthropicConverter {
                     _ => String::new(),
                 };
 
-                let _content = match delta {
-                    MessageContent::Text(s) => vec![json!({
-                        "type": "text",
-                        "text": s,
-                    })],
-                    MessageContent::MultiModal(blocks) => blocks
-                        .iter()
-                        .map(|block| match block {
-                            ContentBlock::Text { text } => json!({
-                                "type": "text",
-                                "text": text,
-                            }),
-                            ContentBlock::Image { source, detail: _ } => match source {
-                                ImageSource::Base64 { media_type, data } => json!({
-                                    "type": "image",
-                                    "source": {
-                                        "type": "base64",
-                                        "media_type": media_type,
-                                        "data": data,
-                                    },
-                                }),
-                                ImageSource::Url { url } => json!({
-                                    "type": "image",
-                                    "source": {
-                                        "type": "url",
-                                        "url": url,
-                                    },
-                                }),
-                            },
-                            _ => json!({ "type": "unknown" }),
-                        })
-                        .collect(),
-                    MessageContent::ToolCalls(_) => vec![json!({"type": "text", "text": ""})],
-                    MessageContent::ToolResult(result) => {
-                        vec![json!({"type": "tool_result", "content": result.content})]
-                    }
-                    MessageContent::TextWithToolCalls { text, .. } => {
-                        vec![json!({"type": "text", "text": text})]
-                    }
-                    // 此无状态单块路径对 Reasoning 不产出内容块
-                    MessageContent::Reasoning { .. } => Vec::new(),
-                };
-
                 Ok(json!({
                     "type": "content_block_delta",
                     "delta": {
