@@ -87,7 +87,7 @@ impl ProtocolConverter for AnthropicConverter {
             .ok_or(GateError::Validation {
                 field: "model".into(),
             })?
-            .to_lowercase();
+            .to_string();
 
         let messages = body
             .get("messages")
@@ -2470,6 +2470,19 @@ mod tests {
                 "messages": [{"role": "user", "content": "hi"}]
             }))
             .expect("to_unified")
+    }
+
+    #[test]
+    fn inbound_preserves_model_case() {
+        // 模型 ID 大小写敏感，to_unified 不得改写
+        let request = AnthropicConverter::new()
+            .to_unified(json!({
+                "model": "MiniMax-M2.1",
+                "max_tokens": 64,
+                "messages": [{"role": "user", "content": "hi"}]
+            }))
+            .expect("to_unified");
+        assert_eq!(request.model, "MiniMax-M2.1");
     }
 
     #[test]

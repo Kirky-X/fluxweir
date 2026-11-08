@@ -70,7 +70,7 @@ impl ProtocolConverter for OpenAIConverter {
             .ok_or(GateError::Validation {
                 field: "model".into(),
             })?
-            .to_lowercase();
+            .to_string();
 
         let messages = body
             .get("messages")
@@ -1685,6 +1685,13 @@ mod tests {
         OpenAIConverter::new()
             .to_unified(body)
             .expect("to_unified 应成功")
+    }
+
+    #[test]
+    fn inbound_preserves_model_case() {
+        // 模型 ID 大小写敏感（如 GLM-4.5 / Meta-Llama-3-8B），to_unified 不得改写
+        let request = inbound(json!({"model": "GLM-4.5"}));
+        assert_eq!(request.model, "GLM-4.5");
     }
 
     #[test]

@@ -121,7 +121,7 @@ impl Default for CacheBreakpointPolicy {
 pub fn cache_policy_for(catalog: &[ModelCatalogEntry], model_id: &str) -> CacheBreakpointPolicy {
     catalog
         .iter()
-        .find(|e| e.model_id == model_id)
+        .find(|e| e.model_id.eq_ignore_ascii_case(model_id))
         .and_then(|e| e.cache_breakpoints.clone())
         .unwrap_or_default()
 }
@@ -384,6 +384,22 @@ currency = "eur"
     }
 
     // 断点策略
+
+    #[test]
+    fn cache_policy_matches_model_id_case_insensitively() {
+        let mut catalog = vec![claude_entry()];
+        catalog[0].cache_breakpoints = Some(CacheBreakpointPolicy {
+            enabled: true,
+            max_breakpoints: 2,
+            anchors: vec!["system".into()],
+        });
+        let mixed = super::cache_policy_for(&catalog, "Claude-Sonnet-4-20250514");
+        assert_eq!(
+            mixed.max_breakpoints, 2,
+            "混合大小写请求必须命中条目覆盖（查找大小写不敏感）"
+        );
+        assert_eq!(mixed.anchors, vec!["system".to_string()]);
+    }
 
     #[test]
     fn cache_policy_entry_override_and_default_fallback() {
