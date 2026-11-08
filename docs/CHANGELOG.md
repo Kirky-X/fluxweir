@@ -18,6 +18,7 @@
 ### Changed
 
 - **BREAKING：熔断拒绝结构化**（`GateError` 变体集扩充）：CB Open 拒绝由 `VendorUnavailable{vendor: "{id} (circuit open)"}` 字符串标记改为专用变体 `VendorCircuitOpen{vendor: <纯 id>}`——fallback 触发器（`CircuitOpen`/`RateLimited`/`Http5xx`）与 `is_circuit_open_error` 改按变体判别，消除 locale 依赖的字符串回环；`GateErrorClassifier` 对该变体不计 CB 失败（防 half-open 探测期拒绝再抬计数、熔断永难恢复）。穷举 match `GateError` 的外部代码需补臂（嵌入方 agentstem-gate 已同步适配）。
+- **工作区依赖基线**：新增根 `[workspace.dependencies]` 单一事实源，`fluxweir-examples` 成员改 `workspace = true` 继承（成员不再自写版本号，仍 `publish = false`）；直接依赖保持 minor 级写法（预发布依赖保留完整 rc 号）。`confers` rc.12→rc.13、`toml` 1.1→1.2，`cargo update` 同步全部可更新的传递依赖。`dashmap` 7.0.0-rc2 为预发布，按「最新稳定版」规则维持 6.2。
 
 ## [0.1.0] - 2026-11-04
 

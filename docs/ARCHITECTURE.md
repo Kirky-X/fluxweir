@@ -667,7 +667,7 @@ flowchart LR
 
 ### 兄弟库（crates.io registry）
 
-根 `Cargo.toml` 以 registry 版本集成 7 个兄弟库（版本号在 `[dependencies]`、校验和锁在 `Cargo.lock`）。迁移期曾以 path 依赖 + `[patch.crates-io]` 统一身份（保证传递依赖收敛到同一份源码），该形态随全量切 registry 移除：
+根 `Cargo.toml` 的 `[workspace.dependencies]` 统一声明 7 个兄弟库的 registry 版本（成员继承、校验和锁在 `Cargo.lock`）。迁移期曾以 path 依赖 + `[patch.crates-io]` 统一身份（保证传递依赖收敛到同一份源码），该形态随全量切 registry 移除：
 
 | 兄弟库      | 在 Fluxweir 中的角色                                      |
 | ----------- | --------------------------------------------------------- |
