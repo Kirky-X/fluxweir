@@ -91,15 +91,21 @@ impl Guard {
         }
     }
 
-    /// 探测/调用成功：回 closed、清零计数。返回 true 表示发生了
-    /// open→closed 恢复迁移（供调用方记恢复事件）
+    /// 探测/调用成功：返回 true 表示发生了 open→closed 恢复迁移（供调用方记恢复事件）。
+    /// 仅半开探测成功构成恢复证明；open 态下的迟到成功（请求在 open 前通过 check）
+    /// 只清零失败计数、不改变状态，避免把熔断错误闭合。
     pub fn record_success(&self) -> bool {
         let mut state = self
             .state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let recovered = matches!(*state, State::Open { .. } | State::HalfOpen);
-        *state = State::Closed;
+        let recovered = match *state {
+            State::HalfOpen => {
+                *state = State::Closed;
+                true
+            }
+            State::Open { .. } | State::Closed => false,
+        };
         *self
             .consecutive_failures
             .lock()
@@ -172,6 +178,24 @@ mod tests {
         assert!(g.record_failure(now), "第 3 次失败触发 →open 迁移");
         assert_eq!(g.check(now), Availability::Unavailable, "open 期拒绝");
         assert!(g.is_degraded(now));
+    }
+
+    #[test]
+    fn late_success_while_open_keeps_breaker_open() {
+        let g = guard();
+        let t0 = Instant::now();
+        for _ in 0..3 {
+            g.record_failure(t0);
+        }
+        assert_eq!(g.check(t0), Availability::Unavailable, "已 open");
+        // 在 open 之前通过 check 的请求，其迟到成功不得构成恢复证明
+        assert!(!g.record_success(), "open 态迟到成功不报告恢复");
+        assert_eq!(
+            g.check(t0),
+            Availability::Unavailable,
+            "熔断必须保持打开，等待探测"
+        );
+        assert!(g.is_degraded(t0));
     }
 
     #[test]
