@@ -62,53 +62,48 @@ impl KeyStore for DbKeyStore {
         let mask = crypto::mask_key(plaintext.expose_secret());
         let now = crypto::now_ms();
 
-        let existing = raw_statement(
-            backend,
-            "SELECT id FROM vault_keys WHERE vendor_id = ? AND fingerprint = ?",
-            [vendor_id.into(), fingerprint.as_str().into()],
-        );
-        let found = conn.query_all_raw(existing).await.map_err(db_err)?;
+        // 原子 upsert：SELECT 预检 + INSERT/UPDATE 两段式在并发同键时会撞
+        // idx_vault_keys_vendor_fingerprint 唯一索引（TOCTOU → VaultError::Storage），
+        // 改为单语句；冲突臂保留既有行 id，仅覆盖业务列。
         let blob = crypto::seal(&self.master_key, plaintext)?;
-        let id = if let Some(row) = found.first() {
-            let id: String = row.try_get("", "id").map_err(db_err)?;
-            let update = raw_statement(
-                backend,
-                "UPDATE vault_keys SET label = ?, payload = ?, mask = ?, updated_at = ? WHERE id = ?",
-                [
-                    label.map(str::to_string).into(),
-                    Value::Bytes(Some(blob)),
-                    mask.into(),
-                    now.into(),
-                    id.clone().into(),
-                ],
-            );
-            conn.execute_raw(update).await.map_err(db_err)?;
-            id
-        } else {
-            let id = crypto::new_id();
-            let insert = raw_statement(
-                backend,
+        let id = crypto::new_id();
+        let upsert_sql = match backend {
+            sea_orm::DatabaseBackend::MySql => {
+                // VALUES() 在 MySQL 8.0.20+ 标记 deprecated 但全版本可用
                 "INSERT INTO vault_keys (id, vendor_id, label, payload, mask, fingerprint, created_at, updated_at) \
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                [
-                    id.clone().into(),
-                    vendor_id.into(),
-                    label.map(str::to_string).into(),
-                    Value::Bytes(Some(blob)),
-                    mask.into(),
-                    fingerprint.into(),
-                    now.into(),
-                    now.into(),
-                ],
-            );
-            conn.execute_raw(insert).await.map_err(db_err)?;
-            id
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?) \
+                 ON DUPLICATE KEY UPDATE label = VALUES(label), payload = VALUES(payload), \
+                 mask = VALUES(mask), updated_at = VALUES(updated_at)"
+            }
+            _ => {
+                "INSERT INTO vault_keys (id, vendor_id, label, payload, mask, fingerprint, created_at, updated_at) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?) \
+                 ON CONFLICT(vendor_id, fingerprint) DO UPDATE SET \
+                 label = excluded.label, payload = excluded.payload, \
+                 mask = excluded.mask, updated_at = excluded.updated_at"
+            }
         };
+        let upsert = raw_statement(
+            backend,
+            upsert_sql,
+            [
+                id.clone().into(),
+                vendor_id.into(),
+                label.map(str::to_string).into(),
+                Value::Bytes(Some(blob)),
+                mask.into(),
+                fingerprint.as_str().into(),
+                now.into(),
+                now.into(),
+            ],
+        );
+        conn.execute_raw(upsert).await.map_err(db_err)?;
 
+        // 冲突臂保留既有行 id，按唯一键回读（约束保证至多一行）
         let row = raw_statement(
             backend,
-            format!("SELECT {SELECT_COLS} FROM vault_keys WHERE id = ?"),
-            [id.clone().into()],
+            format!("SELECT {SELECT_COLS} FROM vault_keys WHERE vendor_id = ? AND fingerprint = ?"),
+            [vendor_id.into(), fingerprint.as_str().into()],
         );
         conn.query_all_raw(row)
             .await
@@ -116,7 +111,7 @@ impl KeyStore for DbKeyStore {
             .first()
             .map(Self::record)
             .transpose()?
-            .ok_or(VaultError::NotFound(id))
+            .ok_or_else(|| VaultError::NotFound(format!("{vendor_id}/{fingerprint}")))
     }
 
     async fn list(&self, vendor_id: Option<&str>) -> Result<Vec<SecretKeyRecord>, VaultError> {
@@ -255,6 +250,21 @@ mod tests {
         assert_eq!(first.id, second.id);
         assert_eq!(second.label.as_deref(), Some("renamed"));
         assert_eq!(store.list(Some("openai")).await.expect("list").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn concurrent_puts_same_key_stay_single_row() {
+        let store = open_store().await;
+        let key_a = SecretString::new("sk-conc-key-123456".into());
+        let key_b = SecretString::new("sk-conc-key-123456".into());
+        let (a, b) = tokio::join!(
+            store.put("openai", Some("a"), &key_a),
+            store.put("openai", Some("b"), &key_b),
+        );
+        a.expect("put a");
+        b.expect("put b");
+        let listed = store.list(Some("openai")).await.expect("list");
+        assert_eq!(listed.len(), 1, "并发同键 put 不得产生第二行");
     }
 
     #[tokio::test]
