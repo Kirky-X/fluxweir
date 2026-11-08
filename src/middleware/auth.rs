@@ -414,11 +414,13 @@ fn unauthorized_response(path: &str, message: String) -> Response {
             }
         })
     };
-    Response::builder()
-        .status(StatusCode::UNAUTHORIZED)
-        .header("Content-Type", "application/json")
-        .body(Body::from(body.to_string()))
-        .unwrap()
+    let mut response = Response::new(Body::from(body.to_string()));
+    *response.status_mut() = StatusCode::UNAUTHORIZED;
+    response.headers_mut().insert(
+        axum::http::header::CONTENT_TYPE,
+        axum::http::HeaderValue::from_static("application/json"),
+    );
+    response
 }
 
 #[cfg(test)]
