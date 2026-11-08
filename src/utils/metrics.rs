@@ -31,6 +31,7 @@ pub const TRAFFIC_BUCKETS: usize = 10;
 /// 推进时惰性清零过期桶；读侧以全体 max(last_seen) 为逻辑当前时刻——
 /// 停止写入的 vendor 旧桶随全局时间衰减出窗。
 /// 测试经 record_traffic_at 注入假时钟做确定性断言
+#[derive(Debug, Clone)]
 pub(crate) struct SlidingCounter {
     bucket_secs: u64,
     buckets: Vec<u64>,
@@ -146,8 +147,6 @@ pub struct GlobalMetrics {
     affinity_hits: AtomicU64,
     /// 会话亲和未命中计数（无绑定，或绑定 vendor 已不在合格集合）
     affinity_misses: AtomicU64,
-    /// 每 vendor 一只滑窗份额计数器（60s / 10 桶）
-    traffic: RwLock<HashMap<String, SlidingCounter>>,
     /// 每 vendor 失败率滑窗（total/failures，60s / 10 桶）。
     /// 窗口计数常开（纯观测）；软降权消费由 `[resilience].failure_rate_gate`
     /// 门控（默认关）。
@@ -242,7 +241,6 @@ impl GlobalMetrics {
             per_vendor: RwLock::new(HashMap::new()),
             affinity_hits: AtomicU64::new(0),
             affinity_misses: AtomicU64::new(0),
-            traffic: RwLock::new(HashMap::new()),
             vendor_windows: RwLock::new(HashMap::new()),
             ewma_tau_ms: AtomicU64::new(DEFAULT_EWMA_TAU_MS),
             retried_attempts: AtomicU64::new(0),
@@ -498,12 +496,17 @@ impl GlobalMetrics {
         }
         self.total_duration_ns
             .fetch_add(duration.as_nanos() as u64, Ordering::Relaxed);
-        self.record_traffic_at(vendor, Instant::now());
 
+        // 单次 per_vendor 写锁同时完成流量滑窗与厂商计数（原两次写锁合并：
+        // traffic 计数已随 VendorMetrics entry 同锁存储）
         if let Ok(mut guard) = self.per_vendor.write() {
             let entry = guard
                 .entry(vendor.to_string())
                 .or_insert_with(|| VendorMetrics::with_vendor(vendor));
+            entry
+                .traffic
+                .get_or_insert_with(|| SlidingCounter::new(Instant::now()))
+                .record_at(Instant::now());
             entry.requests += 1;
             if success {
                 entry.successes += 1;
@@ -618,10 +621,12 @@ impl GlobalMetrics {
     /// 生产由 [`Self::record_request`] 以真实时钟调用；`pub` 是为了测试
     /// 注入假时钟做确定性滑窗推进断言（tests 见本文件 `#[cfg(test)]`）。
     pub fn record_traffic_at(&self, vendor: &str, now: Instant) {
-        if let Ok(mut guard) = self.traffic.write() {
+        if let Ok(mut guard) = self.per_vendor.write() {
             guard
                 .entry(vendor.to_string())
-                .or_insert_with(|| SlidingCounter::new(now))
+                .or_insert_with(|| VendorMetrics::with_vendor(vendor))
+                .traffic
+                .get_or_insert_with(|| SlidingCounter::new(now))
                 .record_at(now);
         }
     }
@@ -695,21 +700,26 @@ impl GlobalMetrics {
     /// λ = 本值 / 60）。读侧推进语义与 [`Self::traffic_shares`] 一致
     ///（全体 `max(last_seen)` 为逻辑当前时刻）。
     pub fn traffic_window_total(&self) -> u64 {
-        let mut guard = match self.traffic.write() {
+        let mut guard = match self.per_vendor.write() {
             Ok(g) => g,
             Err(_) => return 0,
         };
-        let now = match guard.values().map(|c| c.last_seen).max() {
+        let now = match guard
+            .values()
+            .filter_map(|m| m.traffic.as_ref().map(|c| c.last_seen))
+            .max()
+        {
             Some(t) => t,
             None => return 0,
         };
-        guard
-            .values_mut()
-            .map(|counter| {
+        let mut total = 0u64;
+        for entry in guard.values_mut() {
+            if let Some(counter) = entry.traffic.as_mut() {
                 counter.advance_to(now);
-                counter.window_total()
-            })
-            .sum()
+                total += counter.window_total();
+            }
+        }
+        total
     }
 
     /// 重试放大守门器的观测视图 `(r, f, λ)`：r = 重试/失败请求数（无失败
@@ -930,22 +940,28 @@ impl GlobalMetrics {
     /// 的 vendor，总和恒 1.0；读侧推进到全体 max(last_seen)，停止写入的
     /// vendor 旧桶随全局时间衰减出窗
     pub fn traffic_shares(&self) -> Vec<(String, f64)> {
-        let mut guard = match self.traffic.write() {
+        let mut guard = match self.per_vendor.write() {
             Ok(g) => g,
             Err(_) => return Vec::new(),
         };
-        let now = match guard.values().map(|c| c.last_seen).max() {
+        let now = match guard
+            .values()
+            .filter_map(|m| m.traffic.as_ref().map(|c| c.last_seen))
+            .max()
+        {
             Some(t) => t,
             None => return Vec::new(),
         };
-        for counter in guard.values_mut() {
-            counter.advance_to(now);
+        let mut totals: Vec<(String, u64)> = Vec::new();
+        for (vendor, entry) in guard.iter_mut() {
+            if let Some(counter) = entry.traffic.as_mut() {
+                counter.advance_to(now);
+                let total = counter.window_total();
+                if total > 0 {
+                    totals.push((vendor.clone(), total));
+                }
+            }
         }
-        let totals: Vec<(String, u64)> = guard
-            .iter()
-            .map(|(vendor, counter)| (vendor.clone(), counter.window_total()))
-            .filter(|(_, total)| *total > 0)
-            .collect();
         let grand: u64 = totals.iter().map(|(_, t)| *t).sum();
         if grand == 0 {
             return Vec::new();
@@ -1017,15 +1033,19 @@ impl GlobalMetrics {
     /// vendor 的 60s 流量窗总数 — LPS 前瞻的到达率输入（α = total/60），
     /// 与软降权/流量份额共用计数器；读取时惰性推进，无记录返回 0
     pub fn vendor_window_total(&self, vendor: &str) -> u64 {
-        let mut guard = match self.traffic.write() {
+        let mut guard = match self.per_vendor.write() {
             Ok(g) => g,
             Err(_) => return 0,
         };
-        let now = match guard.values().map(|c| c.last_seen).max() {
+        let now = match guard
+            .values()
+            .filter_map(|m| m.traffic.as_ref().map(|c| c.last_seen))
+            .max()
+        {
             Some(t) => t,
             None => return 0,
         };
-        match guard.get_mut(vendor) {
+        match guard.get_mut(vendor).and_then(|m| m.traffic.as_mut()) {
             Some(counter) => {
                 counter.advance_to(now);
                 counter.window_total()
@@ -1173,10 +1193,6 @@ impl GlobalMetrics {
         if let Ok(mut guard) = self.per_vendor.write() {
             guard.clear();
         }
-        // 滑窗份额计数同步清空
-        if let Ok(mut guard) = self.traffic.write() {
-            guard.clear();
-        }
         // 失败率滑窗同步清空
         if let Ok(mut guard) = self.vendor_windows.write() {
             guard.clear();
@@ -1305,6 +1321,10 @@ pub struct VendorMetrics {
     last_e2e_at: Option<Instant>,
     #[serde(skip)]
     last_queue_at: Option<Instant>,
+    /// 60s 流量滑窗（与厂商计数同 lock 域：record_request 单锁完成两份记账；
+    /// 惰性创建，观测态不进序列化）
+    #[serde(skip)]
+    traffic: Option<SlidingCounter>,
 }
 
 impl VendorMetrics {
@@ -1331,6 +1351,7 @@ impl VendorMetrics {
             last_ttft_at: None,
             last_e2e_at: None,
             last_queue_at: None,
+            traffic: None,
         }
     }
 
@@ -1509,6 +1530,43 @@ mod tests {
 
     use super::*;
     use std::time::Duration;
+
+    /// 单锁合并后的行为等价锁定：流量窗前只看真流量 vendor
+    /// （仅 record_vendor_cache 建 entry 的 vendor 不计入份额/总量）
+    #[test]
+    fn traffic_readers_include_only_traffic_recorded_vendors() {
+        let m = GlobalMetrics::new();
+        m.record_request("v1", true, Duration::from_millis(3));
+        m.record_vendor_cache("v2", 10, 100);
+        assert_eq!(m.vendor_window_total("v1"), 1);
+        assert_eq!(m.vendor_window_total("v2"), 0, "仅缓存记账不算流量");
+        assert_eq!(m.traffic_window_total(), 1);
+        let shares = m.traffic_shares();
+        assert_eq!(shares.len(), 1);
+        assert_eq!(shares[0].0, "v1");
+    }
+
+    /// 单请求记账后 traffic 与厂商计数一致；reset 一并清零
+    #[test]
+    fn record_request_keeps_traffic_and_vendor_counts_consistent() {
+        let m = GlobalMetrics::new();
+        m.record_request("v1", true, Duration::from_millis(5));
+        m.record_request("v1", false, Duration::from_millis(7));
+        m.record_request("v2", true, Duration::from_millis(1));
+        assert_eq!(m.traffic_window_total(), 3);
+        assert_eq!(m.vendor_window_total("v1"), 2);
+        assert_eq!(m.vendor_window_total("v2"), 1);
+        let mut shares = m.traffic_shares();
+        shares.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(shares[0].0, "v1");
+        assert!((shares[0].1 - 2.0 / 3.0).abs() < 1e-9);
+        assert_eq!(shares[1].0, "v2");
+        assert!((shares[1].1 - 1.0 / 3.0).abs() < 1e-9);
+        m.reset();
+        assert_eq!(m.traffic_window_total(), 0);
+        assert!(m.traffic_shares().is_empty());
+        assert_eq!(m.vendor_window_total("v1"), 0);
+    }
 
     #[test]
     fn test_empty_metrics_snapshot() {
