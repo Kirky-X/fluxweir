@@ -222,6 +222,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ env.RUST_VERSION }}
+          # 该 job 只由 schedule/workflow_dispatch 触发：必须显式装 clippy，
+          # 否则 rustup proxy 报 "cargo-clippy is not installed"
+          components: clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Run clippy (default + web-search + subscription-vendor + cost-replay)
         run: cargo clippy --features "web-search,subscription-vendor,cost-replay" --all-targets -- -D warnings

@@ -214,6 +214,31 @@ fn redact_error(message: &str, url: &str) -> String {
     message.replace(url, &redact_db_url(url))
 }
 
+/// 错误展示本地化：`FluxweirError` 的 Display 是英文规范串（Database 变体
+/// 可能带 `key|{json}` 锚点）。CLI 是消息轨道终点，这里就地把锚点渲染成
+/// 当前 locale 的 FTL 文案；非锚点内容原样返回。
+fn localized_error(err: &fluxweir::FluxweirError) -> String {
+    let raw = err.to_string();
+    let payload = raw.strip_prefix("Database error: ").unwrap_or(&raw);
+    let Some((key, json)) = payload.split_once('|') else {
+        return raw;
+    };
+    let Ok(obj) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(json) else {
+        return raw;
+    };
+    let args: Vec<(&str, String)> = obj
+        .iter()
+        .map(|(k, v)| {
+            let value = v
+                .as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| v.to_string());
+            (k.as_str(), value)
+        })
+        .collect();
+    fluxweir::i18n::t_dynamic(key, &args)
+}
+
 #[tokio::main]
 async fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -259,7 +284,7 @@ async fn run(args: &Args) -> Result<String, String> {
         .map_err(|e| {
             t_args(
                 "replay-cli-load-failed",
-                &[("error", redact_error(&e.to_string(), &url))],
+                &[("error", redact_error(&localized_error(&e), &url))],
             )
         })?;
 

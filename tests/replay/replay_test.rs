@@ -183,6 +183,7 @@ async fn cli_reports_replay_scenarios() {
 #[tokio::test]
 async fn cli_missing_args_exit_code_2() {
     let out = Command::new(bin())
+        .env("FLUXWEIR_LANG", "en")
         .arg("--from")
         .arg("0")
         .output()
@@ -196,6 +197,7 @@ async fn cli_missing_args_exit_code_2() {
 #[tokio::test]
 async fn cli_help_exits_zero_on_stdout() {
     let out = Command::new(bin())
+        .env("FLUXWEIR_LANG", "en")
         .arg("--help")
         .output()
         .expect("spawn replay bin");
@@ -327,6 +329,7 @@ async fn cli_missing_db_file_fails_without_creating() {
     std::fs::write(&config, "vendors = []\n").expect("write config");
 
     let out = Command::new(bin())
+        .env("FLUXWEIR_LANG", "en")
         .args([
             "--db",
             missing.to_str().unwrap(),
@@ -373,7 +376,12 @@ async fn cli_max_rows_fails_fast() {
         .expect("spawn");
     assert_eq!(out.status.code(), Some(1), "超限必须退出码 1");
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("exceeding"), "报错须说明超限: {stderr}");
+    // 文案随 locale 本地化：断言语言中性锚点与参数（--max-rows / 实际行数）
+    assert!(
+        stderr.contains("--max-rows"),
+        "报错须说明超限参数: {stderr}"
+    );
+    assert!(stderr.contains('2'), "报错须带实际行数: {stderr}");
 }
 
 /// 确定性：同输入两跑 stdout byte-equal。

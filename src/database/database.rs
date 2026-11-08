@@ -52,7 +52,7 @@ impl Database {
     /// 上幂等执行（V1 全 `IF NOT EXISTS` + 版本历史短路 + 存量库基线回填）。
     /// 池生命周期归宿主：本结构只持克隆，[`Database::close`] 维持 no-op，
     /// 宿主侧 Arc 决定池寿命；连接参数（admin_role/retry_policy/池界）随
-    /// 宿主建池配置自带，[`db_config`] 不参与。
+    /// 宿主建池配置自带，`db_config` 不参与。
     pub async fn with_pool(pool: DbPool) -> Result<Self, FluxweirError> {
         crate::database::repository::init_schema(&pool)
             .await
