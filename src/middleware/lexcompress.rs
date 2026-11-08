@@ -16,7 +16,6 @@ pub fn compress(content: &str, min_chars: usize, ratio_ceiling: f64) -> Option<S
     let total = content.chars().count();
     let floor = ((total as f64) * (1.0 - ratio_ceiling.clamp(0.0, 1.0))) as usize;
     let mut out_lines: Vec<String> = Vec::new();
-    let mut out_chars = 0usize;
     let mut prev_line: Option<String> = None;
     let mut removed = 0usize;
 
@@ -53,8 +52,8 @@ pub fn compress(content: &str, min_chars: usize, ratio_ceiling: f64) -> Option<S
                 prev_space = false;
             }
         }
-        out_chars += normalized.chars().count() + 1;
-        prev_line = Some(normalized.clone());
+        // 去重口径与上方 dup 判定一致（trim_end 后的行文本）
+        prev_line = Some(trimmed_end.to_string());
         out_lines.push(normalized);
     }
 
@@ -70,7 +69,6 @@ pub fn compress(content: &str, min_chars: usize, ratio_ceiling: f64) -> Option<S
     if out.chars().count() >= total {
         return None;
     }
-    let _ = out_chars;
     Some(out)
 }
 
@@ -224,8 +222,10 @@ mod tests {
 
     #[test]
     fn compress_keeps_kana_middle_dot_line() {
-        // U+30FB 非字母数字但命中 is_cjk 区间 → 非纯标点行，保留
-        let prose = "中文    内容\n".repeat(600);
+        // U+30FB 非字母数字但命中 is_cjk 区间 → 非纯标点行，保留。
+        // 行内容带序号：避免命中连续重复行折叠（本用例只验证空白归一 +
+        // 中点行保留，重复行折叠有独立用例）。
+        let prose: String = (0..600).map(|i| format!("中文    内容{i}\n")).collect();
         let content = format!("{prose}・");
         let out = compress(&content, 4000, 0.5).expect("空白归一可压缩");
         assert!(out.contains('・'), "片假名中点行保留");

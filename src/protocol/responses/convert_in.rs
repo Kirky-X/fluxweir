@@ -13,7 +13,6 @@
 //! `GateError::Validation`（400）并点名字段与下标。
 
 use crate::error::GateError;
-use crate::i18n::{t, t_args};
 use crate::protocol::responses::types::{
     InputMessage, ParsedInputItem, ResponsesRequest, TextConfig, MAX_RESPONSES_INPUT_ITEMS,
     MAX_RESPONSES_METADATA_ENTRIES, MAX_RESPONSES_METADATA_KEY_CHARS,
@@ -58,9 +57,9 @@ pub fn parse_request(body: &Value) -> Result<ParsedResponsesRequest, GateError> 
         if error.to_string().contains("model") {
             validation("model")
         } else {
-            validation(t_args(
-                "protocol-responses-body-parse",
-                &[("error", error.to_string())],
+            validation(format!(
+                "protocol-responses-body-parse|{}",
+                serde_json::json!({ "error": (error.to_string()) })
             ))
         }
     })?;
@@ -70,59 +69,49 @@ pub fn parse_request(body: &Value) -> Result<ParsedResponsesRequest, GateError> 
     }
     if let Some(max_output_tokens) = request.max_output_tokens {
         if !(1..=MAX_RESPONSES_OUTPUT_TOKENS).contains(&max_output_tokens) {
-            return Err(validation(t_args(
-                "protocol-responses-output-tokens-range",
-                &[
-                    ("value", max_output_tokens.to_string()),
-                    ("max", MAX_RESPONSES_OUTPUT_TOKENS.to_string()),
-                ],
+            return Err(validation(format!(
+                "protocol-responses-output-tokens-range|{}",
+                serde_json::json!({ "value": (max_output_tokens.to_string()), "max": (MAX_RESPONSES_OUTPUT_TOKENS.to_string()) })
             )));
         }
     }
     if let Some(metadata) = request.metadata.as_ref() {
         if metadata.len() > MAX_RESPONSES_METADATA_ENTRIES {
-            return Err(validation(t_args(
-                "protocol-responses-metadata-entries",
-                &[
-                    ("count", metadata.len().to_string()),
-                    ("max", MAX_RESPONSES_METADATA_ENTRIES.to_string()),
-                ],
+            return Err(validation(format!(
+                "protocol-responses-metadata-entries|{}",
+                serde_json::json!({ "count": (metadata.len().to_string()), "max": (MAX_RESPONSES_METADATA_ENTRIES.to_string()) })
             )));
         }
         for (key, value) in metadata {
             if key.chars().count() > MAX_RESPONSES_METADATA_KEY_CHARS {
-                return Err(validation(t_args(
-                    "protocol-responses-metadata-key",
-                    &[
-                        // Debug 形保留引号与转义：用户 JSON 的键原样回显前先净化
-                        ("key", format!("{key:?}")),
-                        ("max", MAX_RESPONSES_METADATA_KEY_CHARS.to_string()),
-                    ],
+                // Debug 形保留引号与转义：用户 JSON 的键原样回显前先净化
+                return Err(validation(format!(
+                    "protocol-responses-metadata-key|{}",
+                    serde_json::json!({
+                        "key": format!("{key:?}"),
+                        "max": MAX_RESPONSES_METADATA_KEY_CHARS.to_string(),
+                    })
                 )));
             }
             if value.chars().count() > MAX_RESPONSES_METADATA_VALUE_CHARS {
-                return Err(validation(t_args(
-                    "protocol-responses-metadata-value",
-                    &[
-                        ("key", format!("{key:?}")),
-                        ("max", MAX_RESPONSES_METADATA_VALUE_CHARS.to_string()),
-                    ],
+                return Err(validation(format!(
+                    "protocol-responses-metadata-value|{}",
+                    serde_json::json!({ "key": (format!("{key:?}")), "max": (MAX_RESPONSES_METADATA_VALUE_CHARS.to_string()) })
                 )));
             }
         }
     }
     if request.background && request.stream {
-        return Err(validation(t("protocol-responses-background-stream")));
+        return Err(validation(
+            "protocol-responses-background-stream".to_string(),
+        ));
     }
 
     let current_items = normalize_input(&request.input)?;
     if current_items.len() > MAX_RESPONSES_INPUT_ITEMS {
-        return Err(validation(t_args(
-            "protocol-responses-input-items",
-            &[
-                ("count", current_items.len().to_string()),
-                ("max", MAX_RESPONSES_INPUT_ITEMS.to_string()),
-            ],
+        return Err(validation(format!(
+            "protocol-responses-input-items|{}",
+            serde_json::json!({ "count": (current_items.len().to_string()), "max": (MAX_RESPONSES_INPUT_ITEMS.to_string()) })
         )));
     }
     // 逐 item 形状校验（不产出 IR，只保证可解析；历史回放后会再校验一次）
@@ -145,7 +134,7 @@ fn normalize_input(input: &Value) -> Result<Vec<Value>, GateError> {
         })]),
         Value::Array(items) => Ok(items.clone()),
         Value::Null => Err(validation("input")),
-        _ => Err(validation(t("protocol-responses-input-shape"))),
+        _ => Err(validation("protocol-responses-input-shape".to_string())),
     }
 }
 
@@ -243,17 +232,17 @@ pub fn parse_items(items: &[Value]) -> Result<Vec<ParsedInputItem>, GateError> {
                 parsed.push(ParsedInputItem::ItemReference(id.to_string()));
             }
             Some("input_file") | Some("input_audio") => {
-                return Err(validation(t_args(
-                    "protocol-responses-input-file-native",
-                    &[("index", index.to_string())],
+                return Err(validation(format!(
+                    "protocol-responses-input-file-native|{}",
+                    serde_json::json!({ "index": (index.to_string()) })
                 )))
             }
             _ => {
                 // message item：显式 type=message，或省略 type 仅带 role
                 let role = item.get("role").and_then(Value::as_str).ok_or_else(|| {
-                    validation(t_args(
-                        "protocol-responses-input-unrecognized",
-                        &[("index", index.to_string())],
+                    validation(format!(
+                        "protocol-responses-input-unrecognized|{}",
+                        serde_json::json!({ "index": (index.to_string()) })
                     ))
                 })?;
                 parsed.push(ParsedInputItem::Message(InputMessage {
@@ -275,18 +264,15 @@ pub fn to_unified_request(
     merged_items: &[Value],
 ) -> Result<UnifiedRequest, GateError> {
     if let Some(reason) = parsed.native_only.as_deref() {
-        return Err(validation(t_args(
-            "protocol-responses-native-required",
-            &[("reason", reason.to_string())],
+        return Err(validation(format!(
+            "protocol-responses-native-required|{}",
+            serde_json::json!({ "reason": (reason.to_string()) })
         )));
     }
     if merged_items.len() > MAX_RESPONSES_INPUT_ITEMS {
-        return Err(validation(t_args(
-            "protocol-responses-input-items",
-            &[
-                ("count", merged_items.len().to_string()),
-                ("max", MAX_RESPONSES_INPUT_ITEMS.to_string()),
-            ],
+        return Err(validation(format!(
+            "protocol-responses-input-items|{}",
+            serde_json::json!({ "count": (merged_items.len().to_string()), "max": (MAX_RESPONSES_INPUT_ITEMS.to_string()) })
         )));
     }
     let parsed_items = parse_items(merged_items)?;
@@ -436,15 +422,15 @@ fn items_to_messages(items: &[ParsedInputItem]) -> Result<Vec<Message>, GateErro
             ParsedInputItem::FunctionCallOutput(output) => {
                 flush_calls(&mut messages, &mut pending_calls);
                 if !seen_calls.contains(&output.call_id) {
-                    return Err(validation(t_args(
-                        "protocol-responses-output-orphan",
-                        &[("id", format!("{:?}", output.call_id))],
+                    return Err(validation(format!(
+                        "protocol-responses-output-orphan|{}",
+                        serde_json::json!({ "id": (format!("{:?}", output.call_id)) })
                     )));
                 }
                 if !seen_outputs.insert(output.call_id.clone()) {
-                    return Err(validation(t_args(
-                        "protocol-responses-output-duplicate",
-                        &[("id", format!("{:?}", output.call_id))],
+                    return Err(validation(format!(
+                        "protocol-responses-output-duplicate|{}",
+                        serde_json::json!({ "id": (format!("{:?}", output.call_id)) })
                     )));
                 }
                 messages.push(Message {
@@ -461,9 +447,9 @@ fn items_to_messages(items: &[ParsedInputItem]) -> Result<Vec<Message>, GateErro
                 // chat 上游无 reasoning 明细：IR 路径丢弃（原生直通才保留）
             }
             ParsedInputItem::ItemReference(id) => {
-                return Err(validation(t_args(
-                    "protocol-responses-item-reference",
-                    &[("id", format!("{id:?}"))],
+                return Err(validation(format!(
+                    "protocol-responses-item-reference|{}",
+                    serde_json::json!({ "id": (format!("{id:?}")) })
                 )));
             }
             ParsedInputItem::Unknown(_) => {}
@@ -503,9 +489,9 @@ fn content_to_ir(content: &Value) -> Result<MessageContent, GateError> {
                         });
                     }
                     Some(other) => {
-                        return Err(validation(t_args(
-                            "protocol-responses-block-unsupported",
-                            &[("type", other.to_string())],
+                        return Err(validation(format!(
+                            "protocol-responses-block-unsupported|{}",
+                            serde_json::json!({ "type": (other.to_string()) })
                         )))
                     }
                     None => {}
@@ -572,9 +558,9 @@ fn parse_tools(tools: Option<&Vec<Value>>) -> Result<Vec<Tool>, GateError> {
     let mut parsed = Vec::with_capacity(tools.len());
     for (index, tool) in tools.iter().enumerate() {
         if tool.get("type").and_then(Value::as_str) != Some("function") {
-            return Err(validation(t_args(
-                "protocol-responses-tool-native",
-                &[("index", index.to_string())],
+            return Err(validation(format!(
+                "protocol-responses-tool-native|{}",
+                serde_json::json!({ "index": (index.to_string()) })
             )));
         }
         // Responses flat 形态；兼容 chat nested 形态

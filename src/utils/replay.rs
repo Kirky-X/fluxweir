@@ -144,12 +144,9 @@ pub async fn load_rows(
         .map_err(dbnexus::DbError::from)?;
     if rows.len() as u64 > max_rows {
         return Err(FluxweirError::Database {
-            message: crate::i18n::t_args(
-                "replay-window-too-large",
-                &[
-                    ("rows", (rows.len() as u64).to_string()),
-                    ("limit", max_rows.to_string()),
-                ],
+            message: format!(
+                "replay-window-too-large|{}",
+                serde_json::json!({"rows": rows.len().to_string(), "limit": max_rows.to_string()})
             ),
         });
     }
@@ -164,9 +161,9 @@ pub async fn load_rows(
 fn map_replay_row(row: &QueryResult) -> Result<ReplayRow, FluxweirError> {
     fn decode(col: &str, err: sea_orm::DbErr) -> FluxweirError {
         FluxweirError::Database {
-            message: crate::i18n::t_args(
-                "replay-row-decode-failed",
-                &[("column", col.to_string()), ("error", err.to_string())],
+            message: format!(
+                "replay-row-decode-failed|{}",
+                serde_json::json!({"column": col, "error": err.to_string()})
             ),
         }
     }

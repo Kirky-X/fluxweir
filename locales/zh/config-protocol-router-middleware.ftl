@@ -14,7 +14,7 @@ config-abstract-id-empty = 厂商 { $vendor } 模型 { $model } 的 abstract_id 
 config-embedding-group-model-mismatch = [vendors] 兼容组 "{ $group }" 内 upstream model_id 不一致：厂商 { $vendor_a } 为 "{ $model_a }"，厂商 { $vendor_b } 为 "{ $model_b }"（同组 model_id 必须大小写不敏感一致）
 config-embedding-group-dimension-conflict = [vendors] 兼容组 "{ $group }" 内已声明 dimensions 冲突：厂商 { $vendor_a } 模型 "{ $model_a }" 声明 { $dims_a }，厂商 { $vendor_b } 模型 "{ $model_b }" 声明 { $dims_b }
 config-embedding-group-cross-abstract = [vendors] 兼容组 "{ $group }" 跨两个 abstract_id："{ $abstract_a }"（厂商 { $vendor_a }）与 "{ $abstract_b }"（厂商 { $vendor_b }）；一个兼容组只能服务一个抽象嵌入模型
-config-embedding-group-reserved-separator = [vendors] 兼容组 "{ $group }" 不得包含保留分隔符 "/::"——会与未声明条目的单例组键 "{vendor}/::{model}" 撞键，静默击穿「永不互换」安全默认
+config-embedding-group-reserved-separator = [vendors] 兼容组 "{ $group }" 不得包含保留分隔符 "/::"——会与未声明条目的单例组键 "{"{"}vendor{"}"}/::{"{"}model{"}"}" 撞键，静默击穿「永不互换」安全默认
 config-model-type-unknown = [vendors] 厂商 { $vendor } 模型 { $model } 的 model_type 非法: "{ $model_type }"（合法值: chat / embedding / rerank）
 config-rerank-api-base-required = [vendors] 厂商 { $vendor } 的 type_ = "rerank" 必须显式声明 api_base（重排无官方默认端点）
 config-rerank-score-normalization-unknown = [routing] rerank_score_normalization 非法: "{ $value }"（合法值: none / sigmoid / minmax）
@@ -92,7 +92,7 @@ protocol-anthropic-cache-breakpoints-injected = 已注入 anthropic 缓存断点
 protocol-anthropic-unknown-cache-anchor = 未知缓存断点锚点，已跳过
 
 # ---- router/router.rs ----
-# 路由 Validation 以「锚点:取值」写入 field（恒英文），本地化在此单层完成
+# 路由 Validation 以 "<ftl键>|{json}" 锚点写入 field（恒英文），本地化在此单层完成
 error-validation-model-not-found = 请求验证失败：模型 { $model } 未找到
 error-validation-global-model-disabled = 请求验证失败：模型 { $model } 未找到：全局模型路由已关闭（[global_model].enabled=false）
 error-validation-vendor-unavailable = 请求验证失败：指定的厂商 { $vendor } 不可用或未配置
@@ -232,3 +232,7 @@ protocol-responses-parse-response = responses 响应: { $error }
 
 # 路由解释
 router-excluded-disabled = vendor 启用={ $vendor } model 启用={ $model }
+
+# DI 装配失败（模块名与底层错误作为参数注入）
+config-di-module-failed = DI { $operation } { $module } 失败：{ $error }
+error-all-candidates-unavailable = 模型 { $model } 的全部候选当前均不可用，请稍后重试。

@@ -92,28 +92,43 @@ pub async fn build_kit_with_config(
 
     kit.register::<OxcacheModule>().map_err(|e| {
         FluxweirError::from(GateError::Config {
-            message: format!("DI register OxcacheModule failed: {}", e),
+            message: format!(
+                "config-di-module-failed|{}",
+                serde_json::json!({ "operation": "register", "module": "OxcacheModule", "error": e.to_string() })
+            ),
         })
     })?;
     kit.register::<LimiteronModule>().map_err(|e| {
         FluxweirError::from(GateError::Config {
-            message: format!("DI register LimiteronModule failed: {}", e),
+            message: format!(
+                "config-di-module-failed|{}",
+                serde_json::json!({ "operation": "register", "module": "LimiteronModule", "error": e.to_string() })
+            ),
         })
     })?;
     kit.register::<DbNexusModule>().map_err(|e| {
         FluxweirError::from(GateError::Config {
-            message: format!("DI register DbNexusModule failed: {}", e),
+            message: format!(
+                "config-di-module-failed|{}",
+                serde_json::json!({ "operation": "register", "module": "DbNexusModule", "error": e.to_string() })
+            ),
         })
     })?;
     kit.register::<InklogModule>().map_err(|e| {
         FluxweirError::from(GateError::Config {
-            message: format!("DI register InklogModule failed: {}", e),
+            message: format!(
+                "config-di-module-failed|{}",
+                serde_json::json!({ "operation": "register", "module": "InklogModule", "error": e.to_string() })
+            ),
         })
     })?;
 
     kit.build().await.map_err(|e| {
         FluxweirError::from(GateError::Config {
-            message: format!("DI kit build failed: {}", e),
+            message: format!(
+                "config-di-module-failed|{}",
+                serde_json::json!({ "operation": "build", "module": "kit", "error": e.to_string() })
+            ),
         })
     })
 }
@@ -139,24 +154,36 @@ pub fn verify_kit(kit: &AsyncKit<AsyncReady>) -> Result<(), FluxweirError> {
     let _cache: Arc<dyn oxcache::backend::CacheBackend + Send + Sync> =
         kit.require::<OxcacheModule>().map_err(|e| {
             FluxweirError::from(GateError::Config {
-                message: format!("DI require OxcacheModule failed: {}", e),
+                message: format!(
+                "config-di-module-failed|{}",
+                serde_json::json!({ "operation": "require", "module": "OxcacheModule", "error": e.to_string() })
+            ),
             })
         })?;
     let _governor: Arc<limiteron::Governor> = kit.require::<LimiteronModule>().map_err(|e| {
         FluxweirError::from(GateError::Config {
-            message: format!("DI require LimiteronModule failed: {}", e),
+            message: format!(
+                "config-di-module-failed|{}",
+                serde_json::json!({ "operation": "require", "module": "LimiteronModule", "error": e.to_string() })
+            ),
         })
     })?;
     let _pool: Arc<dyn dbnexus::database::pool::ConnectionPool + Send + Sync> =
         kit.require::<DbNexusModule>().map_err(|e| {
             FluxweirError::from(GateError::Config {
-                message: format!("DI require DbNexusModule failed: {}", e),
+                message: format!(
+                "config-di-module-failed|{}",
+                serde_json::json!({ "operation": "require", "module": "DbNexusModule", "error": e.to_string() })
+            ),
             })
         })?;
     let _provider: Arc<dyn inklog::Database + Send + Sync> =
         kit.require::<InklogModule>().map_err(|e| {
             FluxweirError::from(GateError::Config {
-                message: format!("DI require InklogModule failed: {}", e),
+                message: format!(
+                "config-di-module-failed|{}",
+                serde_json::json!({ "operation": "require", "module": "InklogModule", "error": e.to_string() })
+            ),
             })
         })?;
     Ok(())

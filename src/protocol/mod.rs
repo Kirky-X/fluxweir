@@ -77,18 +77,9 @@ pub trait ProtocolConverter: Send + Sync {
         self.output_protocol() == output_protocol
     }
 
-    /// 透传请求体：同协议直接返回原始请求体，避免序列化/反序列化开销。
-    fn passthrough_request(&self, body: serde_json::Value) -> Result<serde_json::Value, GateError> {
-        Ok(body)
-    }
-
-    /// 透传响应体（零拷贝优化）
-    fn passthrough_response(
-        &self,
-        response: serde_json::Value,
-    ) -> Result<serde_json::Value, GateError> {
-        Ok(response)
-    }
+    // 透传请求/响应体不在 trait 上提供默认恒等实现：跨协议调用会原样
+    // 返回异协议 JSON（静默错传）。同协议透传由调用方按 `can_passthrough`
+    // 判定后直接转发原始 body，无需经转换器。
 }
 
 #[cfg(test)]

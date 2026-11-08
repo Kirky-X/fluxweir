@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! SDK 模块测试（自独立 crate sdk/tests/ 平移，27 例）。
+//! SDK 模块测试（自独立 crate `sdk/tests/` 平移；用例数随模块演进，不在文档中钉数）。
 
 mod config_test;
 mod embed_shape_test;

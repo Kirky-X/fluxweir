@@ -95,7 +95,7 @@ flowchart TB
 | `src/middleware/`                        | 认证、拥塞准入、配额（`quota.rs` / `quota_period.rs` / `quota_persist.rs`）、key 预算（`key_budget.rs`）、OIDC 验签（`oidc.rs`，feature `oidc`）、词法压缩（`lexcompress.rs`） |
 | `src/protocol/`                          | OpenAI/Anthropic/Responses/Gemini 统一中间表示、协议转换器、SSE 分帧编码                                                                 |
 | `src/router/`                            | 路由决策核心：加权打分、LinUCB、会话亲和                                                                                                 |
-| `src/utils/`                             | 横切工具：全局指标（含 EWMA）、重试延迟策略、成本累积器、租户凭证提取（`tenant.rs`）、netguard SSRF 判定（`netguard.rs`）、状态文件、token 估算、OIDC JWKS（`oidc_keys.rs`）、OTLP 指标桥（`otlp.rs`，feature `otlp`） |
+| `src/utils/`                             | 横切工具：全局指标（含 EWMA）、重试延迟策略、成本累积器、租户凭证提取（`tenant.rs`）、netguard SSRF 判定（`netguard.rs`）、状态文件、token 估算、阻塞收口（`blocking.rs`：多线程 runtime 下 `block_in_place`）、OIDC JWKS（`oidc_keys.rs`）、OTLP 指标桥（`otlp.rs`，feature `otlp`） |
 | `src/vendor/`                            | 厂商执行层：VendorManager、连接池、队列、限流、弹性、定价、订阅账号池（`subscription-vendor` feature）                                   |
 | `src/vault/`                             | 密钥保密柜：AEAD 加密存储、主钥三态来源（env/0600 文件/派生）                                                                            |
 | `src/server/`                            | 装配与运行面：`bootstrap.rs`（装配链）、`http.rs`（建站与路由合并）、`grpc.rs`（gRPC 门面，feature `grpc`）、`console.rs`（内置控制台，feature `console`）、`hot_reload.rs`（文件热重载与结构门） |
@@ -103,7 +103,7 @@ flowchart TB
 | `src/bin/`                               | 独立二进制：`fluxweir-replay`（离线成本回放，feature `cost-replay`）                                                                     |
 | `src/storage.rs`                         | 存储层类型门面：`LogFilter` / `RequestLog` 等跨层共享的存储类型                                                                          |
 | `src/quota_contract.rs`                  | 配额预算读侧契约（独立根级模块，router 消费）                                                                                            |
-| `src/error/mod.rs` / `src/error/gate.rs` | `FluxweirError` / `GateError` 统一错误：Display 恒英文规范串（日志/错误链），HTTP 展示走 `user_message()`（FTL，随 locale）              |
+| `src/error/mod.rs` / `app.rs` / `gate.rs` | `FluxweirError` / `GateError` 统一错误：`mod.rs` 只留类型，`app.rs` 承载展示轨道（`IntoResponse` / `user_message()` / 来源转换），`gate.rs` 承载路由变体；Display 恒英文规范串（日志/错误链），HTTP 展示走 `user_message()`（FTL，随 locale） |
 | `src/lib.rs`                             | 库入口：模块声明、feature 门控与公开 re-export（config/i18n/utils/protocol/storage/vendor/router 路由半边 + api/server/database 应用面） |
 | `src/main.rs`                            | 二进制薄入口：仅解析 CLI 配置路径参数；装配链在 `src/server/bootstrap.rs`，建站与路由合并、serve 在 `src/server/http.rs`                 |
 
@@ -178,7 +178,7 @@ flowchart TB
 | `src/config/`         | `mod.rs`：`Config` 结构体（19 段）；`loader.rs`：`ConfigLoader`（confers 加载 + AnnotatedValue 剥壳为裸 serde_json）与 `validate_config`（按 section 拆分：vendor 条目 / env 告警 / model_catalog / resilience 熔断窗口 + 管理面密钥校验）；`manager.rs`：`ConfigManager` 热更新事务写 + `SnapshotManager` 快照；`model_catalog.rs`：`[[model_catalog]]` 模型能力目录                                                                                                                               |
 | `src/middleware/`     | `auth.rs`：SHA256 摘要 + 常量时间比较认证；`admission.rs`：recId=16 拥塞感知优先级准入；`lexcompress.rs`：词法压缩（N2，`X-Compress: 1` 触发的确定性剪枝）；`mod.rs`：中间件组织                                                                                                                                                                                                                                                                                                                    |
 | `src/protocol/`       | `unified.rs`：统一请求结构与流式 chunk；`openai_converter.rs`/`anthropic_converter.rs`：双向协议转换（含 Anthropic 流式编码器）；`responses/`：Responses wire 类型、入站/出站转换与语义化 SSE 编解码；`gemini/`：Gemini wire 类型、双向转换、JSON Schema 清洗与 SSE 编解码；`embedding_converter.rs`：embedding 请求转换；`rerank_converter.rs`：Cohere rerank 转换；`usage.rs`：usage 换算；`sse_frame.rs`：SSE 编码与上游增量分帧实源（recId=3 ）                                                                                                                    |
-| `src/utils/`          | `metrics.rs`：`GlobalMetrics` 原子指标 + EWMA 平滑（α=0.2）；`retry.rs`：按错误类别分类的重试延迟策略；`cost_tracker.rs`：`CostTracker` 微美元累积器；`otlp.rs`（feature `otlp`）：exposition 文本解析 + `OtlpBridge` 周期推送到 OTLP/HTTP-Proto，单一真源为 `sdforge::metrics::global_registry().render()`（与 `/metrics` 同源），导出失败 fail-open 计数；`otlp_export.rs`（feature `otlp`）：尝试级追踪 trace 面（见「可观测性」节）                                                                                                                                          |
+| `src/utils/`          | `metrics.rs`：`GlobalMetrics` 原子指标 + EWMA 平滑（α=0.2）；`retry.rs`：按错误类别分类的重试延迟策略；`cost_tracker.rs`：`CostTracker` 微美元累积器；`blocking.rs`：同步 fs/CPU 片段的异步上下文收口；`otlp.rs`（feature `otlp`）：exposition 文本解析 + `OtlpBridge` 周期推送到 OTLP/HTTP-Proto，单一真源为 `sdforge::metrics::global_registry().render()`（与 `/metrics` 同源），导出失败 fail-open 计数；`otlp_export.rs`（feature `otlp`）：尝试级追踪 trace 面（见「可观测性」节）                                                                                                                                          |
 | `src/i18n/`           | `catalog.rs`：Fluent 双束编译期内嵌（`OnceLock` 静态缓存）；`locale.rs`：语言检测链与全局 locale 上下文；`mod.rs`：`t()`/`t_args()` 查找门面                                                                                                                                                                                                                                                                                                                                                        |
 | `src/infrastructure/` | `di.rs`：`AsyncKit` 四模块拓扑序组装与 `verify_kit`                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `src/masking/`        | （feature `masking`，不进 `full`）出站请求掩码：`rule_detector.rs` 组装 inklog 扩展形态表 + 熵扫描 + 自定义词/正则；`placeholder.rs` 确定性占位符注册表（SHA256 掺 pepper 前 8 hex——三态来源 env/0600 文件/进程内随机降级 warn，同 pepper 下跨进程/多副本一致，pepper 各异时不可关联；反向映射仅内存最小堆 LRU 10k + TTL 24h，永不落盘；回程还原凭 `MaskTicket` 请求域放行——伪造/跨请求回显不还原；`ledger.rs` 审计台账按天 JSONL，值不落盘）；`masker.rs` 出站 JSON 递归掩码 + 三档动作；`stream_restore.rs`/`restorer.rs` 流式尾部保持缓冲与整量还原；`gates.rs` fail-closed 门（故障 503 拒发）与 24h 统计窗 |
@@ -456,7 +456,7 @@ stateDiagram-v2
 
 ### 错误映射层
 
-`src/vendor/resilience/error_map.rs`：limiteron 熔断器签名锁定 `LimiteronError`，而 Fluxweir 执行路径使用 `FluxweirError`，映射层提供双向编码（`fluxweir:<variant>:<detail>` 前缀）；错误分类器（`FailureClassifier::is_counted_as_failure`）决定哪些错误计入熔断失败。
+`src/vendor/resilience/error_map.rs`：limiteron 熔断器为泛型（`CircuitBreaker<E>` / `FailureClassifier<E>`），Fluxweir 直接以 `GateError` 作为 `E`——业务错误经 `CircuitCallError::Inner` 原样透传，**不做字符串编解码**（有损方案已废弃）；熔断拒绝由 `CircuitCallError::Open` 还原为 `VendorCircuitOpen` 结构化变体。错误分类器（`FailureClassifier::is_counted_as_failure`）决定哪些错误计入熔断失败。
 
 ### 连接池
 
@@ -643,7 +643,7 @@ flowchart LR
 | 覆盖范围   | 全部业务消息（错误 `user_message()`、admin 响应与日志文案）；OpenAPI/健康描述等框架面串除外（见下）                                   |
 | 本地化格式 | 刻意不用 Fluent `NUMBER()/DATETIME()` 与 ICU：API 输出数值/日期保持机器可读（ISO 8601、微美元整数），本地化渲染归客户端               |
 
-错误展示走双轨（`src/error/mod.rs`）：`#[error]` Display 恒英文规范串（供日志与错误链），HTTP 响应体用 `user_message()` 返回随 locale 的 FTL 文案。
+错误展示走双轨（实现位于 `src/error/app.rs`，`mod.rs` 只留类型与 re-export）：`#[error]` Display 恒英文规范串（供日志与错误链），HTTP 响应体用 `user_message()` 返回随 locale 的 FTL 文案；错误载荷（`message`/`field`/`source`/`vendor`）只存语言中性锚点，本地化单点在 `user_message()`。
 
 与框架层的双栈边界：OpenAPI 文档与 health 端点描述经 `sdforge::i18n::register_translation` 登记，走 sdforge 自己的检测链（`SDFORGE_LANG` 起步；本仓未启用 sdforge `i18n` feature，无 sys-locale 尾段与请求级 locale）。`src/server/http.rs` 的 `assemble_router` 在建站时把框架栈 locale 显式同步为业务栈 `current_locale()`，保证 `FLUXWEIR_LANG` 是两栈一致的单一语言入口。
 
@@ -667,7 +667,7 @@ flowchart LR
 
 ### 兄弟库（crates.io registry）
 
-根 `Cargo.toml` 的 `[workspace.dependencies]` 统一声明 7 个兄弟库的 registry 版本（成员继承、校验和锁在 `Cargo.lock`）。迁移期曾以 path 依赖 + `[patch.crates-io]` 统一身份（保证传递依赖收敛到同一份源码），该形态随全量切 registry 移除：
+根 `Cargo.toml` 以 registry 版本集成 7 个兄弟库（版本号在 `[dependencies]`、校验和锁在 `Cargo.lock`）。迁移期曾以 path 依赖 + `[patch.crates-io]` 统一身份（保证传递依赖收敛到同一份源码），该形态随全量切 registry 移除：
 
 | 兄弟库      | 在 Fluxweir 中的角色                                      |
 | ----------- | --------------------------------------------------------- |

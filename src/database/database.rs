@@ -4,7 +4,6 @@
 use crate::config::DatabaseConfig;
 use crate::database::Repository;
 use crate::error::FluxweirError;
-use crate::i18n::t_args;
 use dbnexus::{DbConfig, DbPool};
 
 #[derive(Clone)]
@@ -26,7 +25,10 @@ impl Database {
         let pool = DbPool::with_config(config)
             .await
             .map_err(|e| FluxweirError::Database {
-                message: t_args("database-connect", &[("error", e.to_string())]),
+                message: format!(
+                    "database-connect|{}",
+                    serde_json::json!({"error": e.to_string()})
+                ),
             })?;
 
         // 初始化 schema（与 Repository::initialize 共享单一实现，按连接后端
@@ -34,7 +36,10 @@ impl Database {
         crate::database::repository::init_schema(&pool)
             .await
             .map_err(|e| FluxweirError::Database {
-                message: t_args("database-init-schema", &[("error", e.to_string())]),
+                message: format!(
+                    "database-init-schema|{}",
+                    serde_json::json!({"error": e.to_string()})
+                ),
             })?;
 
         let repository = std::sync::Arc::new(Repository::new(pool.clone()));
@@ -52,7 +57,10 @@ impl Database {
         crate::database::repository::init_schema(&pool)
             .await
             .map_err(|e| FluxweirError::Database {
-                message: t_args("database-init-schema", &[("error", e.to_string())]),
+                message: format!(
+                    "database-init-schema|{}",
+                    serde_json::json!({"error": e.to_string()})
+                ),
             })?;
 
         let repository = std::sync::Arc::new(Repository::new(pool.clone()));
@@ -103,9 +111,7 @@ fn ensure_sqlite_parent_dir(url: &str) -> Result<(), FluxweirError> {
     let path = path.split('?').next().unwrap_or(path);
     if let Some(parent) = std::path::Path::new(path).parent() {
         if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent).map_err(|e| FluxweirError::Database {
-                message: t_args("database-create-dir", &[("error", e.to_string())]),
-            })?;
+            std::fs::create_dir_all(parent)?;
         }
     }
     Ok(())
@@ -125,9 +131,12 @@ pub fn resolve_database_url(config: &DatabaseConfig) -> Result<String, FluxweirE
     }
     #[cfg(not(feature = "db-sqlite"))]
     {
-        Err(FluxweirError::Database {
-            message: t_args("database-backend-missing", &[("path", config.path.clone())]),
-        })
+        Err(FluxweirError::Gate(crate::error::GateError::Config {
+            message: format!(
+                "database-backend-missing|{}",
+                serde_json::json!({"path": config.path})
+            ),
+        }))
     }
     #[cfg(feature = "db-sqlite")]
     {
@@ -188,7 +197,10 @@ impl crate::storage::RequestLogSink for Database {
             .log_request(&log)
             .await
             .map_err(|e| crate::error::GateError::Config {
-                message: format!("request log write failed: {e}"),
+                message: format!(
+                    "error-config-storage-write|{}",
+                    serde_json::json!({"error": e.to_string()})
+                ),
             })
     }
 

@@ -164,12 +164,21 @@ pub(crate) fn truncate_payload(s: String) -> String {
     )
 }
 
-/// 从错误中提取上游真实状态码 — VendorUnavailable 的 vendor 字段携带上游
-/// 状态（格式 "id (500 ...)"），RateLimited 即 429；提取不到返回 None。
+/// 从错误中提取上游真实状态码 — VendorUnavailable 的 vendor 字段承载锚点
+/// `vendor-upstream-status|{"code":500,...}`（数值 code 为权威）；历史纯文本
+/// 形态 `"id (500 ...)"` 仍兼容解析。RateLimited 即 429；提取不到返回 None。
 pub(crate) fn upstream_status_code(err: &FluxweirError) -> Option<i32> {
     match err {
         FluxweirError::Gate(GateError::RateLimited { .. }) => Some(429),
         FluxweirError::Gate(GateError::VendorUnavailable { vendor }) => {
+            if let Some((_, json)) = vendor.split_once('|') {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(json) {
+                    return value
+                        .get("code")
+                        .and_then(serde_json::Value::as_i64)
+                        .and_then(|code| i32::try_from(code).ok());
+                }
+            }
             let inner = vendor.rsplit('(').next()?;
             let digits: String = inner.chars().take_while(|c| c.is_ascii_digit()).collect();
             digits.parse().ok()
@@ -600,6 +609,10 @@ pub(crate) async fn execute_request_with_fallback(
         None => options,
     };
 
+    // 请求体 Arc 共享：fallback 循环持有引用，因此每轮 manager 侧
+    // unwrap_or_clone 都需深拷贝（失败换路才付）；单发路径由调用方唯一
+    // 持有时零深拷贝。
+    let request = std::sync::Arc::new(request);
     let mut decision = initial;
     trail.record(&decision.vendor.id);
     // 排除集带原因（Failed/Throttled），Throttled 供 Retry-After 提示判定
@@ -621,7 +634,11 @@ pub(crate) async fn execute_request_with_fallback(
         loop {
             match state
                 .vendor_manager
-                .execute_request_with_options(&decision.vendor.id, request.clone(), options.clone())
+                .execute_request_with_options(
+                    &decision.vendor.id,
+                    std::sync::Arc::clone(&request),
+                    options.clone(),
+                )
                 .await
             {
                 Ok(response) => return Ok((response, decision)),
@@ -944,6 +961,7 @@ mod fallback_guard_tests {
             pre_aggregator: usage_front,
             affinity: None,
             response_cache: None,
+            auth_cache: std::sync::Arc::new(Default::default()),
             bandit: None,
             quota: None,
             difficulty: None,
@@ -1285,6 +1303,7 @@ mod cooldown_retry_after {
             pre_aggregator: usage_front,
             affinity: None,
             response_cache: None,
+            auth_cache: std::sync::Arc::new(Default::default()),
             bandit: None,
             quota: None,
             difficulty: None,

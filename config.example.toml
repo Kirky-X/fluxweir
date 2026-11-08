@@ -870,7 +870,8 @@ client_id = ""
 # TLS 不经 sdforge 终结（明文监听，由外部反代承担），与 [server] 同策略。
 [grpc]
 enabled = false
-host = "0.0.0.0"
+# 默认只监听回环；需要对外时显式改为 0.0.0.0 或具体网卡地址
+host = "127.0.0.1"
 port = 50051
 timeout_seconds = 30
 max_connections = 1000

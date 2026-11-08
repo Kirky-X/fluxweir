@@ -469,9 +469,9 @@ impl VendorManager {
         self.config
             .get_vendor(vendor_id)
             .ok_or_else(|| GateError::VendorUnavailable {
-                vendor: crate::i18n::t_args(
-                    "vendor-removed-from-config",
-                    &[("vendor", vendor_id.to_string())],
+                vendor: format!(
+                    "vendor-removed-from-config|{}",
+                    serde_json::json!({ "vendor": (vendor_id.to_string()) })
                 ),
             })
     }
@@ -1067,9 +1067,9 @@ impl VendorManager {
             let config = config_manager
                 .get_vendor(&instance.vendor_id)
                 .ok_or_else(|| GateError::VendorUnavailable {
-                    vendor: crate::i18n::t_args(
-                        "vendor-removed-from-config",
-                        &[("vendor", instance.vendor_id.clone())],
+                    vendor: format!(
+                        "vendor-removed-from-config|{}",
+                        serde_json::json!({ "vendor": (instance.vendor_id.clone()) })
                     ),
                 });
 
@@ -1303,7 +1303,7 @@ impl VendorManager {
     async fn perform_http_request(
         client: &reqwest::Client,
         config: &VendorConfig,
-        request: UnifiedRequest,
+        request: std::sync::Arc<UnifiedRequest>,
         openai: &OpenAIConverter,
         anthropic: &AnthropicConverter,
         responses: &ResponsesConverter,
@@ -1320,6 +1320,9 @@ impl VendorManager {
     ) -> Result<UnifiedResponse, GateError> {
         let converter: &dyn ProtocolConverter =
             Self::converter_for(config, openai, anthropic, responses, gemini)?;
+
+        // 独占时零拷贝取回 owned request（首跳）；仅重试/failover 共享时深拷贝。
+        let request = std::sync::Arc::unwrap_or_clone(request);
 
         // Gemini 的 model 在 URL（body 无 model），须在请求被 move 前捕获；
         // 其它厂商委托 build_vendor_url_for_model 后行为零变化
@@ -1416,7 +1419,7 @@ impl VendorManager {
             // rerank 无 chat 转换器（走 execute_rerank 专用路径）；Custom 为
             // 历史 `_` 通配臂的显式命名，配置期未校验的未知协议在此拒绝
             VendorProtocol::Rerank | VendorProtocol::Custom(_) => Err(GateError::Config {
-                message: crate::i18n::t("vendor-unknown-type"),
+                message: "vendor-unknown-type".to_string(),
             }),
         }
     }
@@ -1444,9 +1447,9 @@ impl VendorManager {
         if matches!(config.protocol(), VendorProtocol::Rerank) {
             if config.api_base.trim().is_empty() {
                 return Err(GateError::Config {
-                    message: crate::i18n::t_args(
-                        "config-rerank-api-base-required",
-                        &[("vendor", config.id.clone())],
+                    message: format!(
+                        "config-rerank-api-base-required|{}",
+                        serde_json::json!({ "vendor": (config.id.clone()) })
                     ),
                 });
             }
@@ -1464,7 +1467,7 @@ impl VendorManager {
                 // gemini/rerank 已在上方各自分支返回，不达此处；Custom 无默认端点
                 VendorProtocol::Gemini | VendorProtocol::Rerank | VendorProtocol::Custom(_) => {
                     return Err(GateError::Config {
-                        message: crate::i18n::t("vendor-unknown-type"),
+                        message: "vendor-unknown-type".to_string(),
                     })
                 }
             }
@@ -1549,9 +1552,9 @@ impl VendorManager {
             // Gemini 端点含 model + action，无法用静态默认路径；调用方须走
             // `build_vendor_url_for_model`
             return Err(GateError::Config {
-                message: crate::i18n::t_args(
-                    "vendor-gemini-url-requires-model",
-                    &[("vendor", config.id.clone())],
+                message: format!(
+                    "vendor-gemini-url-requires-model|{}",
+                    serde_json::json!({ "vendor": (config.id.clone()) })
                 ),
             });
         }
@@ -1574,9 +1577,9 @@ impl VendorManager {
         include_content_type: bool,
     ) -> Result<reqwest::RequestBuilder, GateError> {
         let api_key = std::env::var(&config.api_key_env).map_err(|_| GateError::Config {
-            message: crate::i18n::t_args(
-                "vendor-api-key-env-not-set",
-                &[("env", config.api_key_env.clone())],
+            message: format!(
+                "vendor-api-key-env-not-set|{}",
+                serde_json::json!({ "env": (config.api_key_env.clone()) })
             ),
         })?;
         Self::build_authed_request_with_key(client, config, url, include_content_type, &api_key)
@@ -2087,12 +2090,9 @@ impl VendorManager {
                 status: status.as_u16(),
                 retry_after,
                 error: GateError::VendorUnavailable {
-                    vendor: crate::i18n::t_args(
-                        "vendor-upstream-status",
-                        &[
-                            ("vendor", config.id.clone()),
-                            ("status", status.to_string()),
-                        ],
+                    vendor: format!(
+                        "vendor-upstream-status|{}",
+                        serde_json::json!({ "vendor": (config.id.clone()), "status": (status.to_string()), "code": (status.as_u16()) })
                     ),
                 },
             });
@@ -2111,7 +2111,10 @@ impl VendorManager {
                 vendor: config.id.clone(),
             })),
             Err(e) => Err(AttemptFailure::Fatal(GateError::VendorUnavailable {
-                vendor: crate::i18n::t_args("vendor-parse-error", &[("error", e.to_string())]),
+                vendor: format!(
+                    "vendor-parse-error|{}",
+                    serde_json::json!({ "error": (e.to_string()) })
+                ),
             })),
         }
     }
@@ -2356,8 +2359,12 @@ impl VendorManager {
         vendor_id: &str,
         request: UnifiedRequest,
     ) -> Result<UnifiedResponse, GateError> {
-        self.execute_request_with_options(vendor_id, request, VendorCallOptions::default())
-            .await
+        self.execute_request_with_options(
+            vendor_id,
+            std::sync::Arc::new(request),
+            VendorCallOptions::default(),
+        )
+        .await
     }
 
     /// 带调用级选项的执行入口（`anthropic_beta` 经队列透传至出站构建
@@ -2365,7 +2372,7 @@ impl VendorManager {
     pub async fn execute_request_with_options(
         &self,
         vendor_id: &str,
-        request: UnifiedRequest,
+        request: std::sync::Arc<UnifiedRequest>,
         options: VendorCallOptions,
     ) -> Result<UnifiedResponse, GateError> {
         let instance = {
@@ -2467,12 +2474,9 @@ impl VendorManager {
             }
         } else {
             GateError::VendorUnavailable {
-                vendor: crate::i18n::t_args(
-                    "vendor-upstream-status",
-                    &[
-                        ("vendor", vendor_id.to_string()),
-                        ("status", status.to_string()),
-                    ],
+                vendor: format!(
+                    "vendor-upstream-status|{}",
+                    serde_json::json!({ "vendor": (vendor_id.to_string()), "status": (status.to_string()), "code": (status.as_u16()) })
                 ),
             }
         };
@@ -2491,9 +2495,9 @@ impl VendorManager {
         request_body: &Value,
     ) -> Result<reqwest::Response, GateError> {
         let not_cloneable = || GateError::Config {
-            message: crate::i18n::t_args(
-                "vendor-builder-not-cloneable",
-                &[("vendor", vendor_id.to_string())],
+            message: format!(
+                "vendor-builder-not-cloneable|{}",
+                serde_json::json!({ "vendor": (vendor_id.to_string()) })
             ),
         };
         if config.stream_ttft_ms > 0 {
@@ -2739,7 +2743,7 @@ impl VendorManager {
             VendorProtocol::OpenAi => self.openai_converter.clone(),
             VendorProtocol::Rerank | VendorProtocol::Custom(_) => {
                 return Err(GateError::Config {
-                    message: crate::i18n::t("vendor-unknown-type"),
+                    message: "vendor-unknown-type".to_string(),
                 })
             }
         };
@@ -3072,9 +3076,9 @@ impl VendorManager {
                             });
                             return Some((
                                 Err(GateError::VendorUnavailable {
-                                    vendor: crate::i18n::t_args(
-                                        "vendor-stream-error",
-                                        &[("vendor", vendor.clone()), ("detail", detail)],
+                                    vendor: format!(
+                                        "vendor-stream-error|{}",
+                                        serde_json::json!({ "vendor": (vendor.clone()), "detail": (detail) })
                                     ),
                                 }),
                                 (parser, bytes, true, vendor, converter, pending),
@@ -3112,12 +3116,9 @@ impl VendorManager {
                             let err = match e {
                                 GateError::Timeout { .. } => e,
                                 other => GateError::VendorUnavailable {
-                                    vendor: crate::i18n::t_args(
-                                        "vendor-stream-interrupted",
-                                        &[
-                                            ("vendor", vendor.clone()),
-                                            ("detail", other.to_string()),
-                                        ],
+                                    vendor: format!(
+                                        "vendor-stream-interrupted|{}",
+                                        serde_json::json!({ "vendor": (vendor.clone()), "detail": (other.to_string()) })
                                     ),
                                 },
                             };
@@ -3567,7 +3568,10 @@ impl VendorManager {
                 vendor: vendor_id.to_string(),
             }),
             Err(e) => Err(GateError::VendorUnavailable {
-                vendor: crate::i18n::t_args("vendor-parse-error", &[("error", e.to_string())]),
+                vendor: format!(
+                    "vendor-parse-error|{}",
+                    serde_json::json!({ "error": (e.to_string()) })
+                ),
             }),
         }
     }
@@ -3621,12 +3625,9 @@ impl VendorManager {
         // 永久错误黑名单 + 推进（生效于下次请求）；瞬时无动作。
         instance.handle_key_error(credential, status, &text);
         GateError::VendorUnavailable {
-            vendor: crate::i18n::t_args(
-                "vendor-upstream-status",
-                &[
-                    ("vendor", vendor_id.to_string()),
-                    ("status", status.to_string()),
-                ],
+            vendor: format!(
+                "vendor-upstream-status|{}",
+                serde_json::json!({ "vendor": (vendor_id.to_string()), "status": (status.to_string()), "code": (status.as_u16()) })
             ),
         }
     }
@@ -6202,8 +6203,9 @@ mod chat_path_tests {
             VendorManager::build_vendor_url_at(&empty, "rerank").expect_err("空 api_base 必须拒绝");
         assert_eq!(err.status_code(), 500, "配置错误映射 500");
         assert!(
-            err.to_string().contains("api_base"),
-            "错误必须点名 api_base: {err}"
+            err.user_message().contains("api_base"),
+            "用户消息必须点名 api_base: {}",
+            err.user_message()
         );
     }
 

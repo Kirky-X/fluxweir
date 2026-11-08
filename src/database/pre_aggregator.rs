@@ -6,11 +6,10 @@
 //! 按小时聚合 Token 使用统计，减少数据库查询压力。
 
 use crate::database::Repository;
-use crate::i18n::t_args;
 use crate::protocol::TokenUsage;
 use crate::storage::KeyedUsage;
 use chrono::Timelike;
-use sea_orm::ConnectionTrait;
+use sea_orm::{ConnectionTrait, TransactionTrait};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -185,7 +184,10 @@ impl TokenPreAggregator {
         let backend = conn.get_database_backend();
         let sql = upsert_token_usage_sql(backend);
 
-        for (key, value) in entries {
+        // 整批单事务：任一行失败回滚整批并回填缓冲——半批落库会让
+        // request_count/tokens 与成本分项出现不可察觉的缺口。
+        let tx = conn.begin().await?;
+        for (key, value) in &entries {
             let values: Vec<sea_orm::Value> = vec![
                 key.vendor.as_str().into(),
                 key.model.as_str().into(),
@@ -204,10 +206,35 @@ impl TokenPreAggregator {
             ];
 
             let stmt = crate::database::raw_statement(backend, sql, values);
-            conn.execute_raw(stmt).await?;
+            if let Err(e) = tx.execute_raw(stmt).await {
+                let _ = tx.rollback().await;
+                self.refill(entries).await;
+                return Err(e.into());
+            }
         }
-
+        if let Err(e) = tx.commit().await {
+            self.refill(entries).await;
+            return Err(e.into());
+        }
         Ok(())
+    }
+
+    /// 刷盘失败后回填缓冲：按聚合键合并（期间可能已有新记录写入），
+    /// 保证失败批次不丢失。
+    async fn refill(&self, entries: Vec<(AggregationKey, AggregationValue)>) {
+        let mut guard = self.buffer.lock().await;
+        for (key, value) in entries {
+            let entry = guard.entry(key).or_insert_with(Default::default);
+            entry.request_count += value.request_count;
+            entry.input_tokens += value.input_tokens;
+            entry.output_tokens += value.output_tokens;
+            entry.cache_read_tokens += value.cache_read_tokens;
+            entry.cache_creation_tokens += value.cache_creation_tokens;
+            entry.input_cost += value.input_cost;
+            entry.output_cost += value.output_cost;
+            entry.cache_read_cost += value.cache_read_cost;
+            entry.cache_creation_cost += value.cache_creation_cost;
+        }
     }
 }
 
@@ -363,9 +390,9 @@ impl crate::storage::UsageSink for TokenPreAggregator {
             .query_cost_usage(from, to, group_by, api_key_hash)
             .await
             .map_err(|e| crate::error::GateError::Config {
-                message: t_args(
-                    "database-cost-usage-query-failed",
-                    &[("error", e.to_string())],
+                message: format!(
+                    "database-cost-usage-query-failed|{}",
+                    serde_json::json!({ "error": e.to_string() })
                 ),
             })
     }

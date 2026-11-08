@@ -10,7 +10,6 @@ use crate::api::request_cost_usd;
 use crate::api::RoutingHints;
 use crate::database::RequestLog;
 use crate::error::{FluxweirError, GateError};
-use crate::i18n::t;
 use crate::protocol::responses::{
     now_secs, parse_request, queued_response, to_responses_response, to_unified_request,
     ParsedResponsesRequest, ResponsesResponse, ResponsesStreamEncoder,
@@ -176,7 +175,11 @@ pub async fn create_response(
     };
     let mut merged_items = match resolve_history(&state, &parsed, &ctx.api_key_hash).await {
         Ok(items) => items,
-        Err(HistoryError::NotFound(message)) => return Ok(not_found(message)),
+        Err(HistoryError::NotFound(message)) => {
+            // NotFound 载荷为锚点或原始英文串：展示前单层解锚点
+            let message = crate::error::gate::localize_anchor(&message).unwrap_or(message);
+            return Ok(not_found(message));
+        }
         Err(HistoryError::Invalid(field)) => {
             return Err(FluxweirError::from(GateError::Validation { field }))
         }
@@ -189,7 +192,7 @@ pub async fn create_response(
     if parsed.native_only.is_some() {
         if parsed.request.background {
             return Err(FluxweirError::from(GateError::Validation {
-                field: t("api-responses-background-native-only"),
+                field: "api-responses-background-native-only".to_string(),
             }));
         }
         return native_response(
@@ -440,10 +443,9 @@ where
                 Err(error) => {
                     failed = true;
                     metrics.record_responses_upstream_failure();
-                    let safe_text = crate::i18n::t_args(
-                        "api-responses-stream-failed",
-                        &[("error", error.to_string())],
-                    );
+                    // 出站固定安全文案：内部错误详情只进 tracing（防拓扑/锚点外泄）。
+                    let safe_text = crate::i18n::t("protocol-stream-error-frame");
+                    tracing::warn!(error = %error, "{safe_text}");
                     for frame in encoder.fail(&safe_text) {
                         yield Ok(bytes::Bytes::from(frame));
                     }
@@ -500,9 +502,9 @@ async fn native_response(
     };
     if !decision.vendor.is_responses_style() {
         return Err(FluxweirError::from(GateError::Protocol {
-            source: crate::i18n::t_args(
-                "api-responses-native-hint-vendor",
-                &[("vendor", decision.vendor.id.clone())],
+            source: format!(
+                "api-responses-native-hint-vendor|{}",
+                serde_json::json!({ "vendor": (decision.vendor.id.clone()) })
             ),
             inner: None,
         }));
@@ -665,9 +667,9 @@ fn validate_native_hints(state: &Arc<ApiState>, hints: &RoutingHints) -> Result<
             .is_some_and(|vendor| vendor.enabled && vendor.is_responses_style());
         if !capable {
             return Err(FluxweirError::from(GateError::Protocol {
-                source: crate::i18n::t_args(
-                    "api-responses-native-hint-vendor",
-                    &[("vendor", vendor_id.to_string())],
+                source: format!(
+                    "api-responses-native-hint-vendor|{}",
+                    serde_json::json!({ "vendor": (vendor_id.to_string()) })
                 ),
                 inner: None,
             }));
@@ -681,9 +683,9 @@ fn validate_native_hints(state: &Arc<ApiState>, hints: &RoutingHints) -> Result<
             .any(|(vendor, _)| vendor.is_responses_style());
         if !capable {
             return Err(FluxweirError::from(GateError::Protocol {
-                source: crate::i18n::t_args(
-                    "api-responses-native-hint-model",
-                    &[("model", model.to_string())],
+                source: format!(
+                    "api-responses-native-hint-model|{}",
+                    serde_json::json!({ "model": (model.to_string()) })
                 ),
                 inner: None,
             }));
@@ -755,22 +757,22 @@ async fn background_response(
 ) -> Result<Response, FluxweirError> {
     if !responses_config.background_enabled {
         return Err(FluxweirError::from(GateError::Validation {
-            field: t("api-responses-background-disabled"),
+            field: "api-responses-background-disabled".to_string(),
         }));
     }
     if !effective_store {
         return Err(FluxweirError::from(GateError::Validation {
-            field: t("api-responses-background-store-required"),
+            field: "api-responses-background-store-required".to_string(),
         }));
     }
     let Some(runtime) = state.responses.as_ref() else {
         return Err(FluxweirError::from(GateError::Validation {
-            field: t("api-responses-background-store-missing"),
+            field: "api-responses-background-store-missing".to_string(),
         }));
     };
     if !runtime.jobs.try_begin(responses_config.max_background_jobs) {
         return Err(FluxweirError::from(GateError::RateLimited {
-            vendor: "responses-background".to_string(),
+            vendor: "api-responses-background-throttled".to_string(),
         }));
     }
 
@@ -800,8 +802,10 @@ async fn background_response(
             .vendor_manager
             .metrics()
             .record_responses_store_failure();
+        // 存储错误原文（表名/驱动细节）只进日志，不进响应体
+        tracing::warn!(error = %error, "responses store insert failed");
         return Err(FluxweirError::from(GateError::Config {
-            message: error.to_string(),
+            message: "api-responses-store-op-failed".to_string(),
         }));
     }
     state
@@ -837,7 +841,9 @@ async fn background_response(
                 failed.status = "failed".to_string();
                 failed.error = Some(crate::protocol::responses::ResponseError {
                     code: Some("background_failed".to_string()),
-                    message: error.to_string(),
+                    // 该对象会落库并经 GET /v1/responses/{id} 出站：只存本地化
+                    // 用户消息，Display 的规范串（含锚点）不得进持久化面。
+                    message: error.user_message(),
                 });
                 (
                     "failed".to_string(),
@@ -916,7 +922,7 @@ async fn run_background_job(
         .vendor_manager
         .execute_request_with_options(
             &decision.vendor.id,
-            unified_request,
+            std::sync::Arc::new(unified_request),
             crate::vendor::manager::VendorCallOptions {
                 anthropic_beta: None,
                 served_key_sink: Some(bg_sink),
@@ -989,7 +995,7 @@ async fn dispatch_request(
         };
         let response = state
             .vendor_manager
-            .execute_request_with_options(&decision.vendor.id, request, opts)
+            .execute_request_with_options(&decision.vendor.id, std::sync::Arc::new(request), opts)
             .await
             .map_err(FluxweirError::from)?;
         Ok((response, decision))
@@ -1005,7 +1011,7 @@ async fn dispatch_request(
         };
         let response = state
             .vendor_manager
-            .execute_request_with_options(&decision.vendor.id, request, opts)
+            .execute_request_with_options(&decision.vendor.id, std::sync::Arc::new(request), opts)
             .await
             .map_err(FluxweirError::from)?;
         Ok((response, decision))
@@ -1077,7 +1083,7 @@ pub async fn input_tokens(
     };
     if empty {
         return Err(FluxweirError::from(GateError::Validation {
-            field: t("api-responses-input-required"),
+            field: "api-responses-input-required".to_string(),
         }));
     }
     let chars_per_token = state.config.read().quota.est_chars_per_token.max(1);
@@ -1118,8 +1124,11 @@ pub async fn get_response(
         .store
         .get_response(&id, &tenant, now)
         .await
-        .map_err(|error| GateError::Config {
-            message: error.to_string(),
+        .map_err(|error| {
+            tracing::warn!(error = %error, "responses store operation failed");
+            GateError::Config {
+                message: "api-responses-store-op-failed".to_string(),
+            }
         })?;
     match row {
         Some(row) => {
@@ -1154,8 +1163,11 @@ pub async fn delete_response(
         .store
         .delete_response(&id, &tenant, now)
         .await
-        .map_err(|error| GateError::Config {
-            message: error.to_string(),
+        .map_err(|error| {
+            tracing::warn!(error = %error, "responses store operation failed");
+            GateError::Config {
+                message: "api-responses-store-op-failed".to_string(),
+            }
         })?;
     if !deleted {
         return Ok(not_found(crate::i18n::t_args(
@@ -1190,8 +1202,11 @@ pub async fn cancel_response(
         .store
         .get_response(&id, &tenant, now)
         .await
-        .map_err(|error| GateError::Config {
-            message: error.to_string(),
+        .map_err(|error| {
+            tracing::warn!(error = %error, "responses store operation failed");
+            GateError::Config {
+                message: "api-responses-store-op-failed".to_string(),
+            }
         })?;
     let Some(row) = row else {
         return Ok(not_found(crate::i18n::t_args(
@@ -1201,7 +1216,7 @@ pub async fn cancel_response(
     };
     if !row.background {
         return Err(FluxweirError::from(GateError::Validation {
-            field: t("api-responses-cancel-background-only"),
+            field: "api-responses-cancel-background-only".to_string(),
         }));
     }
     // abort 任务后回写 cancelled（abort 后任务体不再回写，避免竞态覆盖）
@@ -1214,8 +1229,11 @@ pub async fn cancel_response(
         .store
         .set_response_status(&id, &tenant, "cancelled", &value.to_string())
         .await
-        .map_err(|error| GateError::Config {
-            message: error.to_string(),
+        .map_err(|error| {
+            tracing::warn!(error = %error, "responses store operation failed");
+            GateError::Config {
+                message: "api-responses-store-op-failed".to_string(),
+            }
         })?;
     Ok(Json(value).into_response())
 }
@@ -1237,15 +1255,15 @@ async fn resolve_history(
     let previous = parsed.request.previous_response_id.as_deref();
     let conversation = parsed.request.conversation.as_deref();
     if previous.is_some() && conversation.is_some() {
-        return Err(HistoryError::Invalid(t(
-            "api-responses-history-mutually-exclusive",
-        )));
+        return Err(HistoryError::Invalid(
+            "api-responses-history-mutually-exclusive".to_string(),
+        ));
     }
     if previous.is_some() || conversation.is_some() {
         let Some(runtime) = state.responses.as_ref() else {
-            return Err(HistoryError::NotFound(crate::i18n::t(
-                "api-responses-store-unavailable",
-            )));
+            return Err(HistoryError::NotFound(
+                "api-responses-store-unavailable".to_string(),
+            ));
         };
         let now = now_secs() as i64;
         let mut history: Vec<Value> = Vec::new();
@@ -1255,23 +1273,28 @@ async fn resolve_history(
             let mut levels: Vec<Vec<Value>> = Vec::new();
             while let Some(id) = cursor {
                 if !seen.insert(id.clone()) {
-                    return Err(HistoryError::Invalid(crate::i18n::t_args(
-                        "api-responses-history-cycle",
-                        &[("id", id.clone())],
+                    return Err(HistoryError::Invalid(format!(
+                        "api-responses-history-cycle|{}",
+                        serde_json::json!({ "id": id })
                     )));
                 }
                 if seen.len() > 100 {
-                    return Err(HistoryError::Invalid(t("api-responses-history-depth")));
+                    return Err(HistoryError::Invalid(
+                        "api-responses-history-depth".to_string(),
+                    ));
                 }
                 let row = runtime
                     .store
                     .get_response(&id, tenant_hash, now)
                     .await
-                    .map_err(|error| HistoryError::NotFound(error.to_string()))?
+                    .map_err(|error| {
+                        tracing::warn!(error = %error, "responses history lookup failed");
+                        HistoryError::NotFound("api-responses-history-lookup-failed".to_string())
+                    })?
                     .ok_or_else(|| {
-                        HistoryError::NotFound(crate::i18n::t_args(
-                            "api-responses-not-found",
-                            &[("id", id.clone())],
+                        HistoryError::NotFound(format!(
+                            "api-responses-not-found|{}",
+                            serde_json::json!({ "id": id })
                         ))
                     })?;
                 let mut level = parse_items_json(&row.input_items);
@@ -1288,7 +1311,10 @@ async fn resolve_history(
                 .store
                 .list_conversation(conversation, tenant_hash, now)
                 .await
-                .map_err(|error| HistoryError::NotFound(error.to_string()))?;
+                .map_err(|error| {
+                    tracing::warn!(error = %error, "responses conversation lookup failed");
+                    HistoryError::NotFound("api-responses-history-lookup-failed".to_string())
+                })?;
             for row in rows {
                 history.extend(parse_items_json(&row.input_items));
                 history.extend(parse_items_json(&row.output_items));

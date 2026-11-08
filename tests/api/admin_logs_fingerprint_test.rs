@@ -76,6 +76,7 @@ async fn create_state() -> Arc<ApiState> {
         .await
         .expect("init schema");
     Arc::new(ApiState {
+        auth_cache: std::sync::Arc::new(Default::default()),
         affinity_writer: None,
         config: config_manager.clone(),
         vendor_manager: vendor_manager.clone(),

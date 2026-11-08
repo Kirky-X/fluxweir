@@ -739,7 +739,7 @@ fn responses_convert_in_validation_edges() {
     let err = converter
         .to_unified(body.clone())
         .expect_err("value 超长必须拒绝");
-    assert!(err.to_string().contains("metadata"), "{err}");
+    assert!(err.user_message().contains("metadata"), "{err}");
     body["metadata"] = serde_json::Map::from_iter([("k".repeat(7000), json!("v"))]).into();
     assert!(
         converter.to_unified(body.clone()).is_err(),
@@ -753,7 +753,7 @@ fn responses_convert_in_validation_edges() {
         }))
         .expect_err("background+stream 拒绝");
     // protocol-responses-background-stream 文案随 locale 漂移，断言字段 token
-    assert!(err.to_string().contains("stream"), "{err}");
+    assert!(err.user_message().contains("stream"), "{err}");
 
     for bad_type in ["input_file", "input_audio"] {
         let err = converter
@@ -763,7 +763,7 @@ fn responses_convert_in_validation_edges() {
             }))
             .expect_err("file/audio 必须拒绝");
         // protocol-responses-tool-native 文案随 locale 漂移，断言协议名 token
-        assert!(err.to_string().contains("Responses"), "{err}");
+        assert!(err.user_message().contains("Responses"), "{err}");
     }
 
     assert!(
@@ -1026,22 +1026,22 @@ fn responses_convert_in_wire_shape_edges() {
         }))
         .expect_err("max_output_tokens 类型错必须拒绝");
     // 字段名被翻译（body→请求体），serde 错误原文不经 i18n，断言机器 token
-    assert!(err.to_string().contains("invalid type"), "{err}");
+    assert!(err.user_message().contains("invalid type"), "{err}");
 
     let err = converter
         .to_unified(json!({"model": "   ", "input": "x", "max_output_tokens": 16}))
         .expect_err("空白 model 必须拒绝");
-    assert!(err.to_string().contains("model"), "{err}");
+    assert!(err.user_message().contains("model"), "{err}");
 
     let err = converter
         .to_unified(json!({"model": "m", "input": null, "max_output_tokens": 16}))
         .expect_err("input null 必须拒绝");
-    assert!(err.to_string().contains("input"), "{err}");
+    assert!(err.user_message().contains("input"), "{err}");
 
     let err = converter
         .to_unified(json!({"model": "m", "input": 42, "max_output_tokens": 16}))
         .expect_err("input 数字必须拒绝");
-    assert!(err.to_string().contains("input"), "{err}");
+    assert!(err.user_message().contains("input"), "{err}");
 }
 
 /// Responses input 条数上限：当前回合超限与合并历史超限都显性拒绝
@@ -1058,7 +1058,7 @@ fn responses_input_item_limit_and_merged_history_overflow() {
         .to_unified(json!({"model": "m", "max_output_tokens": 16, "input": oversized}))
         .expect_err("input 超过 10000 items 必须拒绝");
     // protocol-responses-input-items 文案随 locale 漂移，断言字段 token
-    assert!(err.to_string().contains("input"), "{err}");
+    assert!(err.user_message().contains("input"), "{err}");
 
     let parsed = parse_request(&json!({"model": "m", "max_output_tokens": 16, "input": "x"}))
         .expect("小请求解析");
@@ -1067,7 +1067,7 @@ fn responses_input_item_limit_and_merged_history_overflow() {
         .collect();
     let err = to_unified_request(&parsed, &merged).expect_err("合并历史超限必须拒绝");
     // protocol-responses-input-items 文案随 locale 漂移，断言字段 token
-    assert!(err.to_string().contains("input"), "{err}");
+    assert!(err.user_message().contains("input"), "{err}");
 }
 
 /// Responses 原生直通判定与工具形状：prompt 标记 native_only、缺 type
@@ -1098,7 +1098,7 @@ fn responses_native_only_and_tool_shape_edges() {
             "tools": [{"name": "no_type"}]
         }))
         .expect_err("缺 type 工具必须拒绝");
-    assert!(err.to_string().contains("tools[0]"), "{err}");
+    assert!(err.user_message().contains("tools[0]"), "{err}");
 
     let err = converter
         .to_unified(json!({
@@ -1107,7 +1107,7 @@ fn responses_native_only_and_tool_shape_edges() {
         }))
         .expect_err("内置工具走原生路径，IR 转换拒绝");
     // protocol-responses-native-required 文案随 locale 漂移，断言协议名 token
-    assert!(err.to_string().contains("Responses"), "{err}");
+    assert!(err.user_message().contains("Responses"), "{err}");
 }
 
 /// Responses 函数调用历史边界：arguments 对象序列化、重复 output 拒绝、
@@ -1162,7 +1162,7 @@ fn responses_function_history_edges() {
         }))
         .expect_err("重复 output 必须拒绝");
     // protocol-responses-output-duplicate 文案随 locale 漂移，断言字段 token
-    assert!(err.to_string().contains("function_call_output"), "{err}");
+    assert!(err.user_message().contains("function_call_output"), "{err}");
 
     let unified = converter
         .to_unified(json!({
@@ -1178,7 +1178,7 @@ fn responses_function_history_edges() {
             "input": [{"type": "item_reference", "id": "msg_9"}]
         }))
         .expect_err("item_reference 必须先解析");
-    assert!(err.to_string().contains("item_reference"), "{err}");
+    assert!(err.user_message().contains("item_reference"), "{err}");
 
     let unified = converter
         .to_unified(json!({
@@ -1222,7 +1222,7 @@ fn responses_content_block_edges() {
             "input": [{"role": "user", "content": [{"type": "summary_text", "text": "x"}]}]
         }))
         .expect_err("未知块型在 chat 上游拒绝");
-    assert!(err.to_string().contains("summary_text"), "{err}");
+    assert!(err.user_message().contains("summary_text"), "{err}");
 
     let unified = converter
         .to_unified(json!({

@@ -72,7 +72,7 @@ pub async fn token_stats(
             .pre_aggregator
             .as_ref()
             .ok_or_else(|| crate::error::GateError::Config {
-                message: t("admin-token-stats-usage-sink-unwired"),
+                message: "admin-token-stats-usage-sink-unwired".to_string(),
             })?;
     let stats = usage_sink.get_token_stats(vendor).await?;
     Ok(Json(serde_json::json!(stats)))
@@ -124,7 +124,7 @@ pub async fn cost_usage(
         Some("model") => CostGroupBy::Model,
         _ => {
             return Err(FluxweirError::from(crate::error::GateError::Validation {
-                field: t("admin-cost-group-by-invalid"),
+                field: "admin-cost-group-by-invalid".to_string(),
             }));
         }
     };
@@ -132,9 +132,9 @@ pub async fn cost_usage(
         if let Some(date) = value {
             if !valid_cost_date(date) {
                 return Err(FluxweirError::from(crate::error::GateError::Validation {
-                    field: t_args(
-                        "admin-cost-date-format-invalid",
-                        &[("name", name.to_string())],
+                    field: format!(
+                        "admin-cost-date-format-invalid|{}",
+                        serde_json::json!({ "name": (name.to_string()) })
                     ),
                 }));
             }
@@ -154,7 +154,7 @@ pub async fn cost_usage(
             .pre_aggregator
             .as_ref()
             .ok_or_else(|| crate::error::GateError::Config {
-                message: t("admin-cost-usage-sink-unwired"),
+                message: "admin-cost-usage-sink-unwired".to_string(),
             })?;
     let rows = usage_sink
         .query_cost_usage(
@@ -403,7 +403,10 @@ pub async fn reset_vendor(
     // limiteron 限流状态仍自动管理（令牌桶 refill），此处不触限流器。
     if !state.vendor_manager.reset_key_pool_state(&id) {
         return Err(FluxweirError::from(crate::error::GateError::Validation {
-            field: t_args("admin-vendor-reset-unknown-vendor", &[("id", id.clone())]),
+            field: format!(
+                "admin-vendor-reset-unknown-vendor|{}",
+                serde_json::json!({ "id": (id.clone()) })
+            ),
         }));
     }
     Ok(Json(serde_json::json!({
@@ -418,7 +421,7 @@ fn require_embedding_pin(state: &ApiState) -> Result<&Arc<crate::router::Embeddi
         .router
         .embedding_pin()
         .ok_or_else(|| GateError::Config {
-            message: t("admin-embedding-pins-unwired"),
+            message: "admin-embedding-pins-unwired".to_string(),
         })
 }
 
@@ -602,7 +605,10 @@ pub async fn update_vendor(
                 Ok(())
             }
             None => Err(GateError::Validation {
-                field: t_args("admin-vendor-not-found", &[("id", id.clone())]),
+                field: format!(
+                    "admin-vendor-not-found|{}",
+                    serde_json::json!({ "id": (id.clone()) })
+                ),
             }),
         }
     })?;
@@ -643,7 +649,7 @@ pub async fn update_model(
         })))
     } else {
         Err(FluxweirError::from(GateError::Config {
-            message: t("admin-only-global-model-supported"),
+            message: "admin-only-global-model-supported".to_string(),
         }))
     }
 }
@@ -816,9 +822,9 @@ pub async fn catalog_sync(
                         // persist 只有 Persist(GateError) 一个失败形态
                         SyncError::Persist(gate) => FluxweirError::from(gate),
                         other => FluxweirError::from(GateError::Config {
-                            message: t_args(
-                                "catalog-sync-failed",
-                                &[("reason", other.to_string())],
+                            message: format!(
+                                "catalog-sync-failed|{}",
+                                serde_json::json!({ "reason": (other.to_string()) })
                             ),
                         }),
                     },
@@ -888,35 +894,41 @@ pub mod subscription_admin {
     fn subscription_error(e: SubscriptionError) -> FluxweirError {
         match e {
             SubscriptionError::InvalidCallback => FluxweirError::Gate(GateError::Validation {
-                field: t("subscription-callback-invalid"),
+                field: "subscription-callback-invalid".to_string(),
             }),
             SubscriptionError::UnknownAccount(id) => FluxweirError::Gate(GateError::Validation {
-                field: t_args("subscription-account-unknown", &[("account", id)]),
+                field: format!(
+                    "subscription-account-unknown|{}",
+                    serde_json::json!({ "account": (id) })
+                ),
             }),
             // 逐变体键化：Display 规范串仅作 detail，用户面文案走 FTL
             SubscriptionError::Oauth { status } => {
                 FluxweirError::Gate(GateError::VendorUnavailable {
-                    vendor: t_args(
-                        "admin-subscription-oauth",
-                        &[("status", status.to_string())],
+                    vendor: format!(
+                        "admin-subscription-oauth|{}",
+                        serde_json::json!({ "status": (status.to_string()) })
                     ),
                 })
             }
             SubscriptionError::InvalidTokenResponse(field) => {
                 FluxweirError::Gate(GateError::VendorUnavailable {
-                    vendor: t_args(
-                        "admin-subscription-token-invalid",
-                        &[("field", field.to_string())],
+                    vendor: format!(
+                        "admin-subscription-token-invalid|{}",
+                        serde_json::json!({ "field": (field.to_string()) })
                     ),
                 })
             }
             SubscriptionError::Transport(detail) => {
                 FluxweirError::Gate(GateError::VendorUnavailable {
-                    vendor: t_args("admin-subscription-transport", &[("detail", detail)]),
+                    vendor: format!(
+                        "admin-subscription-transport|{}",
+                        serde_json::json!({ "detail": (detail) })
+                    ),
                 })
             }
             SubscriptionError::Degraded => FluxweirError::Gate(GateError::VendorUnavailable {
-                vendor: t("admin-subscription-degraded"),
+                vendor: "admin-subscription-degraded".to_string(),
             }),
         }
     }
@@ -964,7 +976,7 @@ pub mod subscription_admin {
         }
         if state.config.read().subscription.client_id.trim().is_empty() {
             return Err(FluxweirError::Gate(GateError::Validation {
-                field: t("subscription-client-id-missing"),
+                field: "subscription-client-id-missing".to_string(),
             }));
         }
         if !state
@@ -975,9 +987,9 @@ pub mod subscription_admin {
             .any(|v| v.id == body.vendor)
         {
             return Err(FluxweirError::Gate(GateError::Validation {
-                field: t_args(
-                    "subscription-account-unknown-vendor",
-                    &[("vendor", body.vendor.clone())],
+                field: format!(
+                    "subscription-account-unknown-vendor|{}",
+                    serde_json::json!({ "vendor": (body.vendor.clone()) })
                 ),
             }));
         }
@@ -1048,7 +1060,7 @@ pub mod subscription_admin {
     ) -> Result<Json<serde_json::Value>, FluxweirError> {
         if require_enabled(&state).is_err() {
             return Err(FluxweirError::Gate(GateError::Validation {
-                field: t("subscription-admin-disabled"),
+                field: "subscription-admin-disabled".to_string(),
             }));
         }
         let pool = pool_of(&state)?;
@@ -1241,16 +1253,19 @@ mod tests {
     #[test]
     fn test_cost_param_validation_messages_are_localized() {
         let date = GateError::Validation {
-            field: t_args("admin-cost-date-format-invalid", &[("name", "from".into())]),
+            field: format!(
+                "admin-cost-date-format-invalid|{}",
+                serde_json::json!({ "name": "from" })
+            ),
         }
         .user_message();
         assert!(date.contains("from"), "实参未进入文案: {date}");
         assert!(!date.contains('$'), "占位符未被替换: {date}");
 
         let vendor = GateError::Validation {
-            field: t_args(
-                "admin-vendor-reset-unknown-vendor",
-                &[("id", "vendor-a".into())],
+            field: format!(
+                "admin-vendor-reset-unknown-vendor|{}",
+                serde_json::json!({ "id": "vendor-a" })
             ),
         }
         .user_message();
@@ -1258,7 +1273,7 @@ mod tests {
         assert!(!vendor.contains('$'), "占位符未被替换: {vendor}");
 
         let bare = GateError::Validation {
-            field: t("admin-cost-group-by-invalid"),
+            field: "admin-cost-group-by-invalid".to_string(),
         }
         .user_message();
         assert!(

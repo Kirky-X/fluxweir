@@ -26,13 +26,30 @@
 //!
 //! # 键化边界（调用点形态约定）
 //!
-//! `GateError` 载荷（`field`/`source`/`vendor`）承载两种形态，边界按内容定：
-//! - **裸字段路径**（`"model"`、`"input[3].call_id"`）：机器定位符，经
-//!   `error-validation` 模板的 `{ $field }` 槽位原样插值，不进 ftl；
-//! - **自然语言整句**：必须以 t / t_args 的**字面键名**形态调用（parity
-//!   守卫据此扫描键存在性与占位符完备性，示例中的占位键名会被守卫拦截——
-//!   恰好证明扫描在生效）；含用户输入的占位符
-//!   用 `format!("{value:?}")` 预转义后再传参（保留 Debug 引号语义）。
+//! 错误载荷（`GateError::Validation.field`、`GateError::Config.message`、
+//! `FluxweirError::Database.message` 等）**只承载语言中性锚点**，不得在构造点
+//! 直接调用 t / t_args：
+//! - **锚点形态**：`"<ftl键>"` 或 `"<ftl键>|<JSON 对象>"`——锚名即已登记的
+//!   FTL 键，参数为 `serde_json` 对象（如
+//!   `error-validation-model-not-found|{"model":"gpt-4"}`）；`Display` 因此
+//!   恒为英文规范串；
+//! - **本地化单点**：仅在 `user_message()`（`GateError`/`FluxweirError`）经
+//!   `localize_anchor` → `t_dynamic` 完成；动态键绕过 parity 守卫的字面
+//!   扫描，键存在性由 `tests/guard/error_payload_guard.rs` 的锚点守卫
+//!   （`has_key`）兜底；
+//! - **回退**：未登记键/裸字段路径（`"model"`）/原始英文串经通用模板
+//!   （`error-validation`/`error-config`/`error-database`）单层包裹——合法
+//!   回退，不算违规；
+//! - **响应构造点**（无错误变体的直接 HTTP 错误体，如中间件 401/403、SSE
+//!   错误帧、web-search 聚合错误体）允许就地 `t()` / `localize_anchor()`——
+//!   该处即消息轨道终点，不属于错误载荷；
+//! - **范围**：契约约束服务端错误类型（`GateError`/`VaultError`/
+//!   `FluxweirError`）。`src/sdk/` 是对外客户端库，`FluxweirSdkError` 的
+//!   Display 就是终态用户消息（无双层轨道），构造点本地化是设计语义。
+//!
+//! 构造点纪律由 `tests/guard/error_payload_guard.rs` 两个 token 级守卫承载
+//!（禁止载荷字段/错误 helper 就地 `t()`/`t_args()`；锚点键必须在 en 束登记）。
+//! 守卫是绊线而非证明：别名导入、宏中转、变量间接可绕过，审查流程兜底。
 //!
 //! # 日志面分层
 //!
@@ -56,5 +73,5 @@ pub enum I18nError {
     },
 }
 
-pub use catalog::{init, t, t_args};
+pub use catalog::{has_key, init, t, t_args, t_dynamic};
 pub use locale::{clear_locale_override, current_locale, detected_locale, set_locale};

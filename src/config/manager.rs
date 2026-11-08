@@ -35,10 +35,22 @@ fn snapshot_current_config(manager: &ConfigManager, config_path: &Path) {
     if !config_path.exists() {
         return; // 首次落盘没有旧值可留
     }
-    let old = manager.get_config();
-    let Ok(content) = toml::to_string_pretty(&old) else {
-        tracing::warn!("{}", t("config-snapshot-serialize-failed"));
-        return;
+    // 磁盘原文优先：快照的用途是磁盘回滚基线，内存态可能略新于磁盘
+    //（例如热字段被运行时修改）；读取失败才退回内存序列化。
+    let content = match std::fs::read_to_string(config_path) {
+        Ok(raw) => raw,
+        Err(e) => {
+            let old = manager.get_config();
+            let Ok(serialized) = toml::to_string_pretty(&old) else {
+                tracing::warn!("{}", t("config-snapshot-serialize-failed"));
+                return;
+            };
+            tracing::warn!(
+                "{}",
+                t_args("config-snapshot-failed", &[("error", e.to_string())])
+            );
+            serialized
+        }
     };
     let dir = config_path
         .parent()
@@ -89,11 +101,6 @@ pub struct ConfigManager {
     write_lock: Arc<Mutex<()>>,
     /// 应用成功钩子注册表（内存态切换后触发；Arc 共享使 Clone 视图同注册表）
     swap_hooks: Arc<RwLock<Vec<SwapHook>>>,
-    /// 认证上下文缓存（按配置代际派生：快照换代即重建；见
-    /// `middleware::auth::CachedAuthContext`；web-server 缺位时无认证中间件
-    /// 消费，字段整体门外）
-    #[cfg(feature = "web-server")]
-    pub(crate) auth_cache: Arc<RwLock<Option<Arc<crate::middleware::auth::CachedAuthContext>>>>,
 }
 
 impl ConfigManager {
@@ -105,8 +112,6 @@ impl ConfigManager {
             fingerprint_hash: RandomState::new(),
             write_lock: Arc::new(Mutex::new(())),
             swap_hooks: Arc::new(RwLock::new(Vec::new())),
-            #[cfg(feature = "web-server")]
-            auth_cache: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -259,12 +264,15 @@ impl ConfigManager {
 
         // 序列化先行 — 失败不触碰磁盘与内存
         let content = toml::to_string_pretty(&new_config).map_err(|e| GateError::Config {
-            message: t_args("config-serialize-failed", &[("error", e.to_string())]),
+            message: format!(
+                "config-serialize-failed|{}",
+                serde_json::json!({"error": e.to_string()})
+            ),
         })?;
 
         // 原子写：同目录唯一临时文件 + rename；唯一名（pid+序号）防并发/多进程互踩
         let path = self.path().ok_or(GateError::Config {
-            message: t("config-path-unknown"),
+            message: "config-path-unknown".to_string(),
         })?;
         let parent = path
             .parent()
@@ -278,16 +286,16 @@ impl ConfigManager {
         // 先做一次前置比对快速失败（避免无谓的快照/tmp 写），rename 前再做
         // 末次比对（见下）把无保护窗口压到系统调用间隙。
         let refuse_external_edit = || GateError::Config {
-            message: t_args(
-                "config-disk-modified-refusing-write",
-                &[("path", path.display().to_string())],
+            message: format!(
+                "config-disk-modified-refusing-write|{}",
+                serde_json::json!({"path": path.display().to_string()})
             ),
         };
         let observed = *self
             .disk_fingerprint
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if self.file_fingerprint(&path) != observed {
+        if crate::utils::blocking::run_blocking(|| self.file_fingerprint(&path)) != observed {
             return Err(refuse_external_edit());
         }
 
@@ -302,49 +310,56 @@ impl ConfigManager {
         ));
         let tmp_path = parent.join(tmp_name);
 
-        // 3.5 更新留痕：落盘前把当前配置快照到 config-backups/。尽力而为——
-        // 快照失败只记 warn，不阻塞合法更新（主回滚手段仍是 tmp+rename 原子性）。
-        snapshot_current_config(self, &path);
+        // 3.5 更新留痕 + 原子落盘：全部 fs 操作走阻塞收口（多线程 runtime 上
+        // 让出 worker），避免管理面配置写盘占住 async executor。
+        crate::utils::blocking::run_blocking(|| -> Result<(), GateError> {
+            // 落盘前把当前配置快照到 config-backups/。尽力而为——快照失败只记
+            // warn，不阻塞合法更新（主回滚手段仍是 tmp+rename 原子性）。
+            snapshot_current_config(self, &path);
 
-        if let Err(e) = std::fs::write(&tmp_path, content) {
-            // 半程写入（如 ENOSPC/ENOTDIR）清理临时文件，避免残留
-            let _ = std::fs::remove_file(&tmp_path);
-            return Err(GateError::Config {
-                message: t_args(
-                    "config-tmp-write-failed",
-                    &[
-                        ("path", tmp_path.display().to_string()),
-                        ("error", e.to_string()),
-                    ],
-                ),
-            });
-        }
+            if let Err(e) = std::fs::write(&tmp_path, content) {
+                // 半程写入（如 ENOSPC/ENOTDIR）清理临时文件，避免残留
+                let _ = std::fs::remove_file(&tmp_path);
+                return Err(GateError::Config {
+                    message: format!(
+                        "config-tmp-write-failed|{}",
+                        serde_json::json!({
+                            "path": tmp_path.display().to_string(),
+                            "error": e.to_string()
+                        })
+                    ),
+                });
+            }
 
-        // 末次比对（TOCTOU 窗口收窄）：快照与 tmp 写期间可能发生进程外编辑，
-        // rename 前再比对一次——无保护窗口从「快照+tmp 写」压到比对与 rename
-        // 的系统调用间隙；不匹配时清理 tmp 并显式拒绝
-        if self.file_fingerprint(&path) != observed {
-            let _ = std::fs::remove_file(&tmp_path);
-            return Err(refuse_external_edit());
-        }
+            // 末次比对（TOCTOU 窗口收窄）：快照与 tmp 写期间可能发生进程外编辑，
+            // rename 前再比对一次——无保护窗口从「快照+tmp 写」压到比对与 rename
+            // 的系统调用间隙；不匹配时清理 tmp 并显式拒绝
+            if self.file_fingerprint(&path) != observed {
+                let _ = std::fs::remove_file(&tmp_path);
+                return Err(refuse_external_edit());
+            }
 
-        if let Err(e) = std::fs::rename(&tmp_path, &path) {
-            // rename 失败时清理临时文件，避免残留
-            let _ = std::fs::remove_file(&tmp_path);
-            return Err(GateError::Config {
-                message: t_args(
-                    "config-atomic-replace-failed",
-                    &[
-                        ("path", path.display().to_string()),
-                        ("error", e.to_string()),
-                    ],
-                ),
-            });
-        }
+            if let Err(e) = std::fs::rename(&tmp_path, &path) {
+                // rename 失败时清理临时文件，避免残留
+                let _ = std::fs::remove_file(&tmp_path);
+                return Err(GateError::Config {
+                    message: format!(
+                        "config-atomic-replace-failed|{}",
+                        serde_json::json!({
+                            "path": path.display().to_string(),
+                            "error": e.to_string()
+                        })
+                    ),
+                });
+            }
+            Ok(())
+        })?;
 
         // 4. 磁盘落定后才切换内存态（触发 on_change 回调），并把磁盘现值
         // 记为新的指纹基线（下次写回以此判外部编辑）
-        if let Some(fingerprint) = self.file_fingerprint(&path) {
+        if let Some(fingerprint) =
+            crate::utils::blocking::run_blocking(|| self.file_fingerprint(&path))
+        {
             *self
                 .disk_fingerprint
                 .write()
@@ -729,11 +744,23 @@ mod tests {
             "外部编辑后写回必须以 Config 错误显式失败: {result:?}"
         );
         if let Err(GateError::Config { message }) = result.as_ref() {
-            let expected = t_args(
-                "config-disk-modified-refusing-write",
-                &[("path", path.display().to_string())],
+            // 载荷为语言中性锚点：键名 + JSON 参数（指名路径）
+            assert!(
+                message.starts_with("config-disk-modified-refusing-write|"),
+                "拒绝必须携带外部编辑保护锚点: {message}"
             );
-            assert_eq!(message, &expected, "拒绝必须为外部编辑保护键原文且指名路径");
+            assert!(
+                message.contains(&path.display().to_string()),
+                "锚点必须指名路径: {message}"
+            );
+            let localized = GateError::Config {
+                message: message.clone(),
+            }
+            .user_message();
+            assert!(
+                localized.contains(&path.display().to_string()),
+                "本地化消息必须指名路径: {localized}"
+            );
         }
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
@@ -1088,7 +1115,7 @@ mod tests {
         .unwrap();
         let grpc = config.grpc.expect("空 [grpc] 段应为 Some");
         assert!(!grpc.enabled);
-        assert_eq!(grpc.host, "0.0.0.0");
+        assert_eq!(grpc.host, "127.0.0.1", "缺省只监听回环（显式配置才对外）");
         assert_eq!(grpc.port, 50051);
         assert_eq!(grpc.timeout_seconds, 30);
         assert_eq!(grpc.max_connections, 1000);

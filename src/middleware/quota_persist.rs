@@ -138,9 +138,9 @@ impl QuotaLedgerPersister {
             // 通道关闭（writer_loop 已退出）不是配置问题——按 I/O 分支报错，
             // 避免运维把 shutdown 故障误诊为配置校验失败
             .map_err(|e| GateError::Io {
-                message: t_args(
-                    "middleware-quota-ledger-channel-closed",
-                    &[("error", e.to_string())],
+                message: format!(
+                    "middleware-quota-ledger-channel-closed|{}",
+                    serde_json::json!({ "error": e.to_string() })
                 ),
             })
     }

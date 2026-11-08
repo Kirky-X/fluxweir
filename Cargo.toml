@@ -458,6 +458,7 @@ required-features = ["web-search", "web-server", "db-sqlite"]
 [[test]]
 name = "feature_matrix"
 path = "tests/matrix/feature_matrix.rs"
+required-features = ["web-server", "logging"]
 [[test]]
 name = "gate_feature_matrix"
 path = "tests/matrix/gate_feature_matrix.rs"
@@ -482,6 +483,11 @@ path = "tests/guard/dead_code_guard.rs"
 [[test]]
 name = "layering_guard"
 path = "tests/guard/layering_guard.rs"
+
+# 错误载荷锚点契约守卫（构造点禁止就地本地化 + 锚点键必须已登记）
+[[test]]
+name = "error_payload_guard"
+path = "tests/guard/error_payload_guard.rs"
 
 [[test]]
 name = "comment_hygiene_test"

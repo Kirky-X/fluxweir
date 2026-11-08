@@ -5,6 +5,7 @@
 // 无特征门控引用 GlobalMetrics（首跑 feature-matrix 暴露的 E0433：单特征
 // 组合缺 vendor-management 时 cannot find metrics），不能再随
 // vendor-management 门控。
+pub mod blocking;
 pub mod metrics;
 pub mod retry;
 /// 崩溃安全状态文件读取（magpie-absorb-r1：主坏隔离+`.bak` 回退）。
@@ -13,8 +14,10 @@ pub mod state_file;
 // 均为 web-server 面的直接依赖——随 web-server 门控，避免精简组合拉入缺席依赖。
 #[cfg(feature = "web-server")]
 pub mod tenant;
-// OIDC 短时键别名表（auth-and-masking R-auth-002 常驻半边）：纯 std 单锁表，
-// oidc feature 的验签路径写、api_key_digest/档位解析读；表空零开销直通。
+// OIDC 短时键别名表（auth-and-masking R-auth-002）：纯 std 单锁表，
+// oidc feature 的验签路径写、api_key_digest/档位解析读。非 OIDC 构建
+// 不编译本模块，调用点在 cfg 下直接走静态摘要路径（零全局锁）。
+#[cfg(feature = "oidc")]
 pub mod oidc_keys;
 pub mod tokens;
 

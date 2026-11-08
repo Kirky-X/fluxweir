@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 非流式 chat：完整 `ChatRequest` + `RequestConfig` 路由提示头，打印用量与实际 vendor。
+//! 非流式 chat：完整 `ChatRequest` + `RequestConfig` 路由提示头，打印模型、结束原因与 token 用量。
 
 use std::time::Duration;
 

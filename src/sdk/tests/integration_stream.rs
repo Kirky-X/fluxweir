@@ -59,7 +59,15 @@ async fn stream_propagates_parse_error() {
     let mut chat_stream = ChatStream::from_bytes_stream(byte_stream);
     let result = chat_stream.next().await.unwrap();
 
-    assert!(result.is_err());
+    match result {
+        Err(crate::sdk::error::FluxweirSdkError::Stream { message }) => {
+            assert!(
+                message.starts_with("JSON parse error"),
+                "解析失败必须归 Stream 变体并保留原因: {message}"
+            );
+        }
+        other => panic!("坏帧必须返回 Stream 错误，实际 {other:?}"),
+    }
 }
 
 #[tokio::test]
@@ -102,10 +110,15 @@ async fn spawn_chunked_sse_server(gap: Duration) -> String {
             sock.write_all(format!("{:x}\r\n", frame.len()).as_bytes())
                 .await
                 .unwrap();
-            sock.write_all(frame).await.unwrap();
-            sock.write_all(b"\r\n").await.unwrap();
+            // 客户端读超时先断开：忽略写端 BrokenPipe
+            if sock.write_all(frame).await.is_err() {
+                return;
+            }
+            if sock.write_all(b"\r\n").await.is_err() {
+                return;
+            }
         }
-        sock.write_all(b"0\r\n\r\n").await.unwrap();
+        let _ = sock.write_all(b"0\r\n\r\n").await;
     });
     format!("http://{addr}")
 }

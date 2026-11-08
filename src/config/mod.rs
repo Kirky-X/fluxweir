@@ -1223,7 +1223,8 @@ impl Default for ResilienceSection {
 
 /// `[admission]` 段：拥塞感知优先级准入。并发占用率（Σ in_flight / Σ 上限）
 /// 达 congestion_threshold 时，档位基准权重低于「当前在途最小档」的新请求
-/// 直接 429 + Retry-After（同档/高档放行）。Section 字段落地防热更抹段；热读
+/// 直接 429 + Retry-After（同档/高档放行）。Section 字段落地防热更抹段；
+/// 热读：判定参数每请求从配置快照读取，更新后立即生效。
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct AdmissionSection {
     /// 默认 false = 完全关闭（判定旁路、EWMA 不记账、计数不增减）
@@ -1335,7 +1336,9 @@ pub struct GrpcConfig {
 }
 
 fn default_grpc_host() -> String {
-    "0.0.0.0".into()
+    // 缺省只监听回环：显式 enabled=true 且省略 host 时不暴露到全部网卡
+    //（需要对外时显式配置 0.0.0.0/具体地址）。
+    "127.0.0.1".into()
 }
 
 fn default_grpc_port() -> u16 {

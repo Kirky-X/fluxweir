@@ -173,6 +173,7 @@ async fn build_app_with_vendors(rules: Vec<RateLimitRule>, vendors: Vec<VendorCo
     ));
 
     let state = Arc::new(ApiState {
+        auth_cache: std::sync::Arc::new(Default::default()),
         config: config_manager,
         vendor_manager,
         router,
@@ -572,6 +573,7 @@ async fn auth_runs_before_rate_limit_layers() {
         vendor_manager.clone(),
     ));
     let state = Arc::new(ApiState {
+        auth_cache: std::sync::Arc::new(Default::default()),
         affinity_writer: None,
         config: config_manager,
         vendor_manager,

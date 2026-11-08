@@ -71,10 +71,23 @@ impl ErrorCategory {
     }
 }
 
-/// 提取 HTTP 状态码
+/// 提取 HTTP 状态码。
+///
+/// 优先解析语言中性锚点 `vendor-upstream-status|{"code":429,...}` 的数值
+/// code；旧纯文本形态 `"id (429 ...)"` 仍兼容。提取不到返回 500。
 pub fn extract_status_code(error: &str) -> u16 {
-    // 尝试从错误消息中提取状态码
-    // 例如: "VendorUnavailable: anthropic_main (429: Rate limit exceeded)"
+    if let Some((_, json)) = error.split_once('|') {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(json) {
+            if let Some(code) = value
+                .get("code")
+                .and_then(serde_json::Value::as_u64)
+                .and_then(|code| u16::try_from(code).ok())
+            {
+                return code;
+            }
+        }
+    }
+    // 旧纯文本形态: "VendorUnavailable: anthropic_main (429: Rate limit exceeded)"
     if let Some(start) = error.find('(') {
         let rest = &error[start + 1..];
         if let Some(end) = rest.find(':') {
@@ -226,6 +239,22 @@ pub fn amplification_guard(r: f64, f: f64, c: f64, lambda: f64) -> (bool, bool) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extract_status_code_reads_anchor_json_and_legacy_text() {
+        // 语言中性锚点：数值 code 为权威
+        assert_eq!(
+            extract_status_code("vendor-upstream-status|{\"vendor\":\"v\",\"status\":\"429 Too Many Requests\",\"code\":429}"),
+            429
+        );
+        // 旧纯文本形态兼容
+        assert_eq!(extract_status_code("v1 (503: Service Unavailable)"), 503);
+        assert_eq!(extract_status_code("v1 (502 upstream)"), 502);
+        // 无法提取 → 500 默认
+        assert_eq!(extract_status_code("plain vendor id"), 500);
+        // 锚点 JSON 损坏 → 回退旧解析/默认
+        assert_eq!(extract_status_code("vendor-upstream-status|{bad json"), 500);
+    }
 
     #[test]
     fn test_error_category_from_status() {

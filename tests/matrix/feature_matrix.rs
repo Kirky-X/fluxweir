@@ -153,7 +153,7 @@ fn test_server_module_available() {
 
 /// grpc feature：gRPC 服务器模块可访问（server 子模块，另受
 /// web-server + logging 门控——实际可运行组合为三 feature 联合）
-#[cfg(feature = "grpc")]
+#[cfg(all(feature = "web-server", feature = "logging", feature = "grpc"))]
 #[test]
 fn test_grpc_module_available() {
     let _ = std::marker::PhantomData::<fluxweir::server::GrpcServer>;

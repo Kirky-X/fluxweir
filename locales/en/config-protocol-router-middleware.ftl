@@ -14,7 +14,7 @@ config-abstract-id-empty = abstract_id of model { $model } in vendor { $vendor }
 config-embedding-group-model-mismatch = [vendors] compat_group "{ $group }" mixes upstream model IDs: vendor { $vendor_a } uses "{ $model_a }" but vendor { $vendor_b } uses "{ $model_b }" (within one compat_group the model_id must match case-insensitively)
 config-embedding-group-dimension-conflict = [vendors] compat_group "{ $group }" mixes declared dimensions: vendor { $vendor_a } model "{ $model_a }" declares { $dims_a } but vendor { $vendor_b } model "{ $model_b }" declares { $dims_b }
 config-embedding-group-cross-abstract = [vendors] compat_group "{ $group }" spans two abstract_id values: "{ $abstract_a }" (vendor { $vendor_a }) and "{ $abstract_b }" (vendor { $vendor_b }); one compat_group must serve exactly one abstract embedding model
-config-embedding-group-reserved-separator = [vendors] compat_group "{ $group }" must not contain the reserved separator "/::" — it would collide with the singleton group key "{vendor}/::{model}" of undeclared entries and silently break the never-swap default
+config-embedding-group-reserved-separator = [vendors] compat_group "{ $group }" must not contain the reserved separator "/::" — it would collide with the singleton group key "{"{"}vendor{"}"}/::{"{"}model{"}"}" of undeclared entries and silently break the never-swap default
 config-model-type-unknown = [vendors] model_type of model { $model } in vendor { $vendor } is invalid: "{ $model_type }" (valid values: chat / embedding / rerank)
 config-rerank-api-base-required = [vendors] vendor { $vendor } with type_ = "rerank" must declare api_base explicitly (there is no official default rerank endpoint)
 config-rerank-score-normalization-unknown = [routing] rerank_score_normalization is invalid: "{ $value }" (valid values: none / sigmoid / minmax)
@@ -92,7 +92,7 @@ protocol-anthropic-cache-breakpoints-injected = anthropic cache breakpoints inje
 protocol-anthropic-unknown-cache-anchor = unknown cache breakpoint anchor, skipped
 
 # ---- router/router.rs ----
-# 路由 Validation 以「锚点:取值」写入 field（恒英文），本地化在此单层完成
+# 路由 Validation 以 "<ftl键>|{json}" 锚点写入 field（恒英文），本地化在此单层完成
 error-validation-model-not-found = Request validation failed: model { $model } not found
 error-validation-global-model-disabled = Request validation failed: model { $model } not found: global model routing is disabled ([global_model].enabled=false)
 error-validation-vendor-unavailable = Request validation failed: vendor { $vendor } unavailable or not configured
@@ -232,3 +232,7 @@ protocol-responses-parse-response = responses response: { $error }
 
 # 路由解释
 router-excluded-disabled = vendor enabled={ $vendor } model enabled={ $model }
+
+# DI 装配失败（模块名与底层错误作为参数注入）
+config-di-module-failed = DI { $operation } of { $module } failed: { $error }
+error-all-candidates-unavailable = All candidates for model { $model } are currently unavailable; retry later.

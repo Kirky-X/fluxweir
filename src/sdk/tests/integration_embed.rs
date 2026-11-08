@@ -55,9 +55,18 @@ async fn embed_401_returns_auth_error() {
     let req = EmbedRequest::new("m", "x");
     let err = client.embed(&req).await.unwrap_err();
 
-    // embed 非 2xx 统一返回 Api 错误（kind 由 status 派生）。
-    // 这里仅断言错误发生即可。
-    let _ = err;
+    // embed 非 2xx 统一返回 Api 错误（kind 由 status 派生）——锁定变体与分类
+    match err {
+        crate::sdk::error::FluxweirSdkError::Api(api) => {
+            assert_eq!(api.status, 401, "必须保留上游状态码");
+            assert_eq!(
+                api.kind,
+                crate::sdk::error::ApiErrorKind::Authentication,
+                "401 必须分类为 Authentication"
+            );
+        }
+        other => panic!("401 必须映射 Api(Authentication)，实际 {other:?}"),
+    }
 }
 
 #[tokio::test]
@@ -98,4 +107,27 @@ async fn embed_sends_authorization_header() {
     let req = EmbedRequest::new("m", "x");
     let _ = client.embed(&req).await.unwrap();
     mock.assert();
+}
+
+#[tokio::test]
+async fn embed_2xx_non_json_is_protocol_error() {
+    let mut server = mockito::Server::new_async().await;
+    server
+        .mock("POST", "/v1/embeddings")
+        .with_status(200)
+        .with_header("content-type", "text/html")
+        .with_body("<html>gateway error page</html>")
+        .create();
+
+    let client = build_client(&server.url());
+    let err = client
+        .embed(&EmbedRequest::new("m", "x"))
+        .await
+        .expect_err("2xx 非 JSON 必须失败");
+    match err {
+        FluxweirSdkError::Protocol { message } => {
+            assert!(message.contains("invalid JSON"), "{message}");
+        }
+        other => panic!("2xx 非 JSON 必须归 Protocol，实际 {other:?}"),
+    }
 }

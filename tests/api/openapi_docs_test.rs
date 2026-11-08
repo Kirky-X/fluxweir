@@ -86,6 +86,7 @@ async fn build_app(docs_enabled: bool) -> Router {
         vendor_manager.clone(),
     ));
     let state = Arc::new(ApiState {
+        auth_cache: std::sync::Arc::new(Default::default()),
         config: config_manager,
         vendor_manager,
         router,

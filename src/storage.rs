@@ -7,7 +7,6 @@
 //! admin 读恒经存储后端，管道前沿不被虚构查询能力。
 
 use crate::error::GateError;
-use crate::i18n::t;
 use serde::{Deserialize, Serialize};
 
 /// 请求日志行：数据面写入与 admin 查询的共用契约。
@@ -389,19 +388,19 @@ pub enum CostGroupBy {
 
 fn unsupported_query() -> GateError {
     GateError::Config {
-        message: t("storage-log-query-unsupported"),
+        message: "storage-log-query-unsupported".to_string(),
     }
 }
 
 fn unsupported_affinity_query() -> GateError {
     GateError::Config {
-        message: t("storage-affinity-sticks-unsupported"),
+        message: "storage-affinity-sticks-unsupported".to_string(),
     }
 }
 
 fn unsupported_usage_query() -> GateError {
     GateError::Config {
-        message: t("storage-usage-stats-unsupported"),
+        message: "storage-usage-stats-unsupported".to_string(),
     }
 }
 

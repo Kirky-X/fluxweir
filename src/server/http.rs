@@ -105,13 +105,10 @@ pub async fn run(config_path: Option<String>) -> Result<(), FluxweirError> {
             .parse()
             .map_err(|e: std::net::AddrParseError| {
                 FluxweirError::from(GateError::Config {
-                    message: t_args(
-                        "main-invalid-server-host",
-                        &[
-                            ("host", server_config.host.clone()),
-                            ("error", e.to_string()),
-                        ],
-                    ),
+                    message: format!(
+            "main-invalid-server-host|{}",
+            serde_json::json!({ "host": server_config.host.clone(), "error": e.to_string() })
+        ),
                 })
             })?;
     let addr = SocketAddr::from((ipv4, server_config.port));
@@ -169,7 +166,10 @@ pub async fn run(config_path: Option<String>) -> Result<(), FluxweirError> {
                 )
             );
             return Err(FluxweirError::from(GateError::Config {
-                message: t_args("main-server-error", &[("error", e.to_string())]),
+                message: format!(
+                    "main-server-error|{}",
+                    serde_json::json!({ "error": e.to_string() })
+                ),
             }));
         }
     }
@@ -182,8 +182,9 @@ pub async fn run(config_path: Option<String>) -> Result<(), FluxweirError> {
             Ok(Ok(Ok(()))) => {}
             Ok(Ok(Err(e))) => return Err(e),
             Ok(Err(join_err)) => {
-                return Err(FluxweirError::from(GateError::Config {
-                    message: t_args("main-grpc-server-error", &[("error", join_err.to_string())]),
+                // 服务任务 join 失败（panic/取消）是进程内部故障，归 Io（500）。
+                return Err(FluxweirError::from(GateError::Io {
+                    message: join_err.to_string(),
                 }));
             }
             Err(_) => tracing::warn!(

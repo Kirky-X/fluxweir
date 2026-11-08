@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::error::GateError;
-use crate::i18n::{t, t_args};
+use crate::i18n::t;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
@@ -386,9 +386,9 @@ impl ProtocolConverter for OpenAIConverter {
                 .unwrap_or("unknown")
                 .to_string();
             return Err(GateError::Protocol {
-                source: t_args(
-                    "protocol-openai-error",
-                    &[("type", error_type), ("message", message)],
+                source: format!(
+                    "protocol-openai-error|{}",
+                    serde_json::json!({ "type": error_type, "message": message })
                 ),
                 inner: None,
             });
@@ -1032,7 +1032,7 @@ fn parse_openai_message(json: &Value) -> Result<Message, GateError> {
     let role = parse_message_role(json)?;
 
     let content = match json.get("content") {
-        Some(Value::String(s)) => parse_string_content(json, &role, s),
+        Some(Value::String(s)) => parse_string_content(json, &role, s)?,
         Some(Value::Array(arr)) => parse_array_content(arr),
         None | Some(Value::Null) => {
             // content 字段缺失或为 null，检查是否有 tool_calls
@@ -1076,22 +1076,26 @@ fn parse_message_role(json: &Value) -> Result<Role, GateError> {
 /// String content：工具角色消息 → ToolResult；带顶层 tool_calls →
 /// TextWithToolCalls（保留顶层 tool_calls）；
 /// 否则纯文本。
-fn parse_string_content(json: &Value, role: &Role, s: &str) -> MessageContent {
-    // 检查是否有 tool_call_id（工具角色消息）
+fn parse_string_content(json: &Value, role: &Role, s: &str) -> Result<MessageContent, GateError> {
+    // 工具角色消息必须带非空 tool_call_id：空串无法与 tool call 关联，
+    // 上游会拒收或误路由，因此在入口显式拒绝（400）。
     if *role == Role::Tool {
         let tool_call_id = json
             .get("tool_call_id")
             .and_then(|v| v.as_str())
-            .unwrap_or("")
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| GateError::Validation {
+                field: "tool_call_id".to_string(),
+            })?
             .to_string();
-        return MessageContent::ToolResult(ToolResult {
+        return Ok(MessageContent::ToolResult(ToolResult {
             tool_call_id,
             function_name: String::new(),
             content: s.to_string(),
             is_error: false,
-        });
+        }));
     }
-    if let Some(tool_calls) = parse_tool_calls_field(json) {
+    Ok(if let Some(tool_calls) = parse_tool_calls_field(json) {
         if s.is_empty() {
             MessageContent::ToolCalls(tool_calls)
         } else {
@@ -1103,7 +1107,7 @@ fn parse_string_content(json: &Value, role: &Role, s: &str) -> MessageContent {
         }
     } else {
         MessageContent::Text(s.to_string())
-    }
+    })
 }
 
 /// Array content：含工具调用块 → ToolCalls（解析为空回退 MultiModal）；
@@ -1116,7 +1120,27 @@ fn parse_array_content(arr: &[Value]) -> MessageContent {
     if has_tool_calls {
         let tool_calls: Vec<ToolCall> = arr.iter().filter_map(parse_tool_call_block).collect();
         if !tool_calls.is_empty() {
-            return MessageContent::ToolCalls(tool_calls);
+            // 同数组的 text 块必须与 tool_calls 一起保留（旧实现丢弃文本，
+            // 上游只看到工具调用）；纯文本块拼成 text，其余块仍走多模态面。
+            let text: String = arr
+                .iter()
+                .filter(|block| block.get("function").is_none())
+                .filter(|block| block.get("type").and_then(|t| t.as_str()) != Some("tool_call"))
+                .filter_map(parse_content_block)
+                .filter_map(|block| match block {
+                    crate::protocol::unified::ContentBlock::Text { text } => Some(text),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("");
+            if text.is_empty() {
+                return MessageContent::ToolCalls(tool_calls);
+            }
+            return MessageContent::TextWithToolCalls {
+                text,
+                tool_calls,
+                reasoning: None,
+            };
         }
     }
     let blocks = arr.iter().filter_map(parse_content_block).collect();

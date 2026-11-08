@@ -227,7 +227,7 @@ impl AsyncLogger {
     pub fn log(&self, log: RequestLog) -> Result<(), FluxweirError> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(FluxweirError::Database {
-                message: t("database-logger-shutdown"),
+                message: "database-logger-shutdown".to_string(),
             });
         }
         match self.sender.try_send(LogCommand::Write(log)) {
@@ -237,7 +237,7 @@ impl AsyncLogger {
                 Ok(())
             }
             Err(async_channel::TrySendError::Closed(_)) => Err(FluxweirError::Database {
-                message: t("database-logger-channel-closed"),
+                message: "database-logger-channel-closed".to_string(),
             }),
         }
     }
@@ -257,7 +257,7 @@ impl AsyncLogger {
     ) -> Result<(), FluxweirError> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(FluxweirError::Database {
-                message: t("database-logger-shutdown"),
+                message: "database-logger-shutdown".to_string(),
             });
         }
         match self.sender.try_send(LogCommand::UpdateStreamUsage {
@@ -275,7 +275,7 @@ impl AsyncLogger {
                 Ok(())
             }
             Err(async_channel::TrySendError::Closed(_)) => Err(FluxweirError::Database {
-                message: t("database-logger-channel-closed"),
+                message: "database-logger-channel-closed".to_string(),
             }),
         }
     }
@@ -300,12 +300,15 @@ impl AsyncLogger {
             .send(LogCommand::Shutdown)
             .await
             .map_err(|_| FluxweirError::Database {
-                message: t("database-logger-channel-closed"),
+                message: "database-logger-channel-closed".to_string(),
             })?;
         let handle = self.writer.lock().await.take();
         if let Some(handle) = handle {
             handle.await.map_err(|e| FluxweirError::Database {
-                message: t_args("database-logger-join-failed", &[("error", e.to_string())]),
+                message: format!(
+                    "database-logger-join-failed|{}",
+                    serde_json::json!({"error": e.to_string()})
+                ),
             })?;
         }
         Ok(())
@@ -812,7 +815,10 @@ mod tests {
         match result.unwrap_err() {
             FluxweirError::Database { message } => {
                 // message 经 FTL（随 locale），与直接查表结果一致
-                assert_eq!(message, t("database-logger-shutdown"));
+                assert_eq!(
+                    message, "database-logger-shutdown",
+                    "message 必须是语言中性锚点"
+                );
             }
             other => panic!("Expected Database error, got {:?}", other),
         }
@@ -1078,7 +1084,10 @@ mod tests {
         let rejected = logger.update_stream_usage("req-4", "resp", 1, 2, 3, None, None);
         match rejected {
             Err(FluxweirError::Database { message }) => {
-                assert_eq!(message, t("database-logger-shutdown"));
+                assert_eq!(
+                    message, "database-logger-shutdown",
+                    "message 必须是语言中性锚点"
+                );
             }
             other => panic!("Expected Database error, got {:?}", other),
         }

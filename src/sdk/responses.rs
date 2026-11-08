@@ -17,6 +17,13 @@ use crate::sdk::error::FluxweirSdkError;
 use crate::sdk::stream::stream_error_message;
 use crate::sdk::transport::send_with_retry;
 
+/// 2xx + 非 JSON：协议面故障（如 HTML 错误页），不是网络故障。
+fn non_json_protocol(_e: reqwest::Error) -> crate::sdk::error::FluxweirSdkError {
+    crate::sdk::error::FluxweirSdkError::Protocol {
+        message: "invalid JSON in response body".to_string(),
+    }
+}
+
 /// Responses 请求（`input` 为字符串或 item 数组，原样透传）。
 #[derive(Debug, Clone, Default)]
 pub struct ResponsesRequest {
@@ -392,7 +399,7 @@ impl FluxweirClient {
         let policy = self.retry_policy_for(&merged);
 
         let response = send_with_retry(&request, &policy).await?;
-        Ok(response.json().await?)
+        response.json().await.map_err(non_json_protocol)
     }
 
     /// 流式 `POST /v1/responses`（语义化 SSE 事件）。
@@ -441,7 +448,7 @@ impl FluxweirClient {
             .timeout(self.effective_timeout);
         let request = self.apply_default_headers(request);
         let response = send_with_retry(&request, &self.retry_policy).await?;
-        Ok(response.json().await?)
+        response.json().await.map_err(non_json_protocol)
     }
 
     /// `DELETE /v1/responses/{id}`。
@@ -459,7 +466,7 @@ impl FluxweirClient {
             .timeout(self.effective_timeout);
         let request = self.apply_default_headers(request);
         let response = send_with_retry(&request, &self.retry_policy).await?;
-        Ok(response.json().await?)
+        response.json().await.map_err(non_json_protocol)
     }
 
     /// `POST /v1/responses/{id}/cancel`：仅后台任务可取消（网关对非
@@ -478,7 +485,7 @@ impl FluxweirClient {
             .timeout(self.effective_timeout);
         let request = self.apply_default_headers(request);
         let response = send_with_retry(&request, &self.retry_policy).await?;
-        Ok(response.json().await?)
+        response.json().await.map_err(non_json_protocol)
     }
 
     /// `POST /v1/responses/input_tokens`：输入 token 估算（网关近似
@@ -519,6 +526,6 @@ impl FluxweirClient {
             .timeout(self.effective_timeout);
         let request = self.apply_default_headers(request);
         let response = send_with_retry(&request, &self.retry_policy).await?;
-        Ok(response.json().await?)
+        response.json().await.map_err(non_json_protocol)
     }
 }

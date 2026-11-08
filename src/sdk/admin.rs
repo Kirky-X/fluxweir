@@ -10,6 +10,13 @@ use crate::sdk::client::FluxweirClient;
 use crate::sdk::error::FluxweirSdkError;
 use crate::sdk::transport::send_with_retry;
 
+/// 2xx + 非 JSON：协议面故障（如 HTML 错误页），不是网络故障。
+fn non_json_protocol(_e: reqwest::Error) -> crate::sdk::error::FluxweirSdkError {
+    crate::sdk::error::FluxweirSdkError::Protocol {
+        message: "invalid JSON in response body".to_string(),
+    }
+}
+
 /// 模型能力目录条目 — 对齐网关 `GET /admin/models`（目录）。
 /// 定价单位 =「currency 计价，每 1M tokens」。
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -274,7 +281,7 @@ impl FluxweirClient {
         let request = self.apply_default_headers(request);
         let resp = send_with_retry(&request, &self.retry_policy).await?;
 
-        Ok(resp.json().await?)
+        resp.json().await.map_err(non_json_protocol)
     }
 
     /// PUT /admin/models/{model_id} — upsert 目录条目（path 标识
@@ -332,7 +339,7 @@ impl FluxweirClient {
         let request = self.apply_default_headers(request);
         let resp = send_with_retry(&request, &self.retry_policy).await?;
 
-        Ok(resp.json().await?)
+        resp.json().await.map_err(non_json_protocol)
     }
 
     /// GET /admin/sessions — 会话级聚合（成本/token/请求数/首末时间/标题）。
@@ -362,7 +369,7 @@ impl FluxweirClient {
         let request = self.apply_default_headers(request);
         let resp = send_with_retry(&request, &self.retry_policy).await?;
 
-        Ok(resp.json().await?)
+        resp.json().await.map_err(non_json_protocol)
     }
 
     /// GET /admin/context-stats — 按模型聚合上下文占用率与缓存份额。
@@ -382,7 +389,7 @@ impl FluxweirClient {
         let request = self.apply_default_headers(request);
         let resp = send_with_retry(&request, &self.retry_policy).await?;
 
-        Ok(resp.json().await?)
+        resp.json().await.map_err(non_json_protocol)
     }
 
     /// GET /api/v1/health — 服务健康状态（JSON 健康面在 /api/v1/health，
@@ -403,7 +410,7 @@ impl FluxweirClient {
         let request = self.apply_default_headers(request);
         let resp = send_with_retry(&request, &self.retry_policy).await?;
 
-        Ok(resp.json().await?)
+        resp.json().await.map_err(non_json_protocol)
     }
 
     /// GET /admin/quota/ledger — 配额账本读侧（逐窗 used/重置/作用域）。
@@ -430,7 +437,7 @@ impl FluxweirClient {
         let request = self.apply_default_headers(request);
         let resp = send_with_retry(&request, &self.retry_policy).await?;
 
-        Ok(resp.json().await?)
+        resp.json().await.map_err(non_json_protocol)
     }
 
     /// GET /admin/vendor-budgets — vendor 预算状态（占用/消耗率/重置倒计时）。
@@ -450,7 +457,7 @@ impl FluxweirClient {
         let request = self.apply_default_headers(request);
         let resp = send_with_retry(&request, &self.retry_policy).await?;
 
-        Ok(resp.json().await?)
+        resp.json().await.map_err(non_json_protocol)
     }
 
     /// POST /admin/catalog/sync — 触发模型目录自动同步（add-only 合并）。
@@ -476,13 +483,13 @@ impl FluxweirClient {
         let request = self.apply_default_headers(request);
         let resp = send_with_retry(&request, &self.retry_policy).await?;
 
-        Ok(resp.json().await?)
+        resp.json().await.map_err(non_json_protocol)
     }
 
     /// admin 写路径的 success 断言（2xx 由重试层
     /// [`send_with_retry`] 保证；`success=false` → Protocol 错误显性）。
     async fn assert_admin_ok(resp: reqwest::Response) -> Result<(), FluxweirSdkError> {
-        let body: AdminActionResponse = resp.json().await?;
+        let body: AdminActionResponse = resp.json().await.map_err(non_json_protocol)?;
         if !body.success {
             return Err(FluxweirSdkError::Protocol {
                 message: crate::i18n::t_args(

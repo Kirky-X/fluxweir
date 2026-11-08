@@ -304,7 +304,8 @@ async fn spawn_delayed_json_server(delay: Duration) -> String {
             body.len(),
             body
         );
-        sock.write_all(response.as_bytes()).await.unwrap();
+        // 客户端超时可能先断开：写端忽略 BrokenPipe，避免 detached task panic
+        let _ = sock.write_all(response.as_bytes()).await;
     });
     format!("http://{addr}")
 }

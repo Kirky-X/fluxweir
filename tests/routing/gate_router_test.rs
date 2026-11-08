@@ -1847,11 +1847,12 @@ mod cooldown_improvements {
     // ---- fail-open 安全网 ----
 
     /// (b) 两 vendor 全 Throttled（Token max_tokens=0 → check() 恒假 →
-    /// get_status Throttled）：门控关（默认）→ Validation 错误（现状）；
-    /// 开 → 回落忽略状态的候选集，返回其中之一。
+    /// get_status Throttled）：门控关（默认）→ 已声明模型全候选不可用
+    /// 返回 503（VendorUnavailable）；开 → 回落忽略状态的候选集，
+    /// 返回其中之一。
     #[tokio::test]
     async fn fail_open_returns_candidate_when_all_cooling() {
-        // 默认关：保持 Validation（router.rs 全剔除收敛错误）
+        // 默认关：已声明模型全候选不可用 → 503（VendorUnavailable）
         let (router_off, vm_off) = make_router(make_config(
             RoutingSection::default(),
             vec![make_vendor("v-a", 1.0, 0), make_vendor("v-b", 1.0, 0)],
@@ -1860,8 +1861,8 @@ mod cooldown_improvements {
         vm_off.initialize().await.expect("vendor init");
         let err = router_off.route("shared-model").await.unwrap_err();
         assert!(
-            matches!(err, GateError::Validation { .. }),
-            "门控关必须保持 Validation 现状: {err}"
+            matches!(err, GateError::VendorUnavailable { .. }),
+            "已声明模型全候选不可用必须 503（VendorUnavailable）: {err}"
         );
 
         // 开：fail-open 回落
@@ -3231,7 +3232,7 @@ mod route_gap_coverage {
         };
         assert!(field.contains("auto"), "错误需携带请求模型名: {field}");
         assert!(
-            field.starts_with("global-model-disabled:"),
+            field.starts_with("error-validation-global-model-disabled"),
             "错误需显性区分「全局开关关闭」与「模型不存在」锚点: {field}"
         );
         // 开关来源说明由本地化模板承载（error-validation-global-model-disabled）
@@ -3243,7 +3244,10 @@ mod route_gap_coverage {
 
     /// 用同一错误走 user_message 校验本地化模板含开关来源说明
     fn err_user_message_contains_switch_note(model: &str) -> bool {
-        let field = format!("global-model-disabled:{model}");
+        let field = format!(
+            "error-validation-global-model-disabled|{}",
+            serde_json::json!({"model": model})
+        );
         let message = GateError::Validation { field }.user_message();
         message.contains("global_model") || message.contains("全局模型")
     }
@@ -3448,12 +3452,12 @@ mod route_gap_coverage {
             .await
             .unwrap_err();
         assert!(
-            matches!(err, GateError::Validation { .. }),
-            "Unavailable 状态 vendor 必须按不可用收敛: {err:?}"
+            matches!(err, GateError::VendorUnavailable { .. }),
+            "Unavailable 状态 vendor 必须按服务面不可用（503）收敛: {err:?}"
         );
     }
 
-    /// 指定 vendor + model 提示命中：model_id 大写（经 to_lowercase 归一）
+    /// 指定 vendor + model 提示：未命中必须 400（不回落首模型）；命中路径见下
     /// 与 abstract_id 大写（第二匹配分支）都路由到 Direct 决策。
     #[tokio::test]
     async fn hints_vendor_model_hint_routes_direct_both_match_branches() {
@@ -4312,10 +4316,10 @@ mod route_gap_coverage {
 
     // ---- hints 提示回落 / batch 带内收缩 / 前缀候选对越界 ----
 
-    /// 指定 vendor + 未命中 model 提示：回落该 vendor 首个启用模型（Direct），
-    /// 不得因提示打偏拒绝请求；禁用条目必须跳过。
+    /// 指定 vendor + 未命中 model 提示：显式提示必须拒绝（400
+    /// model-not-found），不得静默回落首模型。
     #[tokio::test]
-    async fn hints_vendor_with_unmatched_model_hint_uses_first_enabled_model() {
+    async fn hints_vendor_with_unmatched_model_hint_is_rejected() {
         let (router, _vm, _cm) = make_router(
             RoutingSection::default(),
             vec![vendor_with(
@@ -4329,7 +4333,7 @@ mod route_gap_coverage {
             )],
         )
         .await;
-        let decision = router
+        let err = router
             .route_with_hints(
                 "shared-model",
                 Some("gx-alias"),
@@ -4341,13 +4345,11 @@ mod route_gap_coverage {
                 None,
             )
             .await
-            .expect("提示未命中必须回落首模型而非拒绝");
-        assert_eq!(decision.vendor.id, "gx-alias");
-        assert_eq!(
-            decision.model.model_id, "m-first",
-            "无提示命中时取首个启用模型（禁用条目跳过）"
+            .expect_err("显式 model 提示未命中必须拒绝（不得静默回落首模型）");
+        assert!(
+            matches!(&err, GateError::Validation { field } if field.starts_with("error-validation-model-not-found|")),
+            "模型提示未命中必须是 400 model-not-found: {err:?}"
         );
-        assert_eq!(decision.strategy, RoutingStrategy::Direct);
     }
 
     /// batch 标记但候选全部 supports_batch=false：带内收缩无实际收窄 → 保留
@@ -4517,7 +4519,7 @@ mod embedding_compat_group {
             .route_embedding("emb-shared")
             .await
             .expect_err("pin 厂商不可用必须显式失败，禁止跨组回退");
-        let message = error.to_string();
+        let message = error.user_message();
         assert!(
             message.contains("compat_group"),
             "错误必须含声明 compat_group 指引: {message}"
@@ -4594,7 +4596,7 @@ mod embedding_compat_group {
             !error.to_string().contains("outside"),
             "错误不得把请求改投组外厂商"
         );
-        assert!(error.to_string().contains("compat_group"));
+        assert!(error.user_message().contains("compat_group"));
     }
 
     /// 形态④：同一 abstract 两组 → 首次选中钉住一组，另一组永不参与；

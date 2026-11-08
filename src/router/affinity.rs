@@ -100,7 +100,18 @@ impl AffinityTable {
                 // 活跃续期：命中即重置 TTL；键恰在此刻被逐出时 expire 返回
                 // false，无碍本次命中（下次请求自然 miss 重新绑定）
                 let _ = self.backend.expire(&key, self.ttl).await;
-                String::from_utf8(value).ok()
+                match String::from_utf8(value) {
+                    Ok(vendor) => Some(vendor),
+                    Err(e) => {
+                        // 亲和值为非 UTF-8（后端脏数据/版本错配）：按未命中降级，
+                        // 但要留可观测线索，不能静默吞掉。
+                        tracing::warn!(
+                            error = %e,
+                            "affinity value is not valid UTF-8; treating as miss"
+                        );
+                        None
+                    }
+                }
             }
             // 存储出错同 lookup 的静默无亲和降级（不谎报命中）
             Ok(None) | Err(_) => None,
@@ -173,7 +184,16 @@ impl AffinityTable {
             .get(&Self::key(tenant, session_key))
             .await
             .ok()??;
-        String::from_utf8(value).ok()
+        match String::from_utf8(value) {
+            Ok(vendor) => Some(vendor),
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "affinity value is not valid UTF-8; treating as miss"
+                );
+                None
+            }
+        }
     }
 
     /// 键的剩余存活时长（秒级精度不足用 Duration）；未绑定 / 后端不支持

@@ -77,9 +77,9 @@ impl AffinityPersister {
             .send(StickCommand::Shutdown)
             .await
             .map_err(|_| GateError::Config {
-                message: t_args(
-                    "database-affinity-persist-channel-closed",
-                    &[("error", "sender closed".to_string())],
+                message: format!(
+                    "database-affinity-persist-channel-closed|{}",
+                    serde_json::json!({ "error": "sender closed".to_string() })
                 ),
             })
     }
@@ -95,12 +95,9 @@ impl AffinityPersister {
             .upsert_affinity_sticks(sticks)
             .await
             .map_err(|e| GateError::Config {
-                message: t_args(
-                    "database-affinity-persist-flush-failed",
-                    &[
-                        ("count", sticks.len().to_string()),
-                        ("error", e.to_string()),
-                    ],
+                message: format!(
+                    "database-affinity-persist-flush-failed|{}",
+                    serde_json::json!({ "count": sticks.len().to_string(), "error": e.to_string() })
                 ),
             })
     }
@@ -138,9 +135,9 @@ impl crate::storage::AffinityStickSink for AffinityPersister {
             .read_affinity_sticks(now, limit)
             .await
             .map_err(|e| GateError::Config {
-                message: t_args(
-                    "database-affinity-sticks-read-failed",
-                    &[("error", e.to_string())],
+                message: format!(
+                    "database-affinity-sticks-read-failed|{}",
+                    serde_json::json!({ "error": e.to_string() })
                 ),
             })
     }

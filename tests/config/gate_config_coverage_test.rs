@@ -394,10 +394,10 @@ concurrency = {{ requests_per_second = 1 }}
 "#
             ),
         );
-        let expected = fluxweir::i18n::t_args("config-vendor-id-empty", &[]);
+        let expected = "config-vendor-id-empty";
         match load_from(&path).map(|_| ()) {
             Err(GateError::Config { message }) => {
-                assert_eq!(message, expected, "空白 vendor id 必须报空白键原文");
+                assert_eq!(message, expected, "空白 vendor id 必须报空白键锚点");
             }
             other => panic!("空白 vendor id（{id:?}）必须报 Config 错误，实际 {other:?}"),
         }
@@ -407,10 +407,7 @@ concurrency = {{ requests_per_second = 1 }}
 /// 路由查找键空白拒绝（model_id）：同 vendor 内空白 model_id 加载即拒。
 #[test]
 fn loader_rejects_blank_model_id() {
-    let expected = fluxweir::i18n::t_args(
-        "config-model-id-empty",
-        &[("vendor", "blank_model_vendor".to_string())],
-    );
+    let expected = "config-model-id-empty|";
     match load_from(&temp_toml(
         "blank-model.toml",
         r#"
@@ -431,7 +428,10 @@ model_id = "  "
     .map(|_| ())
     {
         Err(GateError::Config { message }) => {
-            assert_eq!(message, expected, "空白 model_id 必须报空白键原文");
+            assert!(
+                message.starts_with(expected) && message.contains("blank_model_vendor"),
+                "空白 model_id 必须报锚点并点名厂商: {message}"
+            );
         }
         other => panic!("空白 model_id 必须报 Config 错误，实际 {other:?}"),
     }
@@ -440,13 +440,7 @@ model_id = "  "
 /// 路由查找键空白拒绝（abstract_id）：声明的 abstract_id 为空白时加载即拒。
 #[test]
 fn loader_rejects_blank_abstract_id() {
-    let expected = fluxweir::i18n::t_args(
-        "config-abstract-id-empty",
-        &[
-            ("vendor", "blank_abstract_vendor".to_string()),
-            ("model", "m-real".to_string()),
-        ],
-    );
+    let expected = "config-abstract-id-empty|";
     match load_from(&temp_toml(
         "blank-abstract.toml",
         r#"
@@ -468,7 +462,10 @@ abstract_id = ""
     .map(|_| ())
     {
         Err(GateError::Config { message }) => {
-            assert_eq!(message, expected, "空白 abstract_id 必须报空白键原文");
+            assert!(
+                message.starts_with(expected) && message.contains("m-real"),
+                "空白 abstract_id 必须报锚点并点名模型: {message}"
+            );
         }
         other => panic!("空白 abstract_id 必须报 Config 错误，实际 {other:?}"),
     }
@@ -856,7 +853,9 @@ fn snapshot_and_tmp_write_fall_back_to_cwd_for_bare_relative_paths() {
     };
     std::env::set_current_dir(&sandbox).expect("chdir into sandbox");
 
-    std::fs::write("nx-cov-cwd-config.toml", "seed").expect("seed cwd config");
+    // 快照基线读磁盘原文：种子必须是可解析 TOML（生产磁盘文件本就来自加载路径）
+    let seed = toml::to_string_pretty(&minimal_config("cwd_v1")).expect("serialize seed");
+    std::fs::write("nx-cov-cwd-config.toml", seed).expect("seed cwd config");
 
     let manager = ConfigManager::new(minimal_config("cwd_v1"));
     manager.set_path(PathBuf::from("nx-cov-cwd-config.toml"));

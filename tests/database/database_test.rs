@@ -1186,7 +1186,6 @@ mod async_logger_gap {
     use dbnexus::{DbConfig, DbPool};
     use fluxweir::database::{AsyncLogger, AsyncLoggerHandle, LogFilter, Repository, RequestLog};
     use fluxweir::error::FluxweirError;
-    use fluxweir::i18n::t;
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -1245,7 +1244,10 @@ mod async_logger_gap {
         let err = logger.log(sample_log("after-shutdown")).unwrap_err();
         match err {
             FluxweirError::Database { message } => {
-                assert_eq!(message, t("database-logger-shutdown"));
+                assert_eq!(
+                    message, "database-logger-shutdown",
+                    "message 必须是语言中性锚点"
+                );
             }
             other => panic!("Expected Database error, got {other:?}"),
         }
@@ -1291,7 +1293,10 @@ mod async_logger_gap {
         let err = logger.shutdown().await.unwrap_err();
         match err {
             FluxweirError::Database { message } => {
-                assert_eq!(message, t("database-logger-channel-closed"));
+                assert_eq!(
+                    message, "database-logger-channel-closed",
+                    "message 必须是语言中性锚点"
+                );
             }
             other => panic!("Expected Database error, got {other:?}"),
         }
@@ -1436,8 +1441,9 @@ mod database_gap {
             Database::new(&resolve_sqlite_url(db_path.to_string_lossy().as_ref()), 1).await;
 
         match result {
-            Err(FluxweirError::Database { .. }) => {}
-            Err(other) => panic!("Expected Database error, got {other:?}"),
+            // 目录创建为纯 IO 失败 → Gate(Io)（错误分类收口后不再伪装 Database）
+            Err(FluxweirError::Gate(fluxweir::error::GateError::Io { .. })) => {}
+            Err(other) => panic!("Expected Gate(Io) error, got {other:?}"),
             Ok(_) => panic!("父路径是文件时必须失败"),
         }
 

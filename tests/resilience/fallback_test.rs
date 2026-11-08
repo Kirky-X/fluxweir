@@ -533,6 +533,7 @@ mod cover_all_paths {
 
         let state = Arc::new(ApiState {
             affinity_writer: None,
+            auth_cache: std::sync::Arc::new(Default::default()),
             config: config_manager,
             vendor_manager,
             router,

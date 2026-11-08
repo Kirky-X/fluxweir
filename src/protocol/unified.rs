@@ -358,34 +358,34 @@ pub(crate) fn validate_tool_schemas(tools: &[Tool]) -> Result<(), GateError> {
         let parameters = &tool.function.parameters;
         let size = serde_json::to_vec(parameters)
             .map_err(|e| GateError::Validation {
-                field: crate::i18n::t_args(
-                    "protocol-tools-param-serialize",
-                    &[("index", index.to_string()), ("error", e.to_string())],
+                field: format!(
+                    "protocol-tools-param-serialize|{}",
+                    serde_json::json!({"index": index.to_string(), "error": e.to_string()})
                 ),
             })?
             .len();
         if size > MAX_TOOL_SCHEMA_BYTES {
             return Err(GateError::Validation {
-                field: crate::i18n::t_args(
-                    "protocol-tools-param-size",
-                    &[
-                        ("index", index.to_string()),
-                        ("size", size.to_string()),
-                        ("max", MAX_TOOL_SCHEMA_BYTES.to_string()),
-                    ],
+                field: format!(
+                    "protocol-tools-param-size|{}",
+                    serde_json::json!({
+                        "index": index.to_string(),
+                        "size": size.to_string(),
+                        "max": MAX_TOOL_SCHEMA_BYTES.to_string()
+                    })
                 ),
             });
         }
         let depth = json_depth(parameters);
         if depth > MAX_TOOL_SCHEMA_DEPTH {
             return Err(GateError::Validation {
-                field: crate::i18n::t_args(
-                    "protocol-tools-param-depth",
-                    &[
-                        ("index", index.to_string()),
-                        ("depth", depth.to_string()),
-                        ("max", MAX_TOOL_SCHEMA_DEPTH.to_string()),
-                    ],
+                field: format!(
+                    "protocol-tools-param-depth|{}",
+                    serde_json::json!({
+                        "index": index.to_string(),
+                        "depth": depth.to_string(),
+                        "max": MAX_TOOL_SCHEMA_DEPTH.to_string()
+                    })
                 ),
             });
         }
@@ -1645,8 +1645,8 @@ mod tests {
             panic!("expected Validation, got {err:?}")
         };
         assert!(
-            field.contains("tools[0].parameters"),
-            "定位到出错工具: {field}"
+            field.contains("\"index\":\"0\""),
+            "定位到出错工具下标: {field}"
         );
         assert!(
             field.contains(&MAX_TOOL_SCHEMA_BYTES.to_string()),
@@ -1686,7 +1686,7 @@ mod tests {
             panic!("expected Validation, got {err:?}")
         };
         assert!(
-            field.contains("tools[1].parameters"),
+            field.contains("\"index\":\"1\""),
             "第二个工具超限，定位下标须为 1: {field}"
         );
     }

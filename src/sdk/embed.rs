@@ -133,8 +133,9 @@ struct EmbedPayload<'a> {
     dimensions: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     encoding_format: Option<EmbedEncodingFormat>,
-    #[serde(flatten)]
-    params: crate::sdk::config::OpenAiParams,
+    /// 合法共享字段：OpenAI 系端点通用的最终用户标识
+    #[serde(skip_serializing_if = "Option::is_none")]
+    user: Option<&'a str>,
 }
 
 impl FluxweirClient {
@@ -147,7 +148,9 @@ impl FluxweirClient {
             input: &req.input,
             dimensions: req.dimensions,
             encoding_format: req.encoding_format,
-            params: merged.openai_params(),
+            user: merged.user.as_deref(),
+            // 不 flatten OpenAiParams：embedding 端点不接受 chat 采样参数
+            //（stream=false / temperature / max_tokens 等会被上游拒收或忽略）
         };
 
         let url = self
@@ -168,7 +171,37 @@ impl FluxweirClient {
         let policy = self.retry_policy_for(&merged);
         let resp = send_with_retry(&request, &policy).await?;
 
-        let embed_resp: EmbedResponse = resp.json().await?;
+        let embed_resp: EmbedResponse = resp.json().await.map_err(|_e| {
+            // 2xx + 非 JSON 是协议面故障（如 HTML 错误页），不是网络故障
+            // 只给固定分类：reqwest Display 可能带调用方自配 URL
+            FluxweirSdkError::Protocol {
+                message: "invalid JSON in response body".to_string(),
+            }
+        })?;
         Ok(embed_resp)
+    }
+}
+
+#[cfg(test)]
+mod payload_tests {
+    use super::{EmbedEncodingFormat, EmbedInput, EmbedPayload};
+
+    #[test]
+    fn embed_wire_omits_chat_sampling_params_and_keeps_user() {
+        let input = EmbedInput::Text("hello".to_string());
+        let payload = EmbedPayload {
+            model: "text-embedding-3-small",
+            input: &input,
+            dimensions: Some(256),
+            encoding_format: Some(EmbedEncodingFormat::Base64),
+            user: Some("u-1"),
+        };
+        let wire = serde_json::to_value(&payload).expect("serialize");
+        assert!(wire.get("temperature").is_none(), "wire={wire}");
+        assert!(wire.get("top_p").is_none(), "wire={wire}");
+        assert!(wire.get("max_tokens").is_none(), "wire={wire}");
+        assert!(wire.get("stream").is_none(), "wire={wire}");
+        assert_eq!(wire["user"], "u-1");
+        assert_eq!(wire["dimensions"], 256);
     }
 }

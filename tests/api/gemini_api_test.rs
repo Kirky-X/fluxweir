@@ -90,6 +90,7 @@ mod tests {
             repository: repository.clone(),
         });
         Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager.clone(),
             vendor_manager: vendor_manager.clone(),
@@ -138,7 +139,13 @@ mod tests {
                 post(dispatch).get(get_model),
             )
             .route("/v1/chat/completions", post(|| async { "ok" }))
-            .layer(from_fn_with_state(config_manager, auth_middleware))
+            .layer(from_fn_with_state(
+                fluxweir::middleware::auth::AuthMiddlewareState {
+                    config: config_manager,
+                    cache: std::sync::Arc::new(Default::default()),
+                },
+                auth_middleware,
+            ))
             .with_state(state)
     }
 
@@ -897,6 +904,13 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
         assert_eq!(body["error"]["status"], "UNAVAILABLE", "{body}");
+        // 出站 message 是本地化安全文案，不得回显 Display 规范串或锚点载荷
+        let message = body["error"]["message"].as_str().unwrap_or_default();
+        assert!(
+            !message.contains("Protocol conversion error:"),
+            "不得回显 Display 规范串: {body}"
+        );
+        assert!(!message.contains('|'), "不得泄漏锚点载荷: {body}");
     }
     /// batchEmbedContents 校验面：model 不一致 / 维度冲突各自 400。
     #[tokio::test]

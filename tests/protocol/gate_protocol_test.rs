@@ -2328,12 +2328,16 @@ mod converter {
             }))
             .expect("兼容 function 块");
         match &unified.messages[0].content {
-            MessageContent::ToolCalls(calls) => {
-                assert_eq!(calls.len(), 1, "非工具块在工具聚合中被忽略");
-                assert_eq!(calls[0].id, "c2");
-                assert_eq!(calls[0].function.arguments, "{\"city\":\"BJ\"}");
+            // 同数组 text 块与 tool_calls 必须一起保留（不再丢弃文本）
+            MessageContent::TextWithToolCalls {
+                text, tool_calls, ..
+            } => {
+                assert_eq!(text, "ignored alongside tools");
+                assert_eq!(tool_calls.len(), 1);
+                assert_eq!(tool_calls[0].id, "c2");
+                assert_eq!(tool_calls[0].function.arguments, "{\"city\":\"BJ\"}");
             }
-            other => panic!("expected ToolCalls, got {other:?}"),
+            other => panic!("expected TextWithToolCalls, got {other:?}"),
         }
 
         let unified = converter
@@ -2572,17 +2576,9 @@ mod converter {
         );
         assert!(anthropic.can_passthrough(Protocol::Anthropic));
 
-        let body = json!({"model": "gpt-4", "messages": []});
-        assert_eq!(
-            openai.passthrough_request(body.clone()).unwrap(),
-            body,
-            "请求透传必须零改动"
-        );
-        assert_eq!(
-            openai.passthrough_response(body.clone()).unwrap(),
-            body,
-            "响应透传必须零改动"
-        );
+        // 透传恒等实现已从 trait 删除（跨协议调用会静默错传）：同协议
+        // 透传由调用方按 can_passthrough 判定后直接转发原始 body。
+        let _ = openai;
     }
 
     // IR 一次补全

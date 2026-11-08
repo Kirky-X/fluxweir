@@ -96,6 +96,7 @@ async fn setup(
     vendor_manager.set_vault(store.clone());
     let pool = memory_pool().await;
     let state = Arc::new(ApiState {
+        auth_cache: std::sync::Arc::new(Default::default()),
         affinity_writer: None,
         config: config_manager.clone(),
         vendor_manager: vendor_manager.clone(),

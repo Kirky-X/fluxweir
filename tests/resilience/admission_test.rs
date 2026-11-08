@@ -390,13 +390,14 @@ fn tier_for_request_resolves_auth_keys_table() {
         ..config_with(AdmissionSection::default())
     };
     let cm = ConfigManager::new(config);
+    let cache = fluxweir::middleware::auth::AuthContextCache::default();
 
     let mut headers = axum::http::HeaderMap::new();
     headers.insert(
         axum::http::header::AUTHORIZATION,
         format!("Bearer {key_dedicated}").parse().unwrap(),
     );
-    assert_eq!(tier_for_request(&cm, &headers), AuthTier::Dedicated);
+    assert_eq!(tier_for_request(&cm, &cache, &headers), AuthTier::Dedicated);
 
     // 未声明档位的 key → elastic；无 key → elastic
     let mut headers_other = axum::http::HeaderMap::new();
@@ -404,9 +405,12 @@ fn tier_for_request_resolves_auth_keys_table() {
         axum::http::header::AUTHORIZATION,
         "Bearer unknown-key".parse().unwrap(),
     );
-    assert_eq!(tier_for_request(&cm, &headers_other), AuthTier::Elastic);
     assert_eq!(
-        tier_for_request(&cm, &axum::http::HeaderMap::new()),
+        tier_for_request(&cm, &cache, &headers_other),
+        AuthTier::Elastic
+    );
+    assert_eq!(
+        tier_for_request(&cm, &cache, &axum::http::HeaderMap::new()),
         AuthTier::Elastic
     );
 }
@@ -528,6 +532,7 @@ mod full_chain {
             vendor_manager.clone(),
         ));
         let state = Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager,
             vendor_manager: vendor_manager.clone(),

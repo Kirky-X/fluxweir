@@ -8,7 +8,6 @@
 //! 必拒的约束键；无法等价表达的布尔 schema 退化为 `{"type":"object"}`。
 
 use crate::error::GateError;
-use crate::i18n::t_args;
 use serde_json::{json, Map, Value};
 
 /// 引用内联深度上限（防病态 schema 递归展开）。
@@ -132,8 +131,9 @@ fn resolve_ref(
 }
 
 fn schema_error(key: &str, detail: &str) -> GateError {
+    // field 存语言中性锚点：键 + pipe + JSON 参数，本地化在 user_message 单点完成。
     GateError::Validation {
-        field: t_args(key, &[("detail", detail.to_string())]),
+        field: format!("{key}|{}", json!({ "detail": detail })),
     }
 }
 

@@ -88,12 +88,14 @@ impl CostTracker {
 
     /// 生成快照 — 含 total + by_vendor + by_model 三组数据
     pub fn snapshot(&self) -> CostSnapshot {
+        // total 与 by_vendor 同源求和：旧实现单独读 total_micro_usd，与 map
+        // 遍历之间存在写窗口，快照可能出现 total ≠ Σby_vendor 的自相矛盾。
+        let mut total_micro: u64 = 0;
         let mut by_vendor = HashMap::with_capacity(self.by_vendor.len());
         for entry in self.by_vendor.iter() {
-            by_vendor.insert(
-                entry.key().clone(),
-                entry.value().load(Ordering::Relaxed) as f64 / MICRO_PER_USD,
-            );
+            let micro = entry.value().load(Ordering::Relaxed);
+            total_micro = total_micro.saturating_add(micro);
+            by_vendor.insert(entry.key().clone(), micro as f64 / MICRO_PER_USD);
         }
         let mut by_model = HashMap::with_capacity(self.by_model.len());
         for entry in self.by_model.iter() {
@@ -103,7 +105,7 @@ impl CostTracker {
             );
         }
         CostSnapshot {
-            total_usd: self.total_usd(),
+            total_usd: total_micro as f64 / MICRO_PER_USD,
             by_vendor,
             by_model,
         }

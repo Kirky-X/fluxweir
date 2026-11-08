@@ -435,7 +435,8 @@ impl ResponseCache {
         let dispatch_ref = &dispatch;
         // O4 语义缓存生产写路径：leader 成功回写后入列语义层（精确写失败不影响主流程）
         let semantic_layer = self.semantic.clone();
-        let semantic_body = self.semantic.as_ref().map(|_| body.clone());
+        // 仅成功分支消费：捕获引用（Copy），避免大 JSON 在其余三条路径白拷贝
+        let semantic_body: Option<&Value> = self.semantic.as_ref().map(|_| body);
         let leader_fut = {
             let computed = Arc::clone(&computed);
             let final_key_cell = Arc::clone(&final_key_cell);
@@ -453,7 +454,7 @@ impl ResponseCache {
                         *final_key_cell.lock().unwrap_or_else(|e| e.into_inner()) = Some(final_key);
                         *route_cell.lock().unwrap_or_else(|e| e.into_inner()) = Some(route);
                         if let (Some(sem), Some(sem_body)) =
-                            (semantic_layer.as_ref(), semantic_body.as_ref())
+                            (semantic_layer.as_ref(), semantic_body)
                         {
                             sem.store(&api_key_hash, sem_body, &value);
                         }

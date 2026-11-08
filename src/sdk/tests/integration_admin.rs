@@ -49,7 +49,7 @@ fn sdk_admin_routes_are_subset_of_server_route_table() {
     }
 
     // SDK (method, path) 清单逐项对位（方法 × 路径复合断言；POST global
-    // 为网关保留契约、SDK 不消费，不入清单—— 删死分支）
+    // 为网关保留契约、SDK 不消费，不入清单（已删除死分支）
     for (method, path) in crate::sdk::admin::sdk_routes::SDK_ADMIN_ROUTES {
         match (*method, *path) {
             ("PUT", "admin/models/{id}") => assert!(

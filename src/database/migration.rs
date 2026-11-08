@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 核心表版本化迁移（V1..=V8）——sqlite/postgres/mysql 启动建表唯一入口。
+//! 核心表版本化迁移（V1..=V9）——sqlite/postgres/mysql 启动建表唯一入口。
 //!
 //! V1（FROZEN）建四张初版表；V2 把 token_usage 原地升级为分账形态（新增
 //! api_key_hash 与四类 token/四项分项成本列，UNIQUE 键扩为 (vendor, model,
@@ -1743,6 +1743,33 @@ mod live_tests {
             applied_versions(&pool).await,
             all_core_versions(),
             "V5 已记账"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 迁移文件矩阵：9 个核心版本 × 3 个受支持后端必须全部可取；
+    /// 越界版本显式报错（不静默回落 sqlite）。
+    #[test]
+    fn core_migration_files_cover_supported_backends_and_versions() {
+        for backend in [
+            DatabaseBackend::Sqlite,
+            DatabaseBackend::Postgres,
+            DatabaseBackend::MySql,
+        ] {
+            for version in 1..=CORE_SCHEMA_VERSION {
+                let file = core_migration_file(backend, version).unwrap_or_else(|e| {
+                    panic!("backend={backend:?} version={version} 必须可构造: {e}")
+                });
+                let _ = file;
+            }
+        }
+        assert!(
+            core_migration_file(DatabaseBackend::Sqlite, CORE_SCHEMA_VERSION + 1).is_err(),
+            "越界版本必须显式报错"
         );
     }
 }

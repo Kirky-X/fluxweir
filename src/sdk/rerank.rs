@@ -10,6 +10,13 @@ use crate::sdk::config::RequestConfig;
 use crate::sdk::error::FluxweirSdkError;
 use crate::sdk::transport::send_with_retry;
 
+/// 2xx + 非 JSON：协议面故障（如 HTML 错误页），不是网络故障。
+fn non_json_protocol(_e: reqwest::Error) -> crate::sdk::error::FluxweirSdkError {
+    crate::sdk::error::FluxweirSdkError::Protocol {
+        message: "invalid JSON in response body".to_string(),
+    }
+}
+
 /// Rerank 请求（documents 为纯文本数组；对象形态由 REST 直接使用）。
 #[derive(Debug, Clone)]
 pub struct RerankRequest {
@@ -100,7 +107,7 @@ impl FluxweirClient {
         let policy = self.retry_policy_for(&merged);
         let resp = send_with_retry(&request, &policy).await?;
 
-        Ok(resp.json().await?)
+        resp.json().await.map_err(non_json_protocol)
     }
 
     /// 模型列表。`task = None` → `GET /v1/models`；Some → `?task=<值>`。
@@ -126,6 +133,6 @@ impl FluxweirClient {
         let request = self.apply_default_headers(request);
         let resp = send_with_retry(&request, &self.retry_policy).await?;
 
-        Ok(resp.json().await?)
+        resp.json().await.map_err(non_json_protocol)
     }
 }

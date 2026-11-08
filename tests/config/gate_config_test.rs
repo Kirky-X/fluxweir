@@ -634,8 +634,8 @@ concurrency = { requests_per_second = 10 }
             match err {
                 GateError::Config { message } => {
                     assert!(
-                        message.contains("anthropic_version"),
-                        "错误必须点名字段: {message}"
+                        message.contains("anthropic-version"),
+                        "错误必须点名字段（锚点键）: {message}"
                     );
                     assert!(message.contains(&vendor_id), "错误必须点名厂商: {message}");
                 }
@@ -1209,7 +1209,7 @@ mod quota_windows_config {
             ..Default::default()
         }];
         let err = validate_config(&config).expect_err("空 id 必须拒绝");
-        assert!(err.to_string().contains("quota.windows"), "{err}");
+        assert!(err.user_message().contains("quota.windows"), "{err}");
 
         config.quota.windows = vec![
             QuotaWindowConfig {
@@ -1591,7 +1591,7 @@ mod oidc_rules_config {
             let err = validate_config(&config(vec![OidcRuleConfig { claims, ..rule() }]))
                 .expect_err("claims 通配/前缀意图必须硬拦");
             assert!(
-                err.to_string().contains("*") || err.to_string().contains("?"),
+                err.user_message().contains('*') || err.user_message().contains('?'),
                 "{err}"
             );
         }

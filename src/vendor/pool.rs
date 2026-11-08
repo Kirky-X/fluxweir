@@ -60,9 +60,9 @@ impl ConnectionPool {
                 .acquire_owned()
                 .await
                 .map_err(|e: AcquireError| GateError::Config {
-                    message: crate::i18n::t_args(
-                        "vendor-pool-semaphore-closed",
-                        &[("error", e.to_string())],
+                    message: format!(
+                        "vendor-pool-semaphore-closed|{}",
+                        serde_json::json!({ "error": (e.to_string()) })
                     ),
                 })?;
         Ok(OwnedReqwestClient {

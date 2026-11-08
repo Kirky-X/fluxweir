@@ -1657,7 +1657,7 @@ mod queue {
         let (tx, _rx) =
             tokio::sync::oneshot::channel::<Result<UnifiedResponse, fluxweir::error::GateError>>();
         PendingRequest {
-            request: sample_request(),
+            request: std::sync::Arc::new(sample_request()),
             options: Default::default(),
             response_tx: tx,
             enqueued_at: std::time::Instant::now(),

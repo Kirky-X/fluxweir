@@ -91,17 +91,13 @@ allowed_headers = ["*"]
     let result = fluxweir::server::run(Some(config)).await;
 
     match result {
-        Err(FluxweirError::Database { message }) => {
-            assert_ne!(
-                message, "error-io-source",
-                "io 错误键必须注册进 FTL 目录（缺键回退返回键名）"
-            );
+        Err(FluxweirError::Gate(fluxweir::error::GateError::Io { message })) => {
             assert!(
                 message.contains("os error"),
-                "应携带底层 io 错误文本: {message}"
+                "应携带底层 io 错误文本（语言中性）: {message}"
             );
         }
-        other => panic!("端口被占应报 Database(io) 错误，实际 {other:?}"),
+        other => panic!("端口被占应报 Gate(Io) 错误，实际 {other:?}"),
     }
 
     drop(blocker);

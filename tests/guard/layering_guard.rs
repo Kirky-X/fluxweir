@@ -118,3 +118,51 @@ fn quota_contract_stays_layer_neutral() {
         );
     }
 }
+
+/// 配置基座（`always-on base`）保持层中性：不得依赖 web 层或路由层。
+///
+/// 背景：H1 修复前 `ConfigManager` 直接持有 `Arc<AuthContextCache>`（该类型
+/// 定义在 `middleware/auth.rs`，仅 `web-server` feature 下编译），把基座
+/// 层钉死到 web 层。缓存改挂 `ApiState` 后本断言防止回归。
+#[test]
+fn config_base_has_no_web_layer_dependency() {
+    let dir = repo_root().join("src/config");
+    let mut files = Vec::new();
+    collect_rs_files(&dir, &mut files);
+    assert!(
+        !files.is_empty(),
+        "扫描面为空说明路径失效（守卫会静默通过）：{dir:?}"
+    );
+
+    let mut violations = Vec::new();
+    for file in &files {
+        let Ok(text) = fs::read_to_string(file) else {
+            continue;
+        };
+        for (lineno, line) in text.lines().enumerate() {
+            let code = line.trim_start();
+            if code.starts_with("//") {
+                continue;
+            }
+            for needle in [
+                "crate::middleware",
+                "crate::api::",
+                "crate::server",
+                "axum::",
+                "tower::",
+            ] {
+                if line.contains(needle) {
+                    let rel = file.strip_prefix(repo_root()).unwrap_or(file);
+                    violations.push(format!("{}:{}: {needle}", rel.display(), lineno + 1));
+                }
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "config 基座层不得依赖 web/路由层（会在 no-default-features 下破坏构建）。\n\
+         跨层状态请挂 ApiState 或根级契约缝。\n\
+         违规点：{violations:#?}"
+    );
+}

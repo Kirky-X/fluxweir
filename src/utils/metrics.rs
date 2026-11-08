@@ -1086,9 +1086,16 @@ impl GlobalMetrics {
             .map(|guard| guard.values().cloned().collect())
             .unwrap_or_default();
 
-        let top1_share = self.top1_share();
-        let share_entropy = self.share_entropy();
-        if self.should_alert() {
+        // 份额单次快照：traffic_shares 每次调用都会推进窗口 last_seen，
+        // 旧实现 top1/entropy/should_alert 各取一次 → 多次锁 + 窗口推进不一致。
+        let shares = self.traffic_shares();
+        let top1_share = shares
+            .iter()
+            .map(|(_, share)| *share)
+            .fold(0.0_f64, f64::max);
+        let share_entropy = entropy_from_shares(&shares);
+        let alert = shares.iter().filter(|(_, share)| *share > 0.0).count() > 2 && top1_share > 0.9;
+        if alert {
             tracing::warn!(
                 top1_share,
                 share_entropy,
@@ -1372,7 +1379,7 @@ impl VendorMetrics {
         if self.cache_input_tokens_sum == 0 {
             return 0.0;
         }
-        self.cache_read_tokens_sum as f64 / self.cache_input_tokens_sum as f64
+        (self.cache_read_tokens_sum as f64 / self.cache_input_tokens_sum as f64).clamp(0.0, 1.0)
     }
 
     pub fn avg_duration_ms(&self) -> f64 {
@@ -1381,6 +1388,17 @@ impl VendorMetrics {
         }
         (self.total_duration_ns as f64 / self.requests as f64) / 1_000_000.0
     }
+}
+
+/// 份额序列 Shannon 熵（归一到 [0,1]）；与 [`GlobalMetrics::share_entropy`]
+/// 同口径，供快照在单次取份额后复用。
+fn entropy_from_shares(shares: &[(String, f64)]) -> f64 {
+    let v = shares.len();
+    if v <= 1 {
+        return 0.0;
+    }
+    let h: f64 = -shares.iter().map(|(_, p)| p * p.ln()).sum::<f64>();
+    h / (v as f64).ln()
 }
 
 /// 指标快照 — 可序列化返回给客户端

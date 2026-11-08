@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 //! 崩溃安全状态文件读取（magpie-absorb-r1 R-state-001，吸收自 magpie
-//! `internal/lastgood` 的断电全零文件事故教训）：主文件校验失败 → 改名
-//! `*.bad-<unix_ts>` 隔离（保留取证现场）→ 回退 `*.bak`；`.bak` 也坏 →
-//! `Unrecoverable`（调用方 fail-closed：vault 拒绝启动空库、config 报加载
-//! 错误——**绝不当空值用**）。写侧原子性（temp+rename）由既有落盘路径
-//! 承担，本模块只补读侧回退与 `.bak` 生命周期。
+//! `internal/lastgood` 的断电全零文件事故教训）：**先验 `.bak`**——恢复源
+//! 可用即用其内容，才把坏主文件改名 `*.bad-<unix_ts>` 隔离（保留取证
+//! 现场）；无可用恢复源时主文件原位保留并返回 `Unrecoverable`（调用方
+//! fail-closed：vault 拒绝启动空库、config 报加载错误——**绝不当空值用**）。
+//! 写侧原子性（temp+rename）由既有落盘路径承担，本模块只补读侧回退与
+//! `.bak` 生命周期。
 
 use std::path::{Path, PathBuf};
 

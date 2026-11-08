@@ -177,6 +177,7 @@ async fn make_state(config: Config) -> Arc<ApiState> {
     ));
 
     Arc::new(ApiState {
+        auth_cache: std::sync::Arc::new(Default::default()),
         affinity_writer: None,
         config: config_manager,
         vendor_manager,

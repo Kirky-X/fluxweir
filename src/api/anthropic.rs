@@ -924,7 +924,11 @@ async fn dispatch_unified_request(
     #[cfg(not(feature = "resilience"))]
     match state
         .vendor_manager
-        .execute_request_with_options(&decision.vendor.id, request, ctx.call_options.clone())
+        .execute_request_with_options(
+            &decision.vendor.id,
+            std::sync::Arc::new(request),
+            ctx.call_options.clone(),
+        )
         .await
     {
         Ok(r) => Ok((r, decision, axum::http::HeaderMap::new())),

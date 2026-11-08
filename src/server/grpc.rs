@@ -16,7 +16,6 @@ use crate::config::{ConfigManager, GrpcConfig};
 use crate::error::FluxweirError;
 use crate::error::GateError;
 use crate::i18n::{t, t_args};
-use crate::middleware::auth::ApiAuthState;
 use crate::server::bootstrap;
 
 /// 已装配未启动的 gRPC 服务器；[grpc] 缺席或 `enabled=false` 时 [`build`] 返回 `None`。
@@ -52,7 +51,10 @@ impl GrpcServer {
             .await
             .map_err(|e| {
                 FluxweirError::from(GateError::Config {
-                    message: t_args("main-grpc-server-error", &[("error", e.to_string())]),
+                    message: format!(
+                        "main-grpc-server-error|{}",
+                        serde_json::json!({ "error": e.to_string() })
+                    ),
                 })
             })?;
         tracing::info!("{}", t_args("main-grpc-stopped", &[("addr", addr)]));
@@ -76,25 +78,31 @@ pub(crate) fn build(
         }
     };
     let addr = grpc_addr(&grpc_config)?;
-    let config = sdforge_grpc_config(config_manager, &grpc_config);
+    let config = sdforge_grpc_config(config_manager, &assembly.api_state.auth_cache, &grpc_config);
     Ok(Some(GrpcServer { addr, config }))
 }
 
 /// 监听地址解析（host 仅接受 IPv4）。
 fn grpc_addr(grpc_config: &GrpcConfig) -> Result<SocketAddr, FluxweirError> {
-    let ipv4: std::net::Ipv4Addr =
-        grpc_config
-            .host
-            .parse()
-            .map_err(|e: std::net::AddrParseError| {
-                FluxweirError::from(GateError::Config {
-                    message: t_args(
-                        "main-grpc-invalid-host",
-                        &[("host", grpc_config.host.clone()), ("error", e.to_string())],
-                    ),
-                })
-            })?;
-    Ok(SocketAddr::from((ipv4, grpc_config.port)))
+    let ipv4: std::net::Ipv4Addr = grpc_config.host.parse().map_err(
+        |e: std::net::AddrParseError| {
+            FluxweirError::from(GateError::Config {
+                message: format!(
+                    "main-grpc-invalid-host|{}",
+                    serde_json::json!({ "host": grpc_config.host.clone(), "error": e.to_string() })
+                ),
+            })
+        },
+    )?;
+    let addr = SocketAddr::from((ipv4, grpc_config.port));
+    if !ipv4.is_loopback() {
+        // 非回环绑定是显式选择，但必须留可观测线索（默认已改为 127.0.0.1）
+        tracing::warn!(
+            %addr,
+            "gRPC listener binds to a non-loopback address; ensure network exposure is intended"
+        );
+    }
+    Ok(addr)
 }
 
 /// GrpcServerConfig 构建（[grpc] 段 → sdforge 门面配置）。
@@ -103,6 +111,7 @@ fn grpc_addr(grpc_config: &GrpcConfig) -> Result<SocketAddr, FluxweirError> {
 /// 非 JWT）；TLS 恒 None，不经 sdforge 终结。
 fn sdforge_grpc_config(
     config_manager: &Arc<ConfigManager>,
+    auth_cache: &Arc<crate::middleware::auth::AuthContextCache>,
     grpc: &GrpcConfig,
 ) -> sdforge::grpc::GrpcServerConfig {
     sdforge::grpc::GrpcServerConfig {
@@ -114,6 +123,7 @@ fn sdforge_grpc_config(
         auth: None,
         auth_verifier: Some(Arc::new(FluxweirGrpcAuthVerifier {
             config_manager: Arc::clone(config_manager),
+            auth_cache: Arc::clone(auth_cache),
         })),
         ..Default::default()
     }
@@ -124,6 +134,8 @@ fn sdforge_grpc_config(
 /// `Err` 载荷为固定短语，不含凭据材料。
 struct FluxweirGrpcAuthVerifier {
     config_manager: Arc<ConfigManager>,
+    /// 与 HTTP auth 中间件同一实例：按配置快照代际复用 ApiAuthState
+    auth_cache: Arc<crate::middleware::auth::AuthContextCache>,
 }
 
 impl sdforge::security::grpc_auth::GrpcAuthVerifier for FluxweirGrpcAuthVerifier {
@@ -141,13 +153,9 @@ impl sdforge::security::grpc_auth::GrpcAuthVerifier for FluxweirGrpcAuthVerifier
             })
             .filter(|k| !k.is_empty())
             .ok_or_else(|| t("middleware-missing-api-key"))?;
-        let auth_state = {
-            let section = self.config_manager.read().auth.clone();
-            match section {
-                Some(s) => ApiAuthState::from_section(&s),
-                None => ApiAuthState::new(false),
-            }
-        };
+        // 与 HTTP 认证共享同一缓存：per-call 不再重建 key 摘要表
+        let snapshot = self.config_manager.read();
+        let auth_state = self.auth_cache.context(&snapshot).state.clone();
         if !auth_state.validate_key(&key) {
             return Err(t("middleware-invalid-api-key"));
         }

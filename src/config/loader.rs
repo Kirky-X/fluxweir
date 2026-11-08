@@ -31,7 +31,10 @@ impl ConfigLoader {
 
         if !path.exists() {
             return Err(GateError::Config {
-                message: t_args("config-file-not-found", &[("path", self.path.clone())]),
+                message: format!(
+                    "config-file-not-found|{}",
+                    serde_json::json!({ "path": self.path.clone() })
+                ),
             });
         }
 
@@ -51,13 +54,16 @@ pub fn load_config_from_path(path: &Path) -> Result<Config, GateError> {
     let loader_config = confers::loader::LoaderConfig::new().allow_absolute();
     let annotated =
         confers::loader::load_file(path, &loader_config).map_err(|e| GateError::Config {
-            message: t_args("config-load-failed", &[("error", e.to_string())]),
+            message: format!(
+                "config-load-failed|{}",
+                serde_json::json!({ "error": redact_quoted(&e.to_string()) })
+            ),
         })?;
     // 错误有意脱敏：只报字段路径不回显出错值（配置值可能是密钥原文）
     let config: Config = annotated.to_typed().map_err(|e| GateError::Config {
-        message: t_args(
-            "config-parse-failed",
-            &[("error", locate_data_error(&e.to_string(), path))],
+        message: format!(
+            "config-parse-failed|{}",
+            serde_json::json!({ "error": locate_data_error(&e.to_string(), path) })
         ),
     })?;
 
@@ -73,13 +79,10 @@ pub fn load_config_from_path(path: &Path) -> Result<Config, GateError> {
 pub fn parse_config_content(path: &Path, content: &str) -> Result<Config, GateError> {
     let format =
         confers::loader::detect_format_from_path(path).ok_or_else(|| GateError::Config {
-            message: t_args(
-                "config-parse-failed",
-                &[(
-                    "error",
-                    format!("unknown extension: {:?}", path.extension()),
-                )],
-            ),
+            message: format!(
+            "config-parse-failed|{}",
+            serde_json::json!({ "error": format!("unknown extension: {:?}", path.extension()), })
+        ),
         })?;
     let annotated = confers::loader::parse_content(
         content,
@@ -88,10 +91,16 @@ pub fn parse_config_content(path: &Path, content: &str) -> Result<Config, GateEr
         Some(path),
     )
     .map_err(|e| GateError::Config {
-        message: t_args("config-parse-failed", &[("error", e.to_string())]),
+        message: format!(
+            "config-parse-failed|{}",
+            serde_json::json!({ "error": redact_quoted(&e.to_string()) })
+        ),
     })?;
     let config: Config = annotated.to_typed().map_err(|e| GateError::Config {
-        message: t_args("config-parse-failed", &[("error", e.to_string())]),
+        message: format!(
+            "config-parse-failed|{}",
+            serde_json::json!({ "error": redact_quoted(&e.to_string()) })
+        ),
     })?;
 
     validate_config(&config)?;
@@ -103,20 +112,69 @@ pub fn parse_config_content(path: &Path, content: &str) -> Result<Config, GateEr
 /// （`data error at 'vendors[2]'`）、字段名为空，排障需人工比对结构体。
 /// 此时回落一次纯 serde TOML 解析，补出「字段名 + 位置」。只透出 missing
 /// field 类信息，其余错误保持原生脱敏口径——不回显配置值，值可能是密钥原文。
+/// 内容串解析无落盘文件可定位错误行：剥掉引号包裹的值片段再出站，
+/// 防配置值（可能是密钥原文）随解析错误回显。
+fn redact_quoted(message: &str) -> String {
+    let mut out = String::with_capacity(message.len());
+    let mut quote: Option<char> = None;
+    let mut buf = String::new();
+    for c in message.chars() {
+        match quote {
+            Some(q) if c == q => {
+                // 字段路径（vendors[2]、providers[0].key）保留可读性；
+                // 其余引号内容视为值，整体替换为 '***'。
+                // 仅严格字段路径（field、a.b[2].c）保留可读性；任何
+                // 含引号/空白/其他符号的内容都视为值并脱敏（防含 '['
+                // 的密钥或未配对引号绕过）。
+                // 长度上限 32：字段路径通常很短；纯 alnum 的长串（如 64 位
+                // hex 主钥）即便全由合法字符组成也按值脱敏。
+                let is_field_path = !buf.is_empty()
+                    && buf.len() <= 32
+                    && buf
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '[' | ']'));
+                if is_field_path {
+                    out.push(q);
+                    out.push_str(&buf);
+                    out.push(q);
+                } else {
+                    out.push('\'');
+                    out.push_str("***");
+                    out.push('\'');
+                }
+                buf.clear();
+                quote = None;
+            }
+            Some(_) => buf.push(c),
+            None if c == '"' || c == '\'' => quote = Some(c),
+            None => out.push(c),
+        }
+    }
+    // 未闭合引号（截断的消息）：内容同样不原样回显（可能正是密钥值）
+    if quote.is_some() {
+        out.push('\'');
+        out.push_str("***");
+    }
+    out
+}
+
 fn locate_data_error(original: &str, path: &Path) -> String {
+    // 所有出口都脱敏：解析错误可能带引号包裹的配置值（可能是密钥原文）
     let Ok(raw) = std::fs::read_to_string(path) else {
-        return original.to_string();
+        return redact_quoted(original);
     };
     let Err(error) = toml::from_str::<Config>(&raw) else {
-        return original.to_string();
+        return redact_quoted(original);
     };
     let message = error.message();
     if !message.contains("missing field") {
-        return original.to_string();
+        return redact_quoted(original);
     }
     match error.span().and_then(|span| line_column(&raw, span.start)) {
-        Some((line, column)) => format!("{message} at {}:{line}:{column}", path.display()),
-        None => message.to_string(),
+        Some((line, column)) => {
+            format!("{message} at {}:{line}:{column}", path.display())
+        }
+        None => redact_quoted(message),
     }
 }
 
@@ -230,9 +288,9 @@ fn validate_web_search(config: &Config) -> Result<(), GateError> {
                     && provider.api_key_vault_ref.trim().is_empty()
                 {
                     return Err(GateError::Config {
-                        message: t_args(
-                            "config-web-search-missing-key",
-                            &[("kind", provider.kind.clone())],
+                        message: format!(
+                            "config-web-search-missing-key|{}",
+                            serde_json::json!({ "kind": provider.kind.clone() })
                         ),
                     });
                 }
@@ -240,15 +298,15 @@ fn validate_web_search(config: &Config) -> Result<(), GateError> {
             "searxng" => {
                 if provider.base_url.trim().is_empty() {
                     return Err(GateError::Config {
-                        message: t("config-web-search-missing-base-url"),
+                        message: "config-web-search-missing-base-url".to_string(),
                     });
                 }
             }
             other => {
                 return Err(GateError::Config {
-                    message: t_args(
-                        "config-web-search-unknown-kind",
-                        &[("kind", other.to_string())],
+                    message: format!(
+                        "config-web-search-unknown-kind|{}",
+                        serde_json::json!({ "kind": other.to_string() })
                     ),
                 });
             }
@@ -276,16 +334,19 @@ fn validate_masking(config: &Config) -> Result<(), GateError> {
     for raw in m.kinds.iter().chain(m.actions.keys()) {
         if !MASKING_KINDS.contains(&raw.as_str()) {
             return Err(GateError::Config {
-                message: t_args("config-masking-kind-invalid", &[("kind", raw.clone())]),
+                message: format!(
+                    "config-masking-kind-invalid|{}",
+                    serde_json::json!({ "kind": raw.clone() })
+                ),
             });
         }
     }
     for value in m.actions.values() {
         if !matches!(value.as_str(), "mask" | "warn" | "block") {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-masking-action-invalid",
-                    &[("action", value.clone())],
+                message: format!(
+                    "config-masking-action-invalid|{}",
+                    serde_json::json!({ "action": value.clone() })
                 ),
             });
         }
@@ -293,22 +354,25 @@ fn validate_masking(config: &Config) -> Result<(), GateError> {
     #[cfg(feature = "masking")]
     {
         crate::masking::RuleDetector::validate_rules(&m.rules).map_err(|e| GateError::Config {
-            message: t_args("config-masking-rule-invalid", &[("detail", e.to_string())]),
+            message: format!(
+                "config-masking-rule-invalid|{}",
+                serde_json::json!({ "detail": e.to_string() })
+            ),
         })?;
     }
     if m.ledger.retention_days == 0 || m.ledger.retention_days > 3650 {
         return Err(GateError::Config {
-            message: t_args(
-                "config-masking-ledger-retention-invalid",
-                &[("value", m.ledger.retention_days.to_string())],
+            message: format!(
+                "config-masking-ledger-retention-invalid|{}",
+                serde_json::json!({ "value": m.ledger.retention_days.to_string() })
             ),
         });
     }
     if m.ledger.max_total_bytes < 4096 {
         return Err(GateError::Config {
-            message: t_args(
-                "config-masking-ledger-max-bytes-invalid",
-                &[("value", m.ledger.max_total_bytes.to_string())],
+            message: format!(
+                "config-masking-ledger-max-bytes-invalid|{}",
+                serde_json::json!({ "value": m.ledger.max_total_bytes.to_string() })
             ),
         });
     }
@@ -329,18 +393,15 @@ fn validate_difficulty(config: &Config) -> Result<(), GateError> {
     // V1: 权重不可同时为 0（融合退化为常数，无意义）
     if d.w_clf == 0.0 && d.w_rule == 0.0 {
         return Err(GateError::Config {
-            message: t("config-difficulty-weights-all-zero"),
+            message: "config-difficulty-weights-all-zero".to_string(),
         });
     }
     // V2: 阈值顺序
     if d.score_low >= d.score_high {
         return Err(GateError::Config {
-            message: t_args(
-                "config-difficulty-threshold-order",
-                &[
-                    ("low", d.score_low.to_string()),
-                    ("high", d.score_high.to_string()),
-                ],
+            message: format!(
+                "config-difficulty-threshold-order|{}",
+                serde_json::json!({ "low": d.score_low.to_string(), "high": d.score_high.to_string() })
             ),
         });
     }
@@ -350,9 +411,9 @@ fn validate_difficulty(config: &Config) -> Result<(), GateError> {
         "strong" | "cheap" | "nearest"
     ) {
         return Err(GateError::Config {
-            message: t_args(
-                "config-difficulty-policy-invalid",
-                &[("policy", d.mid_band_policy.clone())],
+            message: format!(
+                "config-difficulty-policy-invalid|{}",
+                serde_json::json!({ "policy": d.mid_band_policy.clone() })
             ),
         });
     }
@@ -360,16 +421,16 @@ fn validate_difficulty(config: &Config) -> Result<(), GateError> {
     #[cfg(not(feature = "difficulty-classifier"))]
     if d.w_clf > 0.0 {
         return Err(GateError::Config {
-            message: t("config-difficulty-clf-feature-missing"),
+            message: "config-difficulty-clf-feature-missing".to_string(),
         });
     }
     // V9: 数值域（NaN 绕过 ==/>= 比较、负权重、阈值越界——审查 MEDIUM 收口）
     for (name, value) in [("w_clf", d.w_clf), ("w_rule", d.w_rule)] {
         if !value.is_finite() || value < 0.0 {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-difficulty-field-invalid",
-                    &[("field", name.to_string()), ("value", value.to_string())],
+                message: format!(
+                    "config-difficulty-field-invalid|{}",
+                    serde_json::json!({ "field": name.to_string(), "value": value.to_string() })
                 ),
             });
         }
@@ -377,9 +438,9 @@ fn validate_difficulty(config: &Config) -> Result<(), GateError> {
     for (name, value) in [("score_low", d.score_low), ("score_high", d.score_high)] {
         if !value.is_finite() || !(0.0..=1.0).contains(&value) {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-difficulty-field-invalid",
-                    &[("field", name.to_string()), ("value", value.to_string())],
+                message: format!(
+                    "config-difficulty-field-invalid|{}",
+                    serde_json::json!({ "field": name.to_string(), "value": value.to_string() })
                 ),
             });
         }
@@ -388,23 +449,17 @@ fn validate_difficulty(config: &Config) -> Result<(), GateError> {
     // 取消超时兜底；engine 白名单防未知值静默回退）
     if !(1..=60_000).contains(&d.classifier.timeout_ms) {
         return Err(GateError::Config {
-            message: t_args(
-                "config-difficulty-field-invalid",
-                &[
-                    ("field", "classifier.timeout_ms".to_string()),
-                    ("value", d.classifier.timeout_ms.to_string()),
-                ],
+            message: format!(
+                "config-difficulty-field-invalid|{}",
+                serde_json::json!({ "field": "classifier.timeout_ms".to_string(), "value": d.classifier.timeout_ms.to_string() })
             ),
         });
     }
     if d.classifier.failure_threshold == 0 {
         return Err(GateError::Config {
-            message: t_args(
-                "config-difficulty-field-invalid",
-                &[
-                    ("field", "classifier.failure_threshold".to_string()),
-                    ("value", "0".to_string()),
-                ],
+            message: format!(
+                "config-difficulty-field-invalid|{}",
+                serde_json::json!({ "field": "classifier.failure_threshold".to_string(), "value": "0".to_string() })
             ),
         });
     }
@@ -413,12 +468,9 @@ fn validate_difficulty(config: &Config) -> Result<(), GateError> {
         "candle" | "onnx"
     ) {
         return Err(GateError::Config {
-            message: t_args(
-                "config-difficulty-field-invalid",
-                &[
-                    ("field", "classifier.engine".to_string()),
-                    ("value", d.classifier.engine.clone()),
-                ],
+            message: format!(
+                "config-difficulty-field-invalid|{}",
+                serde_json::json!({ "field": "classifier.engine".to_string(), "value": d.classifier.engine.clone() })
             ),
         });
     }
@@ -446,9 +498,9 @@ fn validate_difficulty(config: &Config) -> Result<(), GateError> {
         let normalized = group.trim().to_ascii_lowercase();
         if model_ids.contains(&normalized) {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-difficulty-group-collision",
-                    &[("name", group.clone())],
+                message: format!(
+                    "config-difficulty-group-collision|{}",
+                    serde_json::json!({ "name": group.clone() })
                 ),
             });
         }
@@ -469,13 +521,9 @@ fn validate_difficulty_lexicon(d: &DifficultySection) -> Result<(), GateError> {
         let Some(entries) = entries else { continue };
         if entries.len() > MAX_DIFFICULTY_LEXICON_ENTRIES {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-difficulty-lexicon-too-many",
-                    &[
-                        ("field", field.to_string()),
-                        ("count", entries.len().to_string()),
-                        ("max", MAX_DIFFICULTY_LEXICON_ENTRIES.to_string()),
-                    ],
+                message: format!(
+                    "config-difficulty-lexicon-too-many|{}",
+                    serde_json::json!({ "field": field.to_string(), "count": entries.len().to_string(), "max": MAX_DIFFICULTY_LEXICON_ENTRIES.to_string() })
                 ),
             });
         }
@@ -487,21 +535,17 @@ fn validate_difficulty_lexicon(d: &DifficultySection) -> Result<(), GateError> {
                 || entry.chars().count() > MAX_DIFFICULTY_LEXICON_ENTRY_CHARS;
             if invalid {
                 return Err(GateError::Config {
-                    message: t_args(
-                        "config-difficulty-lexicon-entry-invalid",
-                        &[
-                            ("field", field.to_string()),
-                            ("index", (index + 1).to_string()),
-                            ("max", MAX_DIFFICULTY_LEXICON_ENTRY_CHARS.to_string()),
-                        ],
+                    message: format!(
+                        "config-difficulty-lexicon-entry-invalid|{}",
+                        serde_json::json!({ "field": field.to_string(), "index": (index + 1).to_string(), "max": MAX_DIFFICULTY_LEXICON_ENTRY_CHARS.to_string() })
                     ),
                 });
             }
             if !seen.insert(entry.as_str()) {
                 return Err(GateError::Config {
-                    message: t_args(
-                        "config-difficulty-lexicon-duplicate",
-                        &[("field", field.to_string()), ("entry", entry.clone())],
+                    message: format!(
+                        "config-difficulty-lexicon-duplicate|{}",
+                        serde_json::json!({ "field": field.to_string(), "entry": entry.clone() })
                     ),
                 });
             }
@@ -526,9 +570,9 @@ fn validate_difficulty_scoring(d: &DifficultySection) -> Result<(), GateError> {
     ] {
         if !value.is_finite() || !(0.0..=1.0).contains(&value) {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-difficulty-scoring-invalid",
-                    &[("field", name.to_string()), ("value", value.to_string())],
+                message: format!(
+                    "config-difficulty-scoring-invalid|{}",
+                    serde_json::json!({ "field": name.to_string(), "value": value.to_string() })
                 ),
             });
         }
@@ -542,21 +586,18 @@ fn validate_difficulty_scoring(d: &DifficultySection) -> Result<(), GateError> {
     ] {
         if !value.is_finite() || value <= 0.0 {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-difficulty-scoring-invalid",
-                    &[("field", name.to_string()), ("value", value.to_string())],
+                message: format!(
+                    "config-difficulty-scoring-invalid|{}",
+                    serde_json::json!({ "field": name.to_string(), "value": value.to_string() })
                 ),
             });
         }
     }
     if !s.length_cap.is_finite() || !(1.0..=MAX_DIFFICULTY_LENGTH_CAP).contains(&s.length_cap) {
         return Err(GateError::Config {
-            message: t_args(
-                "config-difficulty-scoring-invalid",
-                &[
-                    ("field", "scoring.length_cap".to_string()),
-                    ("value", s.length_cap.to_string()),
-                ],
+            message: format!(
+                "config-difficulty-scoring-invalid|{}",
+                serde_json::json!({ "field": "scoring.length_cap".to_string(), "value": s.length_cap.to_string() })
             ),
         });
     }
@@ -581,18 +622,18 @@ fn validate_tier_name(
     };
     if name.trim().is_empty() {
         return Err(GateError::Config {
-            message: t_args(
-                "config-difficulty-tier-empty",
-                &[("tier", tier_label.to_string())],
+            message: format!(
+                "config-difficulty-tier-empty|{}",
+                serde_json::json!({ "tier": tier_label.to_string() })
             ),
         });
     }
     let normalized = name.trim().to_ascii_lowercase();
     if model_ids.contains(&normalized) {
         return Err(GateError::Config {
-            message: t_args(
-                "config-difficulty-tier-collision",
-                &[("kind", "tier".to_string()), ("name", name.to_string())],
+            message: format!(
+                "config-difficulty-tier-collision|{}",
+                serde_json::json!({ "kind": "tier".to_string(), "name": name.to_string() })
             ),
         });
     }
@@ -608,9 +649,9 @@ fn validate_tier_name(
     });
     if !served {
         return Err(GateError::Config {
-            message: t_args(
-                "config-difficulty-tier-no-candidate",
-                &[("tier", tier_label.to_string()), ("name", name.to_string())],
+            message: format!(
+                "config-difficulty-tier-no-candidate|{}",
+                serde_json::json!({ "tier": tier_label.to_string(), "name": name.to_string() })
             ),
         });
     }
@@ -667,25 +708,22 @@ fn validate_vendor_entries(config: &Config) -> Result<(), GateError> {
     for vendor in &config.vendors {
         if vendor.id.trim().is_empty() {
             return Err(GateError::Config {
-                message: t("config-vendor-id-empty"),
+                message: "config-vendor-id-empty".to_string(),
             });
         }
         if !vendor_ids.insert(vendor.id.to_ascii_lowercase()) {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-duplicate-vendor-id",
-                    &[("vendor", vendor.id.clone())],
+                message: format!(
+                    "config-duplicate-vendor-id|{}",
+                    serde_json::json!({ "vendor": vendor.id.clone() })
                 ),
             });
         }
         if vendor.id.trim().chars().count() > VENDOR_ID_MAX_CHARS {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-vendor-id-too-long",
-                    &[
-                        ("vendor", vendor.id.clone()),
-                        ("max", VENDOR_ID_MAX_CHARS.to_string()),
-                    ],
+                message: format!(
+                    "config-vendor-id-too-long|{}",
+                    serde_json::json!({ "vendor": vendor.id.clone(), "max": VENDOR_ID_MAX_CHARS.to_string() })
                 ),
             });
         }
@@ -693,9 +731,9 @@ fn validate_vendor_entries(config: &Config) -> Result<(), GateError> {
         if matches!(vendor.protocol(), VendorProtocol::Rerank) && vendor.api_base.trim().is_empty()
         {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-rerank-api-base-required",
-                    &[("vendor", vendor.id.clone())],
+                message: format!(
+                    "config-rerank-api-base-required|{}",
+                    serde_json::json!({ "vendor": vendor.id.clone() })
                 ),
             });
         }
@@ -707,9 +745,9 @@ fn validate_vendor_entries(config: &Config) -> Result<(), GateError> {
                 .is_some_and(|path| !path.trim().is_empty())
         {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-vendor-gemini-chat-path-conflict",
-                    &[("vendor", vendor.id.clone())],
+                message: format!(
+                    "config-vendor-gemini-chat-path-conflict|{}",
+                    serde_json::json!({ "vendor": vendor.id.clone() })
                 ),
             });
         }
@@ -726,12 +764,9 @@ fn validate_vendor_entries(config: &Config) -> Result<(), GateError> {
                     .all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit());
             if !valid {
                 return Err(GateError::Config {
-                    message: t_args(
-                        "config-vendor-anthropic-version-invalid",
-                        &[
-                            ("vendor", vendor.id.clone()),
-                            ("value", version.to_string()),
-                        ],
+                    message: format!(
+                        "config-vendor-anthropic-version-invalid|{}",
+                        serde_json::json!({ "vendor": vendor.id.clone(), "value": version.to_string() })
                     ),
                 });
             }
@@ -742,21 +777,18 @@ fn validate_vendor_entries(config: &Config) -> Result<(), GateError> {
         if let Some(raw) = vendor.api_style_raw() {
             let Some(style) = ApiStyle::parse(raw) else {
                 return Err(GateError::Config {
-                    message: t_args(
-                        "config-vendor-api-style-unknown",
-                        &[("vendor", vendor.id.clone()), ("value", raw.to_string())],
+                    message: format!(
+                        "config-vendor-api-style-unknown|{}",
+                        serde_json::json!({ "vendor": vendor.id.clone(), "value": raw.to_string() })
                     ),
                 });
             };
             if style == ApiStyle::Responses {
                 if !matches!(vendor.protocol(), VendorProtocol::OpenAi) {
                     return Err(GateError::Config {
-                        message: t_args(
-                            "config-vendor-api-style-requires-openai",
-                            &[
-                                ("vendor", vendor.id.clone()),
-                                ("type", vendor.type_.clone()),
-                            ],
+                        message: format!(
+                            "config-vendor-api-style-requires-openai|{}",
+                            serde_json::json!({ "vendor": vendor.id.clone(), "type": vendor.type_.clone() })
                         ),
                     });
                 }
@@ -766,9 +798,9 @@ fn validate_vendor_entries(config: &Config) -> Result<(), GateError> {
                     .is_some_and(|path| !path.trim().is_empty())
                 {
                     return Err(GateError::Config {
-                        message: t_args(
-                            "config-vendor-api-style-chat-path-conflict",
-                            &[("vendor", vendor.id.clone())],
+                        message: format!(
+                            "config-vendor-api-style-chat-path-conflict|{}",
+                            serde_json::json!({ "vendor": vendor.id.clone() })
                         ),
                     });
                 }
@@ -781,7 +813,10 @@ fn validate_vendor_entries(config: &Config) -> Result<(), GateError> {
         for model in &vendor.models {
             if model.model_id.trim().is_empty() {
                 return Err(GateError::Config {
-                    message: t_args("config-model-id-empty", &[("vendor", vendor.id.clone())]),
+                    message: format!(
+                        "config-model-id-empty|{}",
+                        serde_json::json!({ "vendor": vendor.id.clone() })
+                    ),
                 });
             }
             if model
@@ -790,23 +825,17 @@ fn validate_vendor_entries(config: &Config) -> Result<(), GateError> {
                 .is_some_and(|abstract_id| abstract_id.trim().is_empty())
             {
                 return Err(GateError::Config {
-                    message: t_args(
-                        "config-abstract-id-empty",
-                        &[
-                            ("vendor", vendor.id.clone()),
-                            ("model", model.model_id.clone()),
-                        ],
+                    message: format!(
+                        "config-abstract-id-empty|{}",
+                        serde_json::json!({ "vendor": vendor.id.clone(), "model": model.model_id.clone() })
                     ),
                 });
             }
             if !model_ids.insert(model.model_id.to_ascii_lowercase()) {
                 return Err(GateError::Config {
-                    message: t_args(
-                        "config-duplicate-model-id",
-                        &[
-                            ("vendor", vendor.id.clone()),
-                            ("model", model.model_id.clone()),
-                        ],
+                    message: format!(
+                        "config-duplicate-model-id|{}",
+                        serde_json::json!({ "vendor": vendor.id.clone(), "model": model.model_id.clone() })
                     ),
                 });
             }
@@ -831,13 +860,9 @@ fn validate_model_types(config: &Config) -> Result<(), GateError> {
                 continue;
             }
             return Err(GateError::Config {
-                message: t_args(
-                    "config-model-type-unknown",
-                    &[
-                        ("vendor", vendor.id.clone()),
-                        ("model", model.model_id.clone()),
-                        ("model_type", model_type.to_string()),
-                    ],
+                message: format!(
+                    "config-model-type-unknown|{}",
+                    serde_json::json!({ "vendor": vendor.id.clone(), "model": model.model_id.clone(), "model_type": model_type.to_string() })
                 ),
             });
         }
@@ -853,9 +878,9 @@ fn validate_rerank_score_normalization(config: &Config) -> Result<(), GateError>
         return Ok(());
     }
     Err(GateError::Config {
-        message: t_args(
-            "config-rerank-score-normalization-unknown",
-            &[("value", mode.to_string())],
+        message: format!(
+            "config-rerank-score-normalization-unknown|{}",
+            serde_json::json!({ "value": mode.to_string() })
         ),
     })
 }
@@ -1103,36 +1128,36 @@ fn validate_oidc_rules(config: &Config) -> Result<(), GateError> {
     for rule in rules {
         let issuer = rule.issuer.trim();
         let (scheme, rest) = issuer.split_once("://").ok_or_else(|| GateError::Config {
-            message: t_args(
-                "config-oidc-issuer-invalid",
-                &[("value", issuer.to_string())],
+            message: format!(
+                "config-oidc-issuer-invalid|{}",
+                serde_json::json!({ "value": issuer.to_string() })
             ),
         })?;
         if scheme != "https" && !is_loopback_source(scheme, rest) {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-oidc-issuer-scheme",
-                    &[("value", issuer.to_string())],
+                message: format!(
+                    "config-oidc-issuer-scheme|{}",
+                    serde_json::json!({ "value": issuer.to_string() })
                 ),
             });
         }
         if rule.audience.trim().is_empty() {
             return Err(GateError::Config {
-                message: t("config-oidc-audience-empty"),
+                message: "config-oidc-audience-empty".to_string(),
             });
         }
         for (key, value) in &rule.claims {
             if key.trim().is_empty() {
                 return Err(GateError::Config {
-                    message: t("config-oidc-claim-key-empty"),
+                    message: "config-oidc-claim-key-empty".to_string(),
                 });
             }
             if key.contains('*') || key.contains('?') || value.contains('*') || value.contains('?')
             {
                 return Err(GateError::Config {
-                    message: t_args(
-                        "config-oidc-claims-wildcard",
-                        &[("key", key.trim().to_string())],
+                    message: format!(
+                        "config-oidc-claims-wildcard|{}",
+                        serde_json::json!({ "key": key.trim().to_string() })
                     ),
                 });
             }
@@ -1142,28 +1167,25 @@ fn validate_oidc_rules(config: &Config) -> Result<(), GateError> {
             bind.len() == 64 && bind.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
         if !is_64_hex || !known_keys.contains(bind) {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-oidc-bind-key-missing",
-                    &[("hash", bind.to_string())],
+                message: format!(
+                    "config-oidc-bind-key-missing|{}",
+                    serde_json::json!({ "hash": bind.to_string() })
                 ),
             });
         }
         if !(1..=86_400).contains(&rule.ttl_secs) {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-oidc-ttl-out-of-range",
-                    &[("value", rule.ttl_secs.to_string())],
+                message: format!(
+                    "config-oidc-ttl-out-of-range|{}",
+                    serde_json::json!({ "value": rule.ttl_secs.to_string() })
                 ),
             });
         }
         if !seen.insert((issuer.to_string(), rule.audience.trim().to_string())) {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-oidc-rule-duplicate",
-                    &[
-                        ("issuer", issuer.to_string()),
-                        ("audience", rule.audience.trim().to_string()),
-                    ],
+                message: format!(
+                    "config-oidc-rule-duplicate|{}",
+                    serde_json::json!({ "issuer": issuer.to_string(), "audience": rule.audience.trim().to_string() })
                 ),
             });
         }
@@ -1358,17 +1380,17 @@ fn validate_otlp(config: &Config) -> Result<(), GateError> {
     let otlp = &config.otlp;
     if !(1..=86400).contains(&otlp.interval_secs) {
         return Err(GateError::Config {
-            message: t_args(
-                "config-otlp-interval-secs-out-of-range",
-                &[("value", otlp.interval_secs.to_string())],
+            message: format!(
+                "config-otlp-interval-secs-out-of-range|{}",
+                serde_json::json!({ "value": otlp.interval_secs.to_string() })
             ),
         });
     }
     if !(1..=300).contains(&otlp.timeout_secs) {
         return Err(GateError::Config {
-            message: t_args(
-                "config-otlp-timeout-secs-out-of-range",
-                &[("value", otlp.timeout_secs.to_string())],
+            message: format!(
+                "config-otlp-timeout-secs-out-of-range|{}",
+                serde_json::json!({ "value": otlp.timeout_secs.to_string() })
             ),
         });
     }
@@ -1378,25 +1400,25 @@ fn validate_otlp(config: &Config) -> Result<(), GateError> {
     let tracing = &otlp.tracing;
     if !(0.0..=1.0).contains(&tracing.sample_ratio) {
         return Err(GateError::Config {
-            message: t_args(
-                "config-otlp-tracing-sample-ratio-out-of-range",
-                &[("value", tracing.sample_ratio.to_string())],
+            message: format!(
+                "config-otlp-tracing-sample-ratio-out-of-range|{}",
+                serde_json::json!({ "value": tracing.sample_ratio.to_string() })
             ),
         });
     }
     if !matches!(tracing.protocol.as_str(), "http" | "grpc") {
         return Err(GateError::Config {
-            message: t_args(
-                "config-otlp-tracing-protocol-invalid",
-                &[("value", tracing.protocol.clone())],
+            message: format!(
+                "config-otlp-tracing-protocol-invalid|{}",
+                serde_json::json!({ "value": tracing.protocol.clone() })
             ),
         });
     }
     if !(1..=300).contains(&tracing.timeout_secs) {
         return Err(GateError::Config {
-            message: t_args(
-                "config-otlp-tracing-timeout-secs-out-of-range",
-                &[("value", tracing.timeout_secs.to_string())],
+            message: format!(
+                "config-otlp-tracing-timeout-secs-out-of-range|{}",
+                serde_json::json!({ "value": tracing.timeout_secs.to_string() })
             ),
         });
     }
@@ -1414,22 +1436,22 @@ fn validate_otlp(config: &Config) -> Result<(), GateError> {
 fn validate_otlp_endpoint(endpoint: &str) -> Result<(), GateError> {
     if endpoint.is_empty() {
         return Err(GateError::Config {
-            message: t_args("config-otlp-endpoint-required", &[]),
+            message: format!("config-otlp-endpoint-required|{}", serde_json::json!({})),
         });
     }
     let (scheme, rest) = endpoint
         .split_once("://")
         .ok_or_else(|| GateError::Config {
-            message: t_args(
-                "config-otlp-endpoint-invalid",
-                &[("value", endpoint.to_string())],
+            message: format!(
+                "config-otlp-endpoint-invalid|{}",
+                serde_json::json!({ "value": endpoint.to_string() })
             ),
         })?;
     if !matches!(scheme, "http" | "https") {
         return Err(GateError::Config {
-            message: t_args(
-                "config-otlp-endpoint-scheme",
-                &[("value", scheme.to_string())],
+            message: format!(
+                "config-otlp-endpoint-scheme|{}",
+                serde_json::json!({ "value": scheme.to_string() })
             ),
         });
     }
@@ -1437,14 +1459,14 @@ fn validate_otlp_endpoint(endpoint: &str) -> Result<(), GateError> {
     let authority = rest.split('/').next().unwrap_or_default();
     if authority.contains('@') {
         return Err(GateError::Config {
-            message: t_args("config-otlp-endpoint-userinfo", &[]),
+            message: format!("config-otlp-endpoint-userinfo|{}", serde_json::json!({})),
         });
     }
     if authority.is_empty() {
         return Err(GateError::Config {
-            message: t_args(
-                "config-otlp-endpoint-invalid",
-                &[("value", endpoint.to_string())],
+            message: format!(
+                "config-otlp-endpoint-invalid|{}",
+                serde_json::json!({ "value": endpoint.to_string() })
             ),
         });
     }
@@ -1472,7 +1494,7 @@ fn validate_affinity(config: &Config) -> Result<(), GateError> {
         for h in list.iter() {
             if h.is_empty() {
                 return Err(GateError::Config {
-                    message: t("config-affinity-session-headers-blank"),
+                    message: "config-affinity-session-headers-blank".to_string(),
                 });
             }
         }
@@ -1480,21 +1502,18 @@ fn validate_affinity(config: &Config) -> Result<(), GateError> {
     let raw = config.routing.affinity.mode.trim();
     if AffinityMode::parse(raw).is_none() {
         return Err(GateError::Config {
-            message: t_args(
-                "config-affinity-mode-unknown",
-                &[("value", raw.to_string())],
+            message: format!(
+                "config-affinity-mode-unknown|{}",
+                serde_json::json!({ "value": raw.to_string() })
             ),
         });
     }
     for vendor in &config.vendors {
         if !(1..=86400).contains(&vendor.cache_ttl_secs) {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-vendor-cache-ttl-secs-out-of-range",
-                    &[
-                        ("vendor", vendor.id.clone()),
-                        ("value", vendor.cache_ttl_secs.to_string()),
-                    ],
+                message: format!(
+                    "config-vendor-cache-ttl-secs-out-of-range|{}",
+                    serde_json::json!({ "vendor": vendor.id.clone(), "value": vendor.cache_ttl_secs.to_string() })
                 ),
             });
         }
@@ -1513,38 +1532,38 @@ fn validate_catalog_sync(config: &Config) -> Result<(), GateError> {
     }
     if section.timeout_secs == 0 {
         return Err(GateError::Config {
-            message: t("config-catalog-sync-timeout-zero"),
+            message: "config-catalog-sync-timeout-zero".to_string(),
         });
     }
     // scheme/authority 按字符串判定（`url` 是 optional 依赖，与 validate_otlp
     // 同口径，保 `--no-default-features` 构建可编译）。
     let raw = section.source_url.trim();
     let (scheme, rest) = raw.split_once("://").ok_or_else(|| GateError::Config {
-        message: t_args(
-            "config-catalog-sync-source-url-invalid",
-            &[("value", raw.to_string())],
+        message: format!(
+            "config-catalog-sync-source-url-invalid|{}",
+            serde_json::json!({ "value": raw.to_string() })
         ),
     })?;
     if scheme != "https" && !is_loopback_source(scheme, rest) {
         // 安全约束（delta spec Constraints）：源固定 HTTPS；唯一例外是
         // loopback 上的 http（嵌入式上游 / 本机镜像，不出主机）
         return Err(GateError::Config {
-            message: t_args(
-                "config-catalog-sync-source-url-scheme",
-                &[("value", raw.to_string())],
+            message: format!(
+                "config-catalog-sync-source-url-scheme|{}",
+                serde_json::json!({ "value": raw.to_string() })
             ),
         });
     }
     let authority = rest.split('/').next().unwrap_or_default();
     if authority.contains('@') {
         return Err(GateError::Config {
-            message: t("config-catalog-sync-source-url-userinfo"),
+            message: "config-catalog-sync-source-url-userinfo".to_string(),
         });
     }
     for (slug, vendor_id) in &section.alias {
         if slug.trim().is_empty() || vendor_id.trim().is_empty() {
             return Err(GateError::Config {
-                message: t("config-catalog-sync-alias-blank"),
+                message: "config-catalog-sync-alias-blank".to_string(),
             });
         }
     }
@@ -1569,9 +1588,9 @@ fn validate_metrics(config: &Config) -> Result<(), GateError> {
     let window = config.metrics.cost_restore_window_hours;
     if !(1..=8760).contains(&window) {
         return Err(GateError::Config {
-            message: t_args(
-                "config-metrics-cost-restore-window-hours-out-of-range",
-                &[("value", window.to_string())],
+            message: format!(
+                "config-metrics-cost-restore-window-hours-out-of-range|{}",
+                serde_json::json!({ "value": window.to_string() })
             ),
         });
     }
@@ -1584,25 +1603,25 @@ fn validate_responses(config: &Config) -> Result<(), GateError> {
     let responses = &config.responses;
     if !(1..=8760).contains(&responses.retention_hours) {
         return Err(GateError::Config {
-            message: t_args(
-                "config-responses-retention-hours-out-of-range",
-                &[("value", responses.retention_hours.to_string())],
+            message: format!(
+                "config-responses-retention-hours-out-of-range|{}",
+                serde_json::json!({ "value": responses.retention_hours.to_string() })
             ),
         });
     }
     if !(1024..=16 * 1024 * 1024).contains(&responses.max_response_bytes) {
         return Err(GateError::Config {
-            message: t_args(
-                "config-responses-max-response-bytes-out-of-range",
-                &[("value", responses.max_response_bytes.to_string())],
+            message: format!(
+                "config-responses-max-response-bytes-out-of-range|{}",
+                serde_json::json!({ "value": responses.max_response_bytes.to_string() })
             ),
         });
     }
     if !(1..=256).contains(&responses.max_background_jobs) {
         return Err(GateError::Config {
-            message: t_args(
-                "config-responses-max-background-jobs-out-of-range",
-                &[("value", responses.max_background_jobs.to_string())],
+            message: format!(
+                "config-responses-max-background-jobs-out-of-range|{}",
+                serde_json::json!({ "value": responses.max_background_jobs.to_string() })
             ),
         });
     }
@@ -1641,9 +1660,9 @@ fn validate_embedding_groups(config: &Config) -> Result<(), GateError> {
             // 永不与任何厂商互换）
             if group.contains("/::") {
                 return Err(GateError::Config {
-                    message: t_args(
-                        "config-embedding-group-reserved-separator",
-                        &[("group", group.to_string())],
+                    message: format!(
+                        "config-embedding-group-reserved-separator|{}",
+                        serde_json::json!({ "group": group.to_string() })
                     ),
                 });
             }
@@ -1670,15 +1689,9 @@ fn validate_embedding_groups(config: &Config) -> Result<(), GateError> {
                     // R1：同组 upstream model_id 必须一致（大小写不敏感）
                     if !model.model_id.eq_ignore_ascii_case(anchor.model_id) {
                         return Err(GateError::Config {
-                            message: t_args(
-                                "config-embedding-group-model-mismatch",
-                                &[
-                                    ("group", group.to_string()),
-                                    ("vendor_a", anchor.vendor.to_string()),
-                                    ("model_a", anchor.model_id.to_string()),
-                                    ("vendor_b", vendor.id.clone()),
-                                    ("model_b", model.model_id.clone()),
-                                ],
+                            message: format!(
+                                "config-embedding-group-model-mismatch|{}",
+                                serde_json::json!({ "group": group.to_string(), "vendor_a": anchor.vendor.to_string(), "model_a": anchor.model_id.to_string(), "vendor_b": vendor.id.clone(), "model_b": model.model_id.clone() })
                             ),
                         });
                     }
@@ -1687,17 +1700,9 @@ fn validate_embedding_groups(config: &Config) -> Result<(), GateError> {
                         match anchor.dims {
                             Some((old_vendor, old_model, old_dims)) if old_dims != dims => {
                                 return Err(GateError::Config {
-                                    message: t_args(
-                                        "config-embedding-group-dimension-conflict",
-                                        &[
-                                            ("group", group.to_string()),
-                                            ("vendor_a", old_vendor.to_string()),
-                                            ("model_a", old_model.to_string()),
-                                            ("dims_a", old_dims.to_string()),
-                                            ("vendor_b", vendor.id.clone()),
-                                            ("model_b", model.model_id.clone()),
-                                            ("dims_b", dims.to_string()),
-                                        ],
+                                    message: format!(
+                                        "config-embedding-group-dimension-conflict|{}",
+                                        serde_json::json!({ "group": group.to_string(), "vendor_a": old_vendor.to_string(), "model_a": old_model.to_string(), "dims_a": old_dims.to_string(), "vendor_b": vendor.id.clone(), "model_b": model.model_id.clone(), "dims_b": dims.to_string() })
                                     ),
                                 });
                             }
@@ -1715,15 +1720,9 @@ fn validate_embedding_groups(config: &Config) -> Result<(), GateError> {
                         match anchor.abstract_id {
                             Some((old_abstract, old_vendor)) if old_abstract != abstract_id => {
                                 return Err(GateError::Config {
-                                    message: t_args(
-                                        "config-embedding-group-cross-abstract",
-                                        &[
-                                            ("group", group.to_string()),
-                                            ("abstract_a", old_abstract.to_string()),
-                                            ("vendor_a", old_vendor.to_string()),
-                                            ("abstract_b", abstract_id.to_string()),
-                                            ("vendor_b", vendor.id.clone()),
-                                        ],
+                                    message: format!(
+                                        "config-embedding-group-cross-abstract|{}",
+                                        serde_json::json!({ "group": group.to_string(), "abstract_a": old_abstract.to_string(), "vendor_a": old_vendor.to_string(), "abstract_b": abstract_id.to_string(), "vendor_b": vendor.id.clone() })
                                     ),
                                 });
                             }
@@ -1777,38 +1776,34 @@ fn warn_missing_api_key_envs(config: &Config) {
 fn validate_model_catalog(config: &Config) -> Result<(), GateError> {
     if config.model_catalog.len() > crate::config::model_catalog::MAX_MODEL_CATALOG_ENTRIES {
         return Err(GateError::Config {
-            message: t_args(
-                "config-catalog-too-many",
-                &[
-                    ("count", config.model_catalog.len().to_string()),
-                    (
-                        "cap",
-                        crate::config::model_catalog::MAX_MODEL_CATALOG_ENTRIES.to_string(),
-                    ),
-                ],
+            message: format!(
+                "config-catalog-too-many|{}",
+                serde_json::json!({ "count": config.model_catalog.len().to_string(), "cap": crate::config::model_catalog::MAX_MODEL_CATALOG_ENTRIES.to_string(), })
             ),
         });
     }
+    // 去重按小写归一：定价查找（lookup_pricing_entry）大小写不敏感，
+    // 若去重按原样，`GPT-4o` 与 `gpt-4o` 可共存并导致查找歧义。
     let mut catalog_ids = std::collections::HashSet::new();
     for entry in &config.model_catalog {
         if entry.model_id.trim().is_empty() {
             return Err(GateError::Config {
-                message: t_args("config-catalog-model-id-empty", &[]),
+                message: format!("config-catalog-model-id-empty|{}", serde_json::json!({})),
             });
         }
-        if !catalog_ids.insert(&entry.model_id) {
+        if !catalog_ids.insert(entry.model_id.to_ascii_lowercase()) {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-duplicate-catalog-model-id",
-                    &[("model", entry.model_id.clone())],
+                message: format!(
+                    "config-duplicate-catalog-model-id|{}",
+                    serde_json::json!({ "model": entry.model_id.clone() })
                 ),
             });
         }
         if entry.context_window == 0 {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-catalog-context-window-zero",
-                    &[("model", entry.model_id.clone())],
+                message: format!(
+                    "config-catalog-context-window-zero|{}",
+                    serde_json::json!({ "model": entry.model_id.clone() })
                 ),
             });
         }
@@ -1833,13 +1828,9 @@ fn validate_catalog_prices(
     for (field, price) in prices {
         if !price.is_finite() || price < 0.0 {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-catalog-price-invalid",
-                    &[
-                        ("model", entry.model_id.clone()),
-                        ("field", field.to_string()),
-                        ("value", price.to_string()),
-                    ],
+                message: format!(
+                    "config-catalog-price-invalid|{}",
+                    serde_json::json!({ "model": entry.model_id.clone(), "field": field.to_string(), "value": price.to_string() })
                 ),
             });
         }
@@ -1852,12 +1843,9 @@ fn validate_catalog_prices(
 fn validate_resilience_circuit(config: &Config) -> Result<(), GateError> {
     if config.resilience.circuit_open_timeout_ms < 100 {
         return Err(GateError::Config {
-            message: t_args(
-                "config-circuit-open-timeout-too-small",
-                &[(
-                    "value",
-                    config.resilience.circuit_open_timeout_ms.to_string(),
-                )],
+            message: format!(
+                "config-circuit-open-timeout-too-small|{}",
+                serde_json::json!({ "value": config.resilience.circuit_open_timeout_ms.to_string(), })
             ),
         });
     }
@@ -1868,9 +1856,9 @@ fn validate_resilience_circuit(config: &Config) -> Result<(), GateError> {
 fn validate_quota_window(config: &Config) -> Result<(), GateError> {
     if config.quota.window_secs == 0 {
         return Err(GateError::Config {
-            message: t_args(
-                "config-quota-window-too-small",
-                &[("value", config.quota.window_secs.to_string())],
+            message: format!(
+                "config-quota-window-too-small|{}",
+                serde_json::json!({ "value": config.quota.window_secs.to_string() })
             ),
         });
     }
@@ -1911,33 +1899,30 @@ fn validate_quota_windows(config: &Config) -> Result<(), GateError> {
         let id = window.id.trim();
         if id.is_empty() {
             return Err(GateError::Config {
-                message: t("config-quota-window-id-empty"),
+                message: "config-quota-window-id-empty".to_string(),
             });
         }
         if !seen.insert(id.to_ascii_lowercase()) {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-quota-window-id-duplicate",
-                    &[("id", id.to_string())],
+                message: format!(
+                    "config-quota-window-id-duplicate|{}",
+                    serde_json::json!({ "id": id.to_string() })
                 ),
             });
         }
         if id.chars().count() > QUOTA_WINDOW_ID_MAX_CHARS {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-quota-window-id-too-long",
-                    &[
-                        ("id", id.to_string()),
-                        ("max", QUOTA_WINDOW_ID_MAX_CHARS.to_string()),
-                    ],
+                message: format!(
+                    "config-quota-window-id-too-long|{}",
+                    serde_json::json!({ "id": id.to_string(), "max": QUOTA_WINDOW_ID_MAX_CHARS.to_string() })
                 ),
             });
         }
         if !matches!(window.scope.trim(), "api_key" | "global") {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-quota-window-scope-unknown",
-                    &[("id", id.to_string()), ("value", window.scope.clone())],
+                message: format!(
+                    "config-quota-window-scope-unknown|{}",
+                    serde_json::json!({ "id": id.to_string(), "value": window.scope.clone() })
                 ),
             });
         }
@@ -1949,9 +1934,9 @@ fn validate_quota_windows(config: &Config) -> Result<(), GateError> {
             && window.cost_limit_millicents == 0
         {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-quota-window-global-empty-limits",
-                    &[("id", id.to_string())],
+                message: format!(
+                    "config-quota-window-global-empty-limits|{}",
+                    serde_json::json!({ "id": id.to_string() })
                 ),
             });
         }
@@ -1985,17 +1970,17 @@ fn validate_quota_period(
         "rolling" => {
             if rolling_secs == 0 {
                 return Err(GateError::Config {
-                    message: t_args(
-                        "config-quota-rolling-secs-too-small",
-                        &[("section", section.to_string()), ("id", id.to_string())],
+                    message: format!(
+                        "config-quota-rolling-secs-too-small|{}",
+                        serde_json::json!({ "section": section.to_string(), "id": id.to_string() })
                     ),
                 });
             }
             if !calendar.trim().is_empty() {
                 return Err(GateError::Config {
-                    message: t_args(
-                        "config-quota-period-mixed",
-                        &[("section", section.to_string()), ("id", id.to_string())],
+                    message: format!(
+                        "config-quota-period-mixed|{}",
+                        serde_json::json!({ "section": section.to_string(), "id": id.to_string() })
                     ),
                 });
             }
@@ -2003,47 +1988,35 @@ fn validate_quota_period(
         "calendar" => {
             if rolling_secs != 0 {
                 return Err(GateError::Config {
-                    message: t_args(
-                        "config-quota-period-mixed",
-                        &[("section", section.to_string()), ("id", id.to_string())],
+                    message: format!(
+                        "config-quota-period-mixed|{}",
+                        serde_json::json!({ "section": section.to_string(), "id": id.to_string() })
                     ),
                 });
             }
             if !matches!(calendar.trim(), "daily" | "weekly" | "monthly") {
                 return Err(GateError::Config {
-                    message: t_args(
-                        "config-quota-calendar-unknown",
-                        &[
-                            ("section", section.to_string()),
-                            ("id", id.to_string()),
-                            ("value", calendar.trim().to_string()),
-                        ],
+                    message: format!(
+                        "config-quota-calendar-unknown|{}",
+                        serde_json::json!({ "section": section.to_string(), "id": id.to_string(), "value": calendar.trim().to_string() })
                     ),
                 });
             }
         }
         _ => {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-quota-period-unknown",
-                    &[
-                        ("section", section.to_string()),
-                        ("id", id.to_string()),
-                        ("value", period.to_string()),
-                    ],
+                message: format!(
+                    "config-quota-period-unknown|{}",
+                    serde_json::json!({ "section": section.to_string(), "id": id.to_string(), "value": period.to_string() })
                 ),
             });
         }
     }
     if !(-86_400..=86_400).contains(&tz_offset_secs) {
         return Err(GateError::Config {
-            message: t_args(
-                "config-quota-tz-offset-out-of-range",
-                &[
-                    ("section", section.to_string()),
-                    ("id", id.to_string()),
-                    ("value", tz_offset_secs.to_string()),
-                ],
+            message: format!(
+                "config-quota-tz-offset-out-of-range|{}",
+                serde_json::json!({ "section": section.to_string(), "id": id.to_string(), "value": tz_offset_secs.to_string() })
             ),
         });
     }
@@ -2063,14 +2036,14 @@ fn validate_vendor_budgets(config: &Config) -> Result<(), GateError> {
         let vendor_id = budget.vendor_id.trim();
         if vendor_id.is_empty() {
             return Err(GateError::Config {
-                message: t("config-vendor-budget-id-empty"),
+                message: "config-vendor-budget-id-empty".to_string(),
             });
         }
         if !seen.insert(vendor_id.to_ascii_lowercase()) {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-vendor-budget-id-duplicate",
-                    &[("vendor", vendor_id.to_string())],
+                message: format!(
+                    "config-vendor-budget-id-duplicate|{}",
+                    serde_json::json!({ "vendor": vendor_id.to_string() })
                 ),
             });
         }
@@ -2080,17 +2053,17 @@ fn validate_vendor_budgets(config: &Config) -> Result<(), GateError> {
             .any(|v| v.id.trim().eq_ignore_ascii_case(vendor_id))
         {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-vendor-budget-unknown-vendor",
-                    &[("vendor", vendor_id.to_string())],
+                message: format!(
+                    "config-vendor-budget-unknown-vendor|{}",
+                    serde_json::json!({ "vendor": vendor_id.to_string() })
                 ),
             });
         }
         if budget.tokens_limit == 0 && budget.cost_limit_millicents == 0 {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-vendor-budget-empty-limits",
-                    &[("vendor", vendor_id.to_string())],
+                message: format!(
+                    "config-vendor-budget-empty-limits|{}",
+                    serde_json::json!({ "vendor": vendor_id.to_string() })
                 ),
             });
         }
@@ -2118,39 +2091,33 @@ fn validate_key_budgets(config: &Config) -> Result<(), GateError> {
             hash.len() == 64 && hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
         if !is_64_hex {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-key-budget-hash-invalid",
-                    &[("hash", hash.to_string())],
+                message: format!(
+                    "config-key-budget-hash-invalid|{}",
+                    serde_json::json!({ "hash": hash.to_string() })
                 ),
             });
         }
         if rule.cost_limit_millicents == 0 {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-key-budget-limit-invalid",
-                    &[("hash", hash.to_string())],
+                message: format!(
+                    "config-key-budget-limit-invalid|{}",
+                    serde_json::json!({ "hash": hash.to_string() })
                 ),
             });
         }
         if !matches!(rule.window.trim(), "daily" | "monthly") {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-key-budget-window-unknown",
-                    &[
-                        ("hash", hash.to_string()),
-                        ("value", rule.window.trim().to_string()),
-                    ],
+                message: format!(
+                    "config-key-budget-window-unknown|{}",
+                    serde_json::json!({ "hash": hash.to_string(), "value": rule.window.trim().to_string() })
                 ),
             });
         }
         if !seen.insert((hash.to_string(), rule.window.trim().to_string())) {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-key-budget-duplicate",
-                    &[
-                        ("hash", hash.to_string()),
-                        ("window", rule.window.trim().to_string()),
-                    ],
+                message: format!(
+                    "config-key-budget-duplicate|{}",
+                    serde_json::json!({ "hash": hash.to_string(), "window": rule.window.trim().to_string() })
                 ),
             });
         }
@@ -2168,14 +2135,14 @@ fn validate_subscription(config: &Config) -> Result<(), GateError> {
         let id = account.id.trim();
         if id.is_empty() {
             return Err(GateError::Config {
-                message: t("config-subscription-account-id-empty"),
+                message: "config-subscription-account-id-empty".to_string(),
             });
         }
         if seen.contains(&id) {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-subscription-account-id-duplicate",
-                    &[("account", id.to_string())],
+                message: format!(
+                    "config-subscription-account-id-duplicate|{}",
+                    serde_json::json!({ "account": id.to_string() })
                 ),
             });
         }
@@ -2183,9 +2150,9 @@ fn validate_subscription(config: &Config) -> Result<(), GateError> {
         let vendor_id = account.vendor_id.trim();
         if vendor_id.is_empty() {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-subscription-account-vendor-empty",
-                    &[("account", id.to_string())],
+                message: format!(
+                    "config-subscription-account-vendor-empty|{}",
+                    serde_json::json!({ "account": id.to_string() })
                 ),
             });
         }
@@ -2195,12 +2162,9 @@ fn validate_subscription(config: &Config) -> Result<(), GateError> {
             .any(|v| v.id.trim().eq_ignore_ascii_case(vendor_id))
         {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-subscription-account-unknown-vendor",
-                    &[
-                        ("account", id.to_string()),
-                        ("vendor", vendor_id.to_string()),
-                    ],
+                message: format!(
+                    "config-subscription-account-unknown-vendor|{}",
+                    serde_json::json!({ "account": id.to_string(), "vendor": vendor_id.to_string() })
                 ),
             });
         }
@@ -2215,9 +2179,9 @@ fn validate_quota_factor(config: &Config) -> Result<(), GateError> {
     let section = &config.routing.quota_factor;
     if crate::config::QuotaFactorMode::parse(&section.mode).is_none() {
         return Err(GateError::Config {
-            message: t_args(
-                "config-quota-factor-mode-unknown",
-                &[("value", section.mode.trim().to_string())],
+            message: format!(
+                "config-quota-factor-mode-unknown|{}",
+                serde_json::json!({ "value": section.mode.trim().to_string() })
             ),
         });
     }
@@ -2226,9 +2190,9 @@ fn validate_quota_factor(config: &Config) -> Result<(), GateError> {
     // 必须严格小于档二（嵌套先判紧档；相等让档二永不可达）
     if !section.tie_epsilon.is_finite() || !(0.0..=1.0).contains(&section.tie_epsilon) {
         return Err(GateError::Config {
-            message: t_args(
-                "config-quota-factor-field-invalid",
-                &[("field", "tie_epsilon".to_string())],
+            message: format!(
+                "config-quota-factor-field-invalid|{}",
+                serde_json::json!({ "field": "tie_epsilon".to_string() })
             ),
         });
     }
@@ -2240,16 +2204,16 @@ fn validate_quota_factor(config: &Config) -> Result<(), GateError> {
     ] {
         if !value.is_finite() || value <= 0.0 || value > 1.0 {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-quota-factor-field-invalid",
-                    &[("field", field.to_string())],
+                message: format!(
+                    "config-quota-factor-field-invalid|{}",
+                    serde_json::json!({ "field": field.to_string() })
                 ),
             });
         }
     }
     if section.degrade_used_tier1 >= section.degrade_used_tier2 {
         return Err(GateError::Config {
-            message: t("config-quota-factor-tier-order"),
+            message: "config-quota-factor-tier-order".to_string(),
         });
     }
     Ok(())
@@ -2374,9 +2338,9 @@ fn validate_admin_secrets(config: &Config) -> Result<(), GateError> {
         Ok(())
     } else {
         Err(GateError::Config {
-            message: t_args(
-                "config-weak-admin-secret",
-                &[("details", rejections.join("; "))],
+            message: format!(
+                "config-weak-admin-secret|{}",
+                serde_json::json!({ "details": rejections.join("; ") })
             ),
         })
     }
@@ -2384,6 +2348,38 @@ fn validate_admin_secrets(config: &Config) -> Result<(), GateError> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn redact_quoted_keeps_field_paths_and_masks_values() {
+        // 字段路径可读
+        assert_eq!(
+            super::redact_quoted("missing field `vendors[2].api_key`"),
+            "missing field `vendors[2].api_key`"
+        );
+        // 普通值整体脱敏；字段名（api_key）按字段路径保留可读
+        assert_eq!(
+            super::redact_quoted("invalid value \"sk-secret-value\" for key \"api_key\""),
+            "invalid value '***' for key \"api_key\""
+        );
+        // 含方括号但不合字段文法的值同样脱敏（防绕过）
+        assert_eq!(
+            super::redact_quoted("bad value \"sk-[abc]\""),
+            "bad value '***'"
+        );
+        // 纯字母数字但过长（如 64 hex 主钥）：按值脱敏，不当字段路径保留
+        let long_hex = "a".repeat(64);
+        assert_eq!(
+            super::redact_quoted(&format!("bad value \"{long_hex}\"")),
+            "bad value '***'"
+        );
+        // 未闭合引号：内容同样不原样回显
+        assert_eq!(
+            super::redact_quoted("bad value \"sk-secret"),
+            "bad value '***"
+        );
+        // 无引号文本原样
+        assert_eq!(super::redact_quoted("plain error text"), "plain error text");
+    }
     use super::*;
 
     fn config_with(quota_enabled: bool, auth: Option<crate::config::AuthSection>) -> Config {
@@ -2495,7 +2491,7 @@ concurrency = { requests_per_second = 1 }
         .expect("write failing config");
 
         let error = load_config_from_path(&path).expect_err("缺 rate_limit/concurrency 必须拒绝");
-        let message = error.to_string();
+        let message = error.user_message();
         assert!(
             message.contains("rate_limit"),
             "错误必须点名缺失字段: {message}"
@@ -2566,7 +2562,7 @@ path = \":memory:\"
         )
         .expect_err("V1 权重全零必须拒绝");
         assert!(
-            error.to_string().contains("w_clf"),
+            error.user_message().contains("w_clf"),
             "错误必须点名 w_clf: {error}"
         );
     }
@@ -2579,7 +2575,7 @@ path = \":memory:\"
         )
         .expect_err("V2 阈值倒置必须拒绝");
         assert!(
-            error.to_string().contains("score_low"),
+            error.user_message().contains("score_low"),
             "错误必须点名 score_low: {error}"
         );
     }
@@ -2592,7 +2588,7 @@ path = \":memory:\"
         )
         .expect_err("V3 非法策略必须拒绝");
         assert!(
-            error.to_string().contains("mid_band_policy"),
+            error.user_message().contains("mid_band_policy"),
             "错误必须点名 mid_band_policy: {error}"
         );
     }
@@ -2607,7 +2603,7 @@ path = \":memory:\"
         )
         .expect_err("V5 档位撞 model_id 必须拒绝");
         assert!(
-            error.to_string().contains("gpt-x"),
+            error.user_message().contains("gpt-x"),
             "错误必须点名撞名项: {error}"
         );
     }
@@ -2621,7 +2617,7 @@ path = \":memory:\"
         )
         .expect_err("V6 无候选档必须拒绝");
         assert!(
-            error.to_string().contains("fast"),
+            error.user_message().contains("fast"),
             "错误必须点名档名: {error}"
         );
     }
@@ -2641,7 +2637,7 @@ high = \"reasoning\"
         )
         .expect_err("V7 mid 无候选必须拒绝");
         assert!(
-            error.to_string().contains("balanced"),
+            error.user_message().contains("balanced"),
             "错误必须点名 mid 档名: {error}"
         );
     }
@@ -2656,7 +2652,7 @@ high = \"reasoning\"
         )
         .expect_err("分组名撞 model_id 必须拒绝");
         assert!(
-            error.to_string().contains("m1"),
+            error.user_message().contains("m1"),
             "错误必须点名分组: {error}"
         );
     }
@@ -2686,7 +2682,7 @@ high = \"reasoning\"
         )
         .expect_err("空档名必须拒绝");
         assert!(
-            error.to_string().contains("low"),
+            error.user_message().contains("low"),
             "错误必须点名档位: {error}"
         );
     }
@@ -2702,7 +2698,7 @@ high = \"reasoning\"
         ] {
             let error =
                 parse_difficulty_toml(DIFF_VENDORS_OK, toml).expect_err("V9 非法数值域必须拒绝");
-            let message = error.to_string();
+            let message = error.user_message();
             assert!(
                 message.contains("w_clf")
                     || message.contains("w_rule")
@@ -2720,7 +2716,7 @@ high = \"reasoning\"
         )
         .expect_err("V10 timeout_ms=0 必须拒绝");
         assert!(
-            error.to_string().contains("timeout_ms"),
+            error.user_message().contains("timeout_ms"),
             "错误须点名 timeout_ms: {error}"
         );
         let error = parse_difficulty_toml(
@@ -2729,7 +2725,7 @@ high = \"reasoning\"
         )
         .expect_err("V10 未知 engine 必须拒绝");
         assert!(
-            error.to_string().contains("engine"),
+            error.user_message().contains("engine"),
             "错误须点名 engine: {error}"
         );
     }
@@ -2744,7 +2740,7 @@ high = \"reasoning\"
         )
         .expect_err("V4 无 feature 时 w_clf>0 必须拒绝");
         assert!(
-            error.to_string().contains("difficulty-classifier"),
+            error.user_message().contains("difficulty-classifier"),
             "错误必须点名 feature: {error}"
         );
     }
@@ -2762,7 +2758,7 @@ high = \"reasoning\"
         let error = parse_config_content(Path::new("config.txt"), &minimal_ok_toml())
             .expect_err("未知扩展名必须拒绝");
         assert!(
-            error.to_string().contains("unknown extension"),
+            error.user_message().contains("unknown extension"),
             "错误必须说明扩展名不可识别: {error}"
         );
     }
@@ -2840,7 +2836,7 @@ high = \"reasoning\"
         config.routing.difficulty.score_high = 1.5;
         let error = validate_difficulty(&config).expect_err("越界阈值直构路径必须拒绝");
         assert!(
-            error.to_string().contains("score_high"),
+            error.user_message().contains("score_high"),
             "错误必须点名 score_high: {error}"
         );
     }
@@ -2851,7 +2847,7 @@ high = \"reasoning\"
         config.routing.difficulty.classifier.failure_threshold = 0;
         let error = validate_difficulty(&config).expect_err("failure_threshold=0 必须拒绝");
         assert!(
-            error.to_string().contains("failure_threshold"),
+            error.user_message().contains("failure_threshold"),
             "错误必须点名 failure_threshold: {error}"
         );
     }
@@ -2895,7 +2891,7 @@ high = \"reasoning\"
             let error = parse_difficulty_toml(&vendors, &difficulty)
                 .expect_err(&format!("{name} 必须拒绝"));
             assert!(
-                error.to_string().contains("lexicon.hard"),
+                error.user_message().contains("lexicon.hard"),
                 "{name} 错误必须点名 lexicon.hard: {error}"
             );
         }
@@ -2907,7 +2903,7 @@ high = \"reasoning\"
         let difficulty = format!("{base}\n[routing.difficulty.lexicon]\nhard = [{too_many}]\n");
         let error = parse_difficulty_toml(&vendors, &difficulty).expect_err("超条目数必须拒绝");
         assert!(
-            error.to_string().contains("lexicon.hard"),
+            error.user_message().contains("lexicon.hard"),
             "错误必须点名字段: {error}"
         );
     }
@@ -2918,7 +2914,7 @@ high = \"reasoning\"
         config.routing.difficulty.scoring.w_hard = -0.1;
         let error = validate_difficulty(&config).expect_err("负权重必须拒绝");
         assert!(
-            error.to_string().contains("scoring.w_hard"),
+            error.user_message().contains("scoring.w_hard"),
             "错误必须点名 scoring.w_hard: {error}"
         );
 
@@ -2926,7 +2922,7 @@ high = \"reasoning\"
         config.routing.difficulty.scoring.hard_cap = 0.0;
         let error = validate_difficulty(&config).expect_err("cap=0 必须拒绝");
         assert!(
-            error.to_string().contains("scoring.hard_cap"),
+            error.user_message().contains("scoring.hard_cap"),
             "错误必须点名 scoring.hard_cap: {error}"
         );
 
@@ -2934,7 +2930,7 @@ high = \"reasoning\"
         config.routing.difficulty.scoring.length_cap = 9000.0;
         let error = validate_difficulty(&config).expect_err("length_cap 超上限必须拒绝");
         assert!(
-            error.to_string().contains("scoring.length_cap"),
+            error.user_message().contains("scoring.length_cap"),
             "错误必须点名 scoring.length_cap: {error}"
         );
     }
@@ -3126,7 +3122,7 @@ high = \"reasoning\"
             &embedding_model("text-embedding-3-small", "emb-a", Some("g1"), None),
         );
         let error = parse_vendors_toml(&vendors).expect_err("同组异构 model_id 必须拒绝");
-        let message = error.to_string();
+        let message = error.user_message();
         assert!(
             message.contains("v1") && message.contains("v2"),
             "错误必须点名两个 vendor id: {message}"
@@ -3146,7 +3142,7 @@ high = \"reasoning\"
             difficulty_vendor("v1", &embedding_model("m", "emb-a", Some("g1"), Some(1024)))
                 + &difficulty_vendor("v2", &embedding_model("m", "emb-a", Some("g1"), Some(1536)));
         let error = parse_vendors_toml(&vendors).expect_err("同组维度冲突必须拒绝");
-        let message = error.to_string();
+        let message = error.user_message();
         assert!(
             message.contains("1024") && message.contains("1536"),
             "错误必须点名两个维度值: {message}"
@@ -3169,7 +3165,7 @@ high = \"reasoning\"
             &embedding_model("text-embedding-3-large", "emb-b", Some("g1"), None),
         );
         let error = parse_vendors_toml(&vendors).expect_err("组名跨 abstract 必须拒绝");
-        let message = error.to_string();
+        let message = error.user_message();
         assert!(
             message.contains("emb-a") && message.contains("emb-b"),
             "错误必须点名两个冲突 abstract: {message}"
@@ -3183,7 +3179,7 @@ high = \"reasoning\"
         let vendors =
             difficulty_vendor("v1", &embedding_model("m", "emb-a", Some("v2/::m2"), None));
         let error = parse_vendors_toml(&vendors).expect_err("组名含保留分隔符必须拒绝");
-        let message = error.to_string();
+        let message = error.user_message();
         assert!(
             message.contains("v2/::m2"),
             "错误必须点名违规组名: {message}"
@@ -3236,7 +3232,7 @@ high = \"reasoning\"
     fn model_type_unknown_value_rejected() {
         let vendors = difficulty_vendor("v1", &typed_model("m", Some("reranker")));
         let error = parse_vendors_toml(&vendors).expect_err("未知 model_type 必须拒绝");
-        let message = error.to_string();
+        let message = error.user_message();
         assert!(
             message.contains("reranker"),
             "错误必须点名非法值: {message}"
@@ -3274,7 +3270,7 @@ model_type = "rerank"
 "#;
         let error = parse_vendors_toml(vendors).expect_err("rerank 空 api_base 必须拒绝");
         assert!(
-            error.to_string().contains("api_base"),
+            error.user_message().contains("api_base"),
             "错误必须点名 api_base: {error}"
         );
     }
@@ -3292,7 +3288,7 @@ model_type = "rerank"
         config.routing.rerank_score_normalization = "softmax".into();
         let error = validate_config(&config).expect_err("未知模式必须拒绝");
         assert!(
-            error.to_string().contains("softmax"),
+            error.user_message().contains("softmax"),
             "错误必须点名非法值: {error}"
         );
     }
@@ -3317,7 +3313,7 @@ model_type = "rerank"
         zero_retention.responses.retention_hours = 0;
         let error = validate_config(&zero_retention).expect_err("retention=0 必须拒绝");
         assert!(
-            error.to_string().contains("retention_hours"),
+            error.user_message().contains("retention_hours"),
             "错误必须点名字段: {error}"
         );
 
@@ -3325,7 +3321,7 @@ model_type = "rerank"
         small_bytes.responses.max_response_bytes = 1023;
         let error = validate_config(&small_bytes).expect_err("bytes=1023 必须拒绝");
         assert!(
-            error.to_string().contains("max_response_bytes"),
+            error.user_message().contains("max_response_bytes"),
             "错误必须点名字段: {error}"
         );
 
@@ -3333,7 +3329,7 @@ model_type = "rerank"
         too_many_jobs.responses.max_background_jobs = 257;
         let error = validate_config(&too_many_jobs).expect_err("jobs=257 必须拒绝");
         assert!(
-            error.to_string().contains("max_background_jobs"),
+            error.user_message().contains("max_background_jobs"),
             "错误必须点名字段: {error}"
         );
     }
@@ -3354,7 +3350,7 @@ model_type = "rerank"
         zero_window.metrics.cost_restore_window_hours = 0;
         let error = validate_config(&zero_window).expect_err("window=0 必须拒绝");
         assert!(
-            error.to_string().contains("cost_restore_window_hours"),
+            error.user_message().contains("cost_restore_window_hours"),
             "错误必须点名字段: {error}"
         );
 
@@ -3362,7 +3358,7 @@ model_type = "rerank"
         huge_window.metrics.cost_restore_window_hours = 8761;
         let error = validate_config(&huge_window).expect_err("window=8761 必须拒绝");
         assert!(
-            error.to_string().contains("cost_restore_window_hours"),
+            error.user_message().contains("cost_restore_window_hours"),
             "错误必须点名字段: {error}"
         );
     }
@@ -3401,21 +3397,21 @@ model_type = "rerank"
         let unknown = vendor_with_style("openai", Some("grpc"), None);
         let error = parse_vendors_toml(&unknown).expect_err("未知 api_style 必须拒绝");
         assert!(
-            error.to_string().contains("grpc"),
+            error.user_message().contains("grpc"),
             "错误必须点名非法值: {error}"
         );
 
         let wrong_type = vendor_with_style("anthropic", Some("responses"), None);
         let error = parse_vendors_toml(&wrong_type).expect_err("非 openai 型必须拒绝");
         assert!(
-            error.to_string().contains("openai"),
+            error.user_message().contains("openai"),
             "错误必须说明需要 openai 型: {error}"
         );
 
         let conflict = vendor_with_style("openai", Some("responses"), Some("/chat/completions"));
         let error = parse_vendors_toml(&conflict).expect_err("chat_path 互斥必须拒绝");
         assert!(
-            error.to_string().contains("chat_path"),
+            error.user_message().contains("chat_path"),
             "错误必须点名冲突字段: {error}"
         );
 
@@ -3427,7 +3423,7 @@ model_type = "rerank"
         let gemini_path = vendor_with_style("gemini", None, Some("/v1beta/models/x"));
         let error = parse_vendors_toml(&gemini_path).expect_err("gemini + chat_path 必须拒绝");
         assert!(
-            error.to_string().contains("chat_path"),
+            error.user_message().contains("chat_path"),
             "错误必须点名 chat_path: {error}"
         );
     }
@@ -3564,25 +3560,28 @@ model_type = "rerank"
     fn oidc_rules_validation_rejects_each_invalid_shape() {
         let error = validate_oidc_rules(&oidc_config(vec![oidc_rule("issuer.example.com", "aud")]))
             .expect_err("缺 scheme:// 的 issuer 必须拒绝");
-        assert!(error.to_string().contains("issuer.example.com"), "{error}");
+        assert!(
+            error.user_message().contains("issuer.example.com"),
+            "{error}"
+        );
 
         let mut rule = oidc_rule("https://issuer.example.com", "aud");
         rule.audience = "   ".into();
         let error =
             validate_oidc_rules(&oidc_config(vec![rule])).expect_err("空白 audience 必须拒绝");
-        assert!(error.to_string().contains("audience"), "{error}");
+        assert!(error.user_message().contains("audience"), "{error}");
 
         let mut rule = oidc_rule("https://issuer.example.com", "aud");
         rule.claims.insert("  ".into(), "v".into());
         let error =
             validate_oidc_rules(&oidc_config(vec![rule])).expect_err("空白 claim 键必须拒绝");
-        assert!(error.to_string().contains("claims"), "{error}");
+        assert!(error.user_message().contains("claims"), "{error}");
 
         let mut rule = oidc_rule("https://issuer.example.com", "aud");
         rule.claims.insert("sub".into(), "repo:*".into());
         let error =
             validate_oidc_rules(&oidc_config(vec![rule])).expect_err("claim 通配值必须拒绝");
-        assert!(error.to_string().contains("claims"), "{error}");
+        assert!(error.user_message().contains("claims"), "{error}");
 
         let duplicate = vec![
             oidc_rule("https://issuer.example.com", "aud"),
@@ -3590,7 +3589,7 @@ model_type = "rerank"
         ];
         let error = validate_oidc_rules(&oidc_config(duplicate))
             .expect_err("同 issuer+audience 重复规则必须拒绝");
-        let message = error.to_string();
+        let message = error.user_message();
         assert!(
             message.contains("https://issuer.example.com") && message.contains("aud"),
             "{message}"
@@ -3608,7 +3607,7 @@ model_type = "rerank"
     fn otlp_endpoint_requires_scheme_separator() {
         let error =
             validate_otlp_endpoint("collector:4318/v1/traces").expect_err("缺 scheme:// 必须拒绝");
-        assert!(error.to_string().contains("collector"), "{error}");
+        assert!(error.user_message().contains("collector"), "{error}");
     }
 
     /// affinity 会话头名 trim + 小写归一后判空；空白元素拒绝。
@@ -3621,7 +3620,7 @@ model_type = "rerank"
 
         config.routing.affinity.session_headers = Some(vec!["  ".into()]);
         let error = validate_affinity(&config).expect_err("空白头名必须拒绝");
-        assert!(error.to_string().contains("session_headers"), "{error}");
+        assert!(error.user_message().contains("session_headers"), "{error}");
     }
 
     /// catalog_sync 校验：timeout 零、URL 缺 scheme、userinfo、alias 空白逐项拒绝；
@@ -3632,24 +3631,24 @@ model_type = "rerank"
         config.catalog_sync.enabled = true;
         config.catalog_sync.timeout_secs = 0;
         let error = validate_catalog_sync(&config).expect_err("enabled 且 timeout=0 必须拒绝");
-        assert!(error.to_string().contains("timeout_secs"), "{error}");
+        assert!(error.user_message().contains("timeout_secs"), "{error}");
 
         config.catalog_sync.timeout_secs = 10;
         config.catalog_sync.source_url = "models.dev/api.json".into();
         let error = validate_catalog_sync(&config).expect_err("缺 scheme:// 的 URL 必须拒绝");
-        assert!(error.to_string().contains("source_url"), "{error}");
+        assert!(error.user_message().contains("source_url"), "{error}");
 
         config.catalog_sync.source_url = "http://localhost:8080/api.json".into();
         validate_catalog_sync(&config).expect("loopback http 放行");
 
         config.catalog_sync.source_url = "https://user:pass@models.dev/api.json".into();
         let error = validate_catalog_sync(&config).expect_err("userinfo 必须拒绝");
-        assert!(error.to_string().contains("userinfo"), "{error}");
+        assert!(error.user_message().contains("userinfo"), "{error}");
 
         config.catalog_sync.source_url = "https://models.dev/api.json".into();
         config.catalog_sync.alias.insert("   ".into(), "v".into());
         let error = validate_catalog_sync(&config).expect_err("空白 alias 键必须拒绝");
-        assert!(error.to_string().contains("alias"), "{error}");
+        assert!(error.user_message().contains("alias"), "{error}");
     }
 
     /// calendar 周期携带 rolling_secs 属两形态混用（与 rolling 带 calendar 对称）。
@@ -3657,7 +3656,7 @@ model_type = "rerank"
     fn quota_period_rejects_calendar_with_rolling_secs() {
         let error = validate_quota_period("quota_window", "w1", "calendar", 3600, "daily", 0)
             .expect_err("calendar + rolling_secs 必须拒绝");
-        let message = error.to_string();
+        let message = error.user_message();
         assert!(
             message.contains("w1") && message.contains("quota_window"),
             "{message}"

@@ -6,7 +6,7 @@
 //! reason_code 为稳定机器码（不做 i18n）；未知模型 → 400
 
 use crate::error::{FluxweirError, GateError};
-use crate::i18n::{t, t_args};
+use crate::i18n::t;
 use crate::ApiState;
 use axum::{extract::State, http::HeaderMap, Json};
 use serde_json::{json, Value};
@@ -20,7 +20,7 @@ pub async fn route_explain(
 ) -> Result<Json<Value>, FluxweirError> {
     let model = body.get("model").and_then(Value::as_str).ok_or_else(|| {
         FluxweirError::from(GateError::Validation {
-            field: t("api-route-explain-model-invalid"),
+            field: "api-route-explain-model-invalid".to_string(),
         })
     })?;
     let session_id = body.get("session_id").and_then(Value::as_str);
@@ -38,9 +38,9 @@ pub async fn route_explain(
     let assessments = state.router.explain_route(model, session_id, tenant).await;
     if assessments.is_empty() {
         return Err(FluxweirError::from(GateError::Validation {
-            field: t_args(
-                "api-route-explain-model-unknown",
-                &[("model", model.to_string())],
+            field: format!(
+                "api-route-explain-model-unknown|{}",
+                serde_json::json!({ "model": model.to_string() })
             ),
         }));
     }

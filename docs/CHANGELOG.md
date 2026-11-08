@@ -12,13 +12,36 @@
 
 ### Added
 
+- **错误载荷语言中性化（i18n 双层轨道收口）**：服务端错误（`GateError`/`VaultError`/`FluxweirError`）的 `message`/`field`/`source`/`vendor` 字段统一存语言中性锚点（`"<ftl键>"` 或 `"<ftl键>|<json>"`），本地化只发生在 `user_message()` 单点；`Display` 因此恒为英文规范串（日志/错误链稳定）。新增公开函数 `i18n::t_dynamic`（动态键翻译）与 `i18n::has_key`（锚点键存在性判定，以 en 回退链终点为准）。新增 token 级契约守卫 `tests/guard/error_payload_guard.rs`（构造点禁止就地本地化 + 锚点键必须已登记，含正/反样本自测）。新增 `config-di-module-failed`、`api-responses-background-throttled` 等 FTL 键（en/zh 对齐）。
+- **认证上下文缓存**：`AuthContextCache` 挂在 `ApiState`，按配置快照代际（`Arc::ptr_eq`）缓存 `ApiAuthState`/OIDC 规则，auth 与 admission 档位判定共享同一实例，消除每请求重建 key 摘要表的开销。
 - **请求级缓存断点策略覆盖**：`UnifiedRequest` 新增 `cache_breakpoints`（`Option<CacheBreakpointPolicy>`）——进程内 SDK 构造者可逐请求裁决注入开关/断点上限/锚点序，`None` 回落模型目录条目级策略（出站取值收敛为 `effective_cache_policy` 单点，非流式/流式两路径共用）。仅 anthropic 型 vendor 出站消费；openai/gemini 型与透传路径不注入；wire 侧同名键入各协议 known_keys denylist——入站恒 `None` 不承接、不进 `vendor_extensions` 透传（覆盖控制权收敛到进程内 SDK 面，不暴露给 wire 调用方）。
 - **国际化全量收口**：后端用户可见消息（Responses/Rerank 协议校验、web-search、热更新结构门、gRPC 认证、订阅 OAuth admin 面、工具 schema 校验、路由解释 detail）、OpenAPI 全部 39 条端点描述（`i18n_key` 机制全覆盖，35 组新增 en/zh 注册）、SDK 进程内库面 13 键（`FluxweirSdkError` message 随进程 locale）、warn 级运维日志 5 条。控制台前端引入双语文案层 `web/console/src/i18n.ts`（zh 基线/en 对齐、`navigator.language` 检测、`{name}` 插值），64 处硬编码文案全量键化（含导航 "Vendors" 孤例）与时间列 locale 联动；JSON 字段名/协议键保持英文（不翻译约定入 `i18n` 模块文档）。
 
 ### Changed
 
-- **BREAKING：熔断拒绝结构化**（`GateError` 变体集扩充）：CB Open 拒绝由 `VendorUnavailable{vendor: "{id} (circuit open)"}` 字符串标记改为专用变体 `VendorCircuitOpen{vendor: <纯 id>}`——fallback 触发器（`CircuitOpen`/`RateLimited`/`Http5xx`）与 `is_circuit_open_error` 改按变体判别，消除 locale 依赖的字符串回环；`GateErrorClassifier` 对该变体不计 CB 失败（防 half-open 探测期拒绝再抬计数、熔断永难恢复）。穷举 match `GateError` 的外部代码需补臂（嵌入方 agentstem-gate 已同步适配）。
+- **错误响应文案**：错误载荷不再在构造点本地化，HTTP 错误体经 `user_message()` 统一按 locale 渲染；SSE 错误帧、`/v1/responses` 后台失败对象改用固定安全文案（内部错误详情/锚点/上游 URL 只进 tracing，不再出站）。`/v1/responses` 后台失败对象落库内容改为本地化用户消息，`GET /v1/responses/{id}` 不再回显 `Display` 规范串。
+- **`VaultError` / `GateError::Io` / `Protocol` / `Routing` / `VendorUnavailable` 等展示路径**：先尝试锚点解引用再回退通用模板，修复锚点键名可能进入 HTTP 响应体的问题。
+- **web-search 错误脱敏**：`reqwest` 传输错误只保留类别（timeout / connect failed / invalid response body / transport error），502 响应体不再携带内部 provider URL；vault 取 key 失败同样只给安全文案。
+- **路由错误状态码语义**：已声明模型但全部候选不可用（禁用/熔断/降级）返回 503（`VendorUnavailable`），仅未声明的模型返回 400；`X-Vendor` 显式提示的「未配置/已禁用」保持 400、厂商状态不可用改 503；显式 `X-Model` 提示未命中不再静默回落首启用模型，改 400 `model-not-found`。
+- **模型目录去重口径**：`validate_model_catalog` 按 ASCII 小写归一判重，与 `lookup_pricing_entry` 的大小写不敏感查找对齐（`GPT-4o` 与 `gpt-4o` 加载即拒，消除定价歧义）。
 - **工作区依赖基线**：新增根 `[workspace.dependencies]` 单一事实源，`fluxweir-examples` 成员改 `workspace = true` 继承（成员不再自写版本号，仍 `publish = false`）；直接依赖保持 minor 级写法（预发布依赖保留完整 rc 号）。`confers` rc.12→rc.13、`toml` 1.1→1.2，`cargo update` 同步全部可更新的传递依赖。`dashmap` 7.0.0-rc2 为预发布，按「最新稳定版」规则维持 6.2。
+
+### Changed（终审补充）
+
+- **gRPC 安全默认**：`[grpc]` 缺省 host 由 `0.0.0.0` 改为 `127.0.0.1`（显式对外需配置地址；非回环绑定记 warn）；`config.example.toml` 与 USER_GUIDE 同步。
+- **SDK 非 JSON 分类统一**：chat/embed/admin/responses/rerank 的 2xx + 非 JSON 响应体统一归 `Protocol`（此前误落 `Network`）；embedding 请求体不再 flatten chat 采样参数（`stream=false`/temperature 等不再出站，保留 `user`）。
+- **`From<RecvError>` 语义修正**：oneshot 通道关闭由 `Timeout`(504, vendor=unknown) 改 `Io`(500)，不再把进程内同步失败标为可重试的上游超时。
+
+### Fixed
+
+- **difficulty 半开探测槽**：只读解释面改用非变异 `peek`（不再消费唯一探测槽）；探测 future 取消时以 RAII 释放槽，且仅 `Probe` 分支占用、仅半开态 record 清槽——修复 admin 查询/取消可导致分类器永久降级的窗口。
+- **配置内容解析错误回显**：`parse_config_content` 的解析错误先剥除引号包裹的值片段再出站，防止配置值（可能是密钥原文）随错误信息回显。
+- **热重载 watcher 测试抖动**：文件改写事件在系统高负载下可能被 FSEvents 吞掉；测试在 30s 预算内周期性重放改写，消除单次事件丢失导致的假失败。
+- **`error::app` 拆分**：`FluxweirError` 的 `IntoResponse`/`user_message`/来源转换与契约守卫从 `mod.rs` 移入 `app.rs`，`mod.rs` 只保留类型与 re-export。
+
+### Changed（既有）
+
+- **BREAKING：熔断拒绝结构化**（`GateError` 变体集扩充）：CB Open 拒绝由 `VendorUnavailable{vendor: "{id} (circuit open)"}` 字符串标记改为专用变体 `VendorCircuitOpen{vendor: <纯 id>}`——fallback 触发器（`CircuitOpen`/`RateLimited`/`Http5xx`）与 `is_circuit_open_error` 改按变体判别，消除 locale 依赖的字符串回环；`GateErrorClassifier` 对该变体不计 CB 失败（防 half-open 探测期拒绝再抬计数、熔断永难恢复）。穷举 match `GateError` 的外部代码需补臂（嵌入方 agentstem-gate 已同步适配）。
 
 ## [0.1.0] - 2026-11-04
 

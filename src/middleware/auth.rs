@@ -119,6 +119,7 @@ impl ApiAuthState {
     /// OIDC 短时凭据经别名表解析到母键摘要后按母键查档（tier 继承，
     /// R-auth-002）；调用点在认证中间件内侧，重放凭据到不了这里。
     pub fn tier_for_key(&self, key: &str) -> AuthTier {
+        #[cfg(feature = "oidc")]
         if let Some(mother) = crate::utils::oidc_keys::resolve_mother(key) {
             return self
                 .tiers
@@ -149,15 +150,20 @@ pub(crate) struct CachedAuthContext {
     pub(crate) oidc: Option<AuthSection>,
 }
 
-impl ConfigManager {
+/// 认证上下文缓存（middleware 自有状态）：由装配点（ApiState）创建一次，
+/// 中间件按配置代际命中/重建。生命周期不落在 ConfigManager（恒开基础模块），
+/// 避免 config→middleware 反向依赖。
+#[derive(Default)]
+pub struct AuthContextCache {
+    slot: std::sync::RwLock<Option<Arc<CachedAuthContext>>>,
+}
+
+impl AuthContextCache {
     /// 取当前快照对应的认证上下文：同一代配置返回同一 `Arc`（热路径零重建），
     /// 配置 swap 后首次调用重建。并发首建良性竞争（后写覆盖，返回各自合法值）。
-    pub(crate) fn auth_context(
-        &self,
-        snapshot: &Arc<crate::config::Config>,
-    ) -> Arc<CachedAuthContext> {
+    pub(crate) fn context(&self, snapshot: &Arc<crate::config::Config>) -> Arc<CachedAuthContext> {
         if let Some(cached) = self
-            .auth_cache
+            .slot
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
@@ -187,25 +193,38 @@ impl ConfigManager {
             }),
             oidc,
         });
-        *self
-            .auth_cache
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(context.clone());
+        // 旧上下文（可能持有上一代 Config 的最后引用）移出写锁后再释放，
+        // 避免在请求线程持锁期间跑大对象析构（一次性尾延迟尖峰）。
+        let previous = {
+            let mut slot = self
+                .slot
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            slot.replace(context.clone())
+        };
+        drop(previous);
         context
     }
 }
 
-/// API Key 认证中间件（from_fn_with_state 挂载形态）— State 是 `Arc<ConfigManager>`：
-/// 认证状态按配置代际缓存（同一快照零重建，swap 后重建），key 吊销/轮换与
-/// enabled 开关仍热生效。第三参数是裸 `Arc<ApiAuthState>`（便于直调/测试），
-/// 此包装补齐该形态。
+/// 认证中间件装配态：配置管理器 + 认证上下文缓存（均经 ApiState 装配点注入）
+#[derive(Clone)]
+pub struct AuthMiddlewareState {
+    pub config: Arc<ConfigManager>,
+    pub cache: Arc<AuthContextCache>,
+}
+
+/// API Key 认证中间件（from_fn_with_state 挂载形态）— State 是
+/// [`AuthMiddlewareState`]：认证状态按配置代际缓存（同一快照零重建，swap 后
+/// 重建），key 吊销/轮换与 enabled 开关仍热生效。第三参数是裸
+/// `Arc<ApiAuthState>`（便于直调/测试），此包装补齐该形态。
 pub async fn auth_middleware(
-    axum::extract::State(config_manager): axum::extract::State<Arc<ConfigManager>>,
+    axum::extract::State(state): axum::extract::State<AuthMiddlewareState>,
     request: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let snapshot = config_manager.read();
-    let context = config_manager.auth_context(&snapshot);
+    let snapshot = state.config.read();
+    let context = state.cache.context(&snapshot);
     drop(snapshot);
     api_auth_middleware_with_oidc(request, next, context.state.clone(), context.oidc.as_ref()).await
 }
@@ -624,11 +643,12 @@ mod tests {
             ConfigManager::new(config)
         }
 
+        let cache = AuthContextCache::default();
         let manager = manager_with_key(KNOWN_HASH);
         let snap1 = manager.read();
-        let ctx1 = manager.auth_context(&snap1);
+        let ctx1 = cache.context(&snap1);
         let snap2 = manager.read();
-        let ctx2 = manager.auth_context(&snap2);
+        let ctx2 = cache.context(&snap2);
         assert!(
             Arc::ptr_eq(&ctx1, &ctx2),
             "同一代配置必须命中缓存（返回同一 Arc，零重建）"
@@ -640,7 +660,7 @@ mod tests {
         let rotated = manager_with_key(&rotated_hash).get_config();
         manager.swap_memory(rotated).expect("swap");
         let snap3 = manager.read();
-        let ctx3 = manager.auth_context(&snap3);
+        let ctx3 = cache.context(&snap3);
         assert!(!Arc::ptr_eq(&ctx1, &ctx3), "配置换代后必须重建认证状态");
         assert!(ctx3.state.validate_key("rotated-key"), "新键生效");
         assert!(!ctx3.state.validate_key(KNOWN_KEY), "旧键已吊销");

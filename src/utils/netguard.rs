@@ -166,6 +166,19 @@ pub enum FetchError {
     Transport { message: String },
 }
 
+/// reqwest 错误 → 脱敏类别文本（原文可能带内部主机名/URL）。
+fn classify_reqwest_error(e: &reqwest::Error) -> String {
+    if e.is_timeout() {
+        "timeout".to_string()
+    } else if e.is_connect() {
+        "connect failed".to_string()
+    } else if e.is_body() || e.is_decode() {
+        "invalid response body".to_string()
+    } else {
+        "transport error".to_string()
+    }
+}
+
 /// DNS 解析缝：生产实现走 `tokio::net::lookup_host`；测试注入固定地址表
 ///（mock DNS 场景，R-net-003 的判定时点可观测性由此保证）。
 #[cfg(feature = "web-search")]
@@ -275,7 +288,8 @@ impl GuardedFetcher {
             .resolve(&host)
             .await
             .map_err(|e| FetchError::Transport {
-                message: e.to_string(),
+                // DNS/传输错误原文可能带内部主机名；只保留错误类别。
+                message: format!("{:?}", e.kind()),
             })?;
         let mut first_deny: Option<&'static str> = None;
         let mut pin_ip = None;
@@ -370,7 +384,8 @@ impl GuardedFetcher {
             .resolve(host, std::net::SocketAddr::new(ip, 0))
             .build()
             .map_err(|e| FetchError::Transport {
-                message: e.to_string(),
+                // 构建失败原文可能带内部主机/地址；只保留错误类别。
+                message: classify_reqwest_error(&e),
             })?;
         let client = Arc::new(client);
         {
@@ -433,7 +448,7 @@ async fn read_capped(resp: reqwest::Response, max: usize) -> Result<String, Fetc
         }
     }
     String::from_utf8(body).map_err(|_| FetchError::Transport {
-        message: crate::i18n::t("util-fetch-body-not-utf8"),
+        message: "body is not valid UTF-8".to_string(),
     })
 }
 

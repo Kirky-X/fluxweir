@@ -103,6 +103,7 @@ mod endpoints {
         ));
 
         Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager,
             vendor_manager,
@@ -433,6 +434,7 @@ mod integration {
         });
 
         Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager,
             vendor_manager,
@@ -974,6 +976,7 @@ mod admin {
         let anthropic_converter: Arc<dyn ProtocolConverter> = Arc::new(AnthropicConverter::new());
 
         Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager,
             vendor_manager,
@@ -1483,6 +1486,7 @@ mod streaming_error_propagation {
         ));
 
         Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager,
             vendor_manager,
@@ -1903,6 +1907,7 @@ mod logging_pipeline {
         ));
 
         let state = Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager,
             vendor_manager,
@@ -2212,6 +2217,7 @@ mod logging_pipeline {
         ));
 
         let state = Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager.clone(),
             vendor_manager: vendor_manager.clone(),
@@ -2405,6 +2411,7 @@ mod embeddings_governance {
         repository.initialize().await.expect("schema");
 
         Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager.clone(),
             vendor_manager: vendor_manager.clone(),
@@ -3030,6 +3037,7 @@ mod response_cache_tests {
         ));
 
         Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager.clone(),
             vendor_manager,
@@ -3415,6 +3423,7 @@ mod linucb_reward_chain {
                 .with_bandit(bandit.clone()),
         );
         let state = Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager,
             vendor_manager,
@@ -3565,6 +3574,7 @@ mod global_model_switch {
             repository: Arc::new(fluxweir::database::Repository::new(pool)),
         });
         Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager.clone(),
             vendor_manager: vendor_manager.clone(),
@@ -3815,6 +3825,7 @@ mod api_handler_coverage {
         };
 
         Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             config: config_manager,
             vendor_manager,
             router: Arc::new(router),
@@ -6571,6 +6582,7 @@ mod data_plane_endpoints {
         });
 
         Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager,
             vendor_manager,
@@ -7060,6 +7072,7 @@ mod fallback_observation_headers {
         ));
 
         Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager,
             vendor_manager,
@@ -7388,6 +7401,7 @@ mod route_explain {
         });
 
         Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer,
             config: config_manager,
             vendor_manager,
@@ -8245,6 +8259,7 @@ mod fallback_observation_headers_anthropic {
             .with_affinity(affinity.clone());
 
         Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager,
             vendor_manager,
@@ -8622,6 +8637,7 @@ mod catalog_sync_admin {
         config_manager.set_path(disk_path.clone());
         let vendor_manager = Arc::new(VendorManager::new(config_manager.clone()));
         let state = Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager.clone(),
             vendor_manager: vendor_manager.clone(),
@@ -8973,6 +8989,7 @@ mod subscription_outbound {
             vendor_manager.clone(),
         ));
         Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager,
             vendor_manager,
@@ -9403,6 +9420,7 @@ mod admin_unwired_and_restart_sections {
         let repository = Arc::new(fluxweir::database::Repository::new(pool.clone()));
 
         Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager,
             vendor_manager,

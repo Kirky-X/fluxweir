@@ -85,6 +85,7 @@ async fn create_state() -> Arc<ApiState> {
 
     Arc::new(ApiState {
         affinity_writer: None,
+        auth_cache: std::sync::Arc::new(Default::default()),
         config: config_manager.clone(),
         vendor_manager: vendor_manager.clone(),
         router: Arc::new(Router::new(config_manager, vendor_manager)),
@@ -448,6 +449,7 @@ async fn reset_vendor_clears_blacklist_and_cooldown() {
     .unwrap();
     let state = Arc::new(ApiState {
         affinity_writer: None,
+        auth_cache: std::sync::Arc::new(Default::default()),
         config: config_manager.clone(),
         vendor_manager: vendor_manager.clone(),
         router: Arc::new(Router::new(config_manager, vendor_manager.clone())),
@@ -561,6 +563,7 @@ async fn vendor_config_endpoints_read_and_update() {
     .unwrap();
     let state = Arc::new(ApiState {
         affinity_writer: None,
+        auth_cache: std::sync::Arc::new(Default::default()),
         config: config_manager.clone(),
         vendor_manager: vendor_manager.clone(),
         router: Arc::new(Router::new(config_manager, vendor_manager.clone())),
@@ -818,6 +821,7 @@ mod cost_endpoint {
 
         Arc::new(ApiState {
             affinity_writer: None,
+            auth_cache: std::sync::Arc::new(Default::default()),
             config: config_manager.clone(),
             vendor_manager: vendor_manager.clone(),
             router: Arc::new(Router::new(config_manager, vendor_manager)),

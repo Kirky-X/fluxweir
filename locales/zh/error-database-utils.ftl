@@ -2,6 +2,7 @@
 # error-*: FluxweirError 变体本地化消息（IntoResponse 展示轨道，Display 恒英文规范串）。
 error-config = 配置错误：{ $message }
 error-io = I/O 错误：{ $message }
+error-config-storage-write = 存储写入失败：{ $error }
 error-protocol = 协议转换错误：{ $source }
 error-vendor-unavailable = 厂商不可用：{ $vendor }
 error-timeout = 请求超时：{ $vendor }
@@ -11,10 +12,7 @@ error-validation = 请求验证失败：{ $field }
 error-routing = 路由错误：{ $message }
 error-all-vendors-throttled = 全部候选厂商被限流：预计 { $retry_after_secs }s 后可重试
 # error-* -source: From 转换时写入 Database 变体 message 字段的前缀。
-error-database-source = 数据库错误：{ $error }
-error-io-source = IO 错误：{ $error }
 # database-*: database.rs 初始化路径与 async_logger/pre_aggregator 运维消息。
-database-create-dir = 创建数据库目录失败：{ $error }
 database-connect = 连接数据库失败：{ $error }
 database-session = 获取数据库会话失败：{ $error }
 database-init-schema = 初始化 schema 失败：{ $error }

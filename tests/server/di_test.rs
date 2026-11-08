@@ -109,8 +109,9 @@ mod di_container {
         match err {
             FluxweirError::Gate(GateError::Config { message }) => {
                 assert!(
-                    message.starts_with("DI kit build failed"),
-                    "错误消息必须带 build 失败前缀: {message}"
+                    message.starts_with("config-di-module-failed|")
+                        && message.contains("\"operation\":\"build\""),
+                    "错误消息必须是 DI 失败锚点并标明 build: {message}"
                 );
             }
             other => panic!("必须映射为 FluxweirError::Gate(GateError::Config): {other:?}"),
@@ -125,8 +126,9 @@ mod di_container {
         match result {
             Err(FluxweirError::Gate(GateError::Config { message })) => {
                 assert!(
-                    message.contains("DI require"),
-                    "错误消息必须指明 require 失败: {message}"
+                    message.starts_with("config-di-module-failed|")
+                        && message.contains("\"operation\":\"require\""),
+                    "错误消息必须是 DI 失败锚点并标明 require: {message}"
                 );
             }
             Ok(()) => panic!("空 kit 不得通过 verify_kit"),

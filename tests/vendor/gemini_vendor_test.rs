@@ -74,6 +74,7 @@ mod tests {
             repository: repository.clone(),
         });
         Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager.clone(),
             vendor_manager: vendor_manager.clone(),

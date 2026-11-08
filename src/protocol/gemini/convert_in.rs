@@ -8,7 +8,6 @@
 
 use super::types::{normalize_model, FunctionCall, FunctionResponse, Part};
 use crate::error::GateError;
-use crate::i18n::t_args;
 use crate::protocol::unified::{
     absorb_vendor_extensions, validate_tool_schemas, ContentBlock, ImageSource, Message,
     MessageContent, Role, SamplingParams, ThinkingConfig, Tool, ToolCall, ToolCallFunction,
@@ -454,8 +453,9 @@ fn parse_response_format(generation: &Value) -> Option<Value> {
 }
 
 fn validation(key: &str) -> GateError {
+    // field 存语言中性锚点（键本身即已登记的 FTL 键），本地化在 user_message 单点完成。
     GateError::Validation {
-        field: t_args(key, &[]),
+        field: key.to_string(),
     }
 }
 

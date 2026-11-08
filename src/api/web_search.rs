@@ -321,10 +321,39 @@ pub async fn admin_stats(
 impl SearchError {
     /// 脱敏摘要（不含 key 材料：key 只进请求头/体，不进错误路径）。
     pub(crate) fn message(&self) -> String {
-        match self {
-            SearchError::Upstream { message } => message.clone(),
-            SearchError::KeyUnavailable { message } => message.clone(),
-        }
+        let raw = match self {
+            SearchError::Upstream { message } => message,
+            SearchError::KeyUnavailable { message } => message,
+        };
+        // 载荷是语言中性锚点；此处是消息轨道终点，就地单层本地化。
+        crate::error::gate::localize_anchor(raw).unwrap_or_else(|| raw.clone())
+    }
+}
+
+/// reqwest 错误 → 脱敏分类文本：不带 URL/内部拓扑（错误串会进 502 响应体）。
+fn transport_reason(e: &reqwest::Error) -> String {
+    if e.is_timeout() {
+        "timeout".to_string()
+    } else if e.is_connect() {
+        "connect failed".to_string()
+    } else if e.is_body() || e.is_decode() {
+        "invalid response body".to_string()
+    } else {
+        "transport error".to_string()
+    }
+}
+
+/// VaultError → 客户端可见安全文案（不带锚点键名/内部 id）。
+#[cfg(feature = "vault")]
+fn vault_failure_reason(e: &crate::vault::VaultError) -> String {
+    use crate::vault::VaultError;
+    match e {
+        VaultError::MasterKey(message)
+        | VaultError::Crypto(message)
+        | VaultError::Storage { message } => crate::error::gate::localize_anchor(message)
+            .unwrap_or_else(|| "vault access failed".to_string()),
+        VaultError::NotFound(_) => "vault key not found".to_string(),
+        VaultError::UnknownVendor(_) => "vault vendor unknown".to_string(),
     }
 }
 
@@ -378,7 +407,7 @@ pub async fn fetch(
         Ok(page) if (300..400).contains(&page.status) => {
             let mut response = (
                 StatusCode::from_u16(page.status).map_err(|_| GateError::Routing {
-                    message: t("search-upstream-bad-status"),
+                    message: "search-upstream-bad-status".to_string(),
                 })?,
                 Json(json!({
                     "status": page.status,
@@ -532,16 +561,16 @@ pub(crate) fn build_provider(
         "searxng" => {
             if cfg.base_url.trim().is_empty() {
                 return Err(GateError::Config {
-                    message: t("config-web-search-missing-base-url"),
+                    message: "config-web-search-missing-base-url".to_string(),
                 });
             }
             Arc::new(SearXNGProvider::new(&base(""), client.clone()))
         }
         other => {
             return Err(GateError::Config {
-                message: t_args(
-                    "config-web-search-unknown-kind",
-                    &[("kind", other.to_string())],
+                message: format!(
+                    "config-web-search-unknown-kind|{}",
+                    serde_json::json!({ "kind": other.to_string() })
                 ),
             })
         }
@@ -611,7 +640,7 @@ impl SearchProvider for TavilyProvider {
             .send()
             .await
             .map_err(|e| SearchError::Upstream {
-                message: e.to_string(),
+                message: transport_reason(&e),
             })?;
         if !resp.status().is_success() {
             return Err(SearchError::Upstream {
@@ -622,7 +651,7 @@ impl SearchProvider for TavilyProvider {
             .json::<serde_json::Value>()
             .await
             .map_err(|e| SearchError::Upstream {
-                message: e.to_string(),
+                message: transport_reason(&e),
             })?;
         Ok(parse_hits(&value, &[], "content"))
     }
@@ -647,9 +676,11 @@ impl BraveProvider {
 impl SearchProvider for BraveProvider {
     async fn search(&self, query: &str, n: u8, api_key: &str) -> Result<Vec<Hit>, SearchError> {
         let mut url =
-            reqwest::Url::parse(&format!("{}/res/web/search", self.base)).map_err(|e| {
+            reqwest::Url::parse(&format!("{}/res/web/search", self.base)).map_err(|_| {
+                // url::ParseError 的 Display 是固定变体文本；这里只给固定类别，
+                // 不回显 base URL。
                 SearchError::Upstream {
-                    message: e.to_string(),
+                    message: "invalid provider base url".to_string(),
                 }
             })?;
         url.query_pairs_mut()
@@ -662,7 +693,7 @@ impl SearchProvider for BraveProvider {
             .send()
             .await
             .map_err(|e| SearchError::Upstream {
-                message: e.to_string(),
+                message: transport_reason(&e),
             })?;
         if !resp.status().is_success() {
             return Err(SearchError::Upstream {
@@ -673,7 +704,7 @@ impl SearchProvider for BraveProvider {
             .json::<serde_json::Value>()
             .await
             .map_err(|e| SearchError::Upstream {
-                message: e.to_string(),
+                message: transport_reason(&e),
             })?;
         Ok(parse_hits(&value, &["web"], "description"))
     }
@@ -708,7 +739,7 @@ impl SearchProvider for ExaProvider {
             .send()
             .await
             .map_err(|e| SearchError::Upstream {
-                message: e.to_string(),
+                message: transport_reason(&e),
             })?;
         if !resp.status().is_success() {
             return Err(SearchError::Upstream {
@@ -719,7 +750,7 @@ impl SearchProvider for ExaProvider {
             .json::<serde_json::Value>()
             .await
             .map_err(|e| SearchError::Upstream {
-                message: e.to_string(),
+                message: transport_reason(&e),
             })?;
         Ok(parse_hits(&value, &[], "text"))
     }
@@ -759,7 +790,7 @@ impl SearchProvider for SearXNGProvider {
             .send()
             .await
             .map_err(|e| SearchError::Upstream {
-                message: e.to_string(),
+                message: transport_reason(&e),
             })?;
         if !resp.status().is_success() {
             return Err(SearchError::Upstream {
@@ -770,7 +801,7 @@ impl SearchProvider for SearXNGProvider {
             .json::<serde_json::Value>()
             .await
             .map_err(|e| SearchError::Upstream {
-                message: e.to_string(),
+                message: transport_reason(&e),
             })?;
         Ok(parse_hits(&value, &[], "content"))
     }
@@ -853,7 +884,7 @@ impl KeyPool {
             let guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
             if guard.keys.is_empty() {
                 return Err(SearchError::KeyUnavailable {
-                    message: t("search-key-pool-empty"),
+                    message: "search-key-pool-empty".to_string(),
                 });
             }
             (
@@ -893,7 +924,7 @@ impl KeyPool {
             }
         }
         Err(first_err.unwrap_or(SearchError::KeyUnavailable {
-            message: t("search-key-unusable"),
+            message: "search-key-unusable".to_string(),
         }))
     }
 
@@ -919,7 +950,10 @@ async fn resolve_key(
 ) -> Result<String, SearchError> {
     match source {
         KeySource::Env(name) => std::env::var(name).map_err(|_| SearchError::KeyUnavailable {
-            message: t_args("search-key-env-missing", &[("name", name.clone())]),
+            message: format!(
+                "search-key-env-missing|{}",
+                serde_json::json!({ "name": name.clone() })
+            ),
         }),
         KeySource::VaultRef(id) => {
             #[cfg(feature = "vault")]
@@ -931,19 +965,22 @@ async fn resolve_key(
                             .reveal(id)
                             .await
                             .map_err(|e| SearchError::KeyUnavailable {
-                                message: e.to_string(),
+                                // VaultError 的 Display 带类型前缀且载荷是锚点：
+                                // 原样进 502 会把键名/内部文本带出站。只取可解
+                                // 锚的载荷，其余变体给固定安全文案。
+                                message: vault_failure_reason(&e),
                             })?;
                     Ok(secret.expose_secret().to_string())
                 }
                 None => Err(SearchError::KeyUnavailable {
-                    message: t("search-vault-unwired"),
+                    message: "search-vault-unwired".to_string(),
                 }),
             }
             #[cfg(not(feature = "vault"))]
             {
                 let _ = (id, vault);
                 Err(SearchError::KeyUnavailable {
-                    message: t("search-vault-disabled"),
+                    message: "search-vault-disabled".to_string(),
                 })
             }
         }

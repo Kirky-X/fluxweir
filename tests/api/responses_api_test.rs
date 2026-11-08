@@ -88,6 +88,7 @@ mod tests {
         });
 
         let state = Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager.clone(),
             vendor_manager: vendor_manager.clone(),
@@ -1385,6 +1386,10 @@ mod tests {
         }
         let body = final_body.expect("失败状态必须回写（预算 30s）");
         assert_eq!(body["error"]["code"], "background_failed", "{body}");
+        // 落库并经 GET 出站的失败对象必须是本地化用户消息，不得含锚点键/JSON
+        let message = body["error"]["message"].as_str().unwrap_or_default();
+        assert!(!message.is_empty(), "失败对象必须带用户消息: {body}");
+        assert!(!message.contains('|'), "失败对象不得泄漏锚点载荷: {body}");
     }
     /// GET/DELETE 的错误面：disabled→404、未知 id→404、delete 未知→404。
     #[tokio::test]

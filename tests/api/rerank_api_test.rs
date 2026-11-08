@@ -93,6 +93,7 @@ mod tests {
         repository.initialize().await.expect("schema");
 
         let state = Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager.clone(),
             vendor_manager: vendor_manager.clone(),
@@ -821,6 +822,7 @@ mod degraded_paths {
         };
 
         let state = Arc::new(ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: config_manager.clone(),
             vendor_manager: vendor_manager.clone(),

@@ -567,7 +567,7 @@ async fn key_attribution_sink_records_attempted_key_fingerprint() {
     let r1 = manager
         .execute_request_with_options(
             "kp-attribution",
-            make_unified_request(),
+            std::sync::Arc::new(make_unified_request()),
             fluxweir::vendor::manager::VendorCallOptions {
                 anthropic_beta: None,
                 served_key_sink: Some(sink1.clone()),
@@ -589,7 +589,7 @@ async fn key_attribution_sink_records_attempted_key_fingerprint() {
     let response = manager
         .execute_request_with_options(
             "kp-attribution",
-            make_unified_request(),
+            std::sync::Arc::new(make_unified_request()),
             fluxweir::vendor::manager::VendorCallOptions {
                 anthropic_beta: None,
                 served_key_sink: Some(sink2.clone()),

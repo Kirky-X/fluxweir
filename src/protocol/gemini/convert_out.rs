@@ -6,7 +6,6 @@
 use super::schema::sanitize_schema;
 use super::types::{normalize_model, parse_response, Candidate, GEMINI_KNOWN_KEYS};
 use crate::error::GateError;
-use crate::i18n::t_args;
 use crate::protocol::unified::{
     merge_vendor_extensions, Choice, ContentBlock, EffortLevel, FinishReason, ImageSource, Message,
     MessageContent, Role, ThinkingConfig, ToolChoice, UnifiedRequest, UnifiedResponse,
@@ -109,7 +108,7 @@ pub fn parse_gemini_response(
     fallback_model: &str,
 ) -> Result<UnifiedResponse, GateError> {
     let parsed = parse_response(value).ok_or_else(|| GateError::Protocol {
-        source: t_args("api-gemini-response-invalid", &[]),
+        source: "api-gemini-response-invalid".to_string(),
         inner: None,
     })?;
 
@@ -121,7 +120,7 @@ pub fn parse_gemini_response(
         None => {
             if parsed.prompt_feedback.is_none() {
                 return Err(GateError::Protocol {
-                    source: t_args("api-gemini-response-invalid", &[]),
+                    source: "api-gemini-response-invalid".to_string(),
                     inner: None,
                 });
             }
@@ -596,8 +595,9 @@ fn clamp_u32(value: u64) -> u32 {
 }
 
 fn validation(key: &str) -> GateError {
+    // field 存语言中性锚点（键本身即已登记的 FTL 键），本地化在 user_message 单点完成。
     GateError::Validation {
-        field: t_args(key, &[]),
+        field: key.to_string(),
     }
 }
 

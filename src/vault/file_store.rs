@@ -15,7 +15,6 @@ use std::sync::Mutex;
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
-use crate::i18n::{t, t_args};
 use crate::vault::crypto;
 use crate::vault::{KeyStore, SecretKeyRecord, VaultError};
 
@@ -25,7 +24,7 @@ const VAULT_FILE_MAGIC: &[u8] = b"FLUXWEIR-VAULT1\n";
 /// 默认柜文件：`~/.fluxweir/vault.bin`。
 pub fn home_vault_path() -> Result<PathBuf, VaultError> {
     let home = std::env::home_dir().ok_or_else(|| VaultError::Storage {
-        message: t("vault-home-not-found"),
+        message: "vault-home-not-found".to_string(),
     })?;
     Ok(home.join(".fluxweir").join("vault.bin"))
 }
@@ -67,12 +66,15 @@ impl FileKeyStore {
             crate::utils::state_file::StateFileOutcome::Parsed(raw)
             | crate::utils::state_file::StateFileOutcome::RecoveredFromBak { bytes: raw, .. } => {
                 validate(&raw).ok_or_else(|| VaultError::Storage {
-                    message: t("vault-file-magic-mismatch"),
+                    message: "vault-file-magic-mismatch".to_string(),
                 })?
             }
             crate::utils::state_file::StateFileOutcome::Unrecoverable { reason } => {
                 return Err(VaultError::Storage {
-                    message: t_args("vault-state-unrecoverable", &[("reason", reason)]),
+                    message: format!(
+                        "vault-state-unrecoverable|{}",
+                        serde_json::json!({ "reason": reason })
+                    ),
                 });
             }
             // 首装形态（主/bak 均无）：空柜启动，首次 put 时落盘——历史行为
@@ -87,41 +89,66 @@ impl FileKeyStore {
 
     fn persist(&self, entries: &BTreeMap<String, StoredEntry>) -> Result<(), VaultError> {
         let json = serde_json::to_vec(entries).map_err(|e| VaultError::Storage {
-            message: t_args("vault-encode-entries-failed", &[("error", e.to_string())]),
+            message: format!(
+                "vault-encode-entries-failed|{}",
+                serde_json::json!({ "error": e.to_string() })
+            ),
         })?;
         let container =
             crypto::cipher(&self.master_key)
                 .wrap(&json)
                 .map_err(|e| VaultError::Storage {
-                    message: t_args("vault-seal-file-failed", &[("error", e.to_string())]),
+                    message: format!(
+                        "vault-seal-file-failed|{}",
+                        serde_json::json!({ "error": e.to_string() })
+                    ),
                 })?;
-        if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| VaultError::Storage {
-                message: t_args("vault-create-dir-failed", &[("error", e.to_string())]),
-            })?;
-        }
-        let tmp = self.path.with_extension("bin.tmp");
-        {
-            let mut file = std::fs::File::create(&tmp).map_err(|e| VaultError::Storage {
-                message: t_args("vault-create-tmp-failed", &[("error", e.to_string())]),
-            })?;
-            file.write_all(VAULT_FILE_MAGIC)
-                .and_then(|_| file.write_all(&container))
-                .map_err(|e| VaultError::Storage {
-                    message: t_args("vault-write-file-failed", &[("error", e.to_string())]),
+        // 全部 fs 操作走阻塞收口：vault 写盘在异步上下文调用（admin/key 注入），
+        // 不让同步 IO 占住 async worker。
+        crate::utils::blocking::run_blocking(|| -> Result<(), VaultError> {
+            if let Some(parent) = self.path.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| VaultError::Storage {
+                    message: format!(
+                        "vault-create-dir-failed|{}",
+                        serde_json::json!({ "error": e.to_string() })
+                    ),
                 })?;
-            file.sync_all().map_err(|e| VaultError::Storage {
-                message: t_args("vault-sync-file-failed", &[("error", e.to_string())]),
+            }
+            let tmp = self.path.with_extension("bin.tmp");
+            {
+                let mut file = std::fs::File::create(&tmp).map_err(|e| VaultError::Storage {
+                    message: format!(
+                        "vault-create-tmp-failed|{}",
+                        serde_json::json!({ "error": e.to_string() })
+                    ),
+                })?;
+                file.write_all(VAULT_FILE_MAGIC)
+                    .and_then(|_| file.write_all(&container))
+                    .map_err(|e| VaultError::Storage {
+                        message: format!(
+                            "vault-write-file-failed|{}",
+                            serde_json::json!({ "error": e.to_string() })
+                        ),
+                    })?;
+                file.sync_all().map_err(|e| VaultError::Storage {
+                    message: format!(
+                        "vault-sync-file-failed|{}",
+                        serde_json::json!({ "error": e.to_string() })
+                    ),
+                })?;
+            }
+            std::fs::rename(&tmp, &self.path).map_err(|e| VaultError::Storage {
+                message: format!(
+                    "vault-replace-file-failed|{}",
+                    serde_json::json!({ "error": e.to_string() })
+                ),
             })?;
-        }
-        std::fs::rename(&tmp, &self.path).map_err(|e| VaultError::Storage {
-            message: t_args("vault-replace-file-failed", &[("error", e.to_string())]),
-        })?;
-        // 成功落盘后回写 .bak（读侧崩溃回退源；失败仅警告不影响主链路）
-        if let Ok(fresh) = std::fs::read(&self.path) {
-            crate::utils::state_file::write_backup(&self.path, &fresh);
-        }
-        Ok(())
+            // 成功落盘后回写 .bak（读侧崩溃回退源；失败仅警告不影响主链路）
+            if let Ok(fresh) = std::fs::read(&self.path) {
+                crate::utils::state_file::write_backup(&self.path, &fresh);
+            }
+            Ok(())
+        })
     }
 
     fn record(id: &str, entry: &StoredEntry) -> SecretKeyRecord {

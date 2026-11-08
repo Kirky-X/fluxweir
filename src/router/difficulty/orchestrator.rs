@@ -75,6 +75,32 @@ pub struct DifficultyRouter {
     metrics: Arc<GlobalMetrics>,
 }
 
+/// 半开探测槽 RAII：未 disarm 即 Drop（future 取消/提前返回）时释放槽。
+struct ProbeSlot<'a> {
+    guard: &'a crate::router::difficulty::guard::Guard,
+    armed: bool,
+}
+
+impl<'a> ProbeSlot<'a> {
+    /// 仅当调用方确实消费了 Probe（armed=true）时接管槽的释放责任；
+    /// Available 态请求未持有槽，取消时不得清掉并发探测的槽。
+    fn arm_if(armed: bool, guard: &'a crate::router::difficulty::guard::Guard) -> Self {
+        Self { guard, armed }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for ProbeSlot<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            self.guard.release_probe();
+        }
+    }
+}
+
 impl DifficultyRouter {
     pub fn new(
         config: Arc<ConfigManager>,
@@ -215,7 +241,11 @@ impl DifficultyRouter {
             return None;
         }
         let now = Instant::now();
-        match self.guard.check(now) {
+        let availability = self.guard.check(now);
+        // 探测槽 RAII：future 被取消（调用方 drop）时 Drop 释放槽，避免
+        // 半开期无人 record 导致永久降级；仅在真正消费 Probe 时接管。
+        let mut probe_slot = ProbeSlot::arm_if(availability == Availability::Probe, &self.guard);
+        match availability {
             Availability::Unavailable => None,
             Availability::Available | Availability::Probe => {
                 let features = features.clone();
@@ -226,6 +256,7 @@ impl DifficultyRouter {
                 .await;
                 match result {
                     Ok(Ok(Ok(p))) => {
+                        probe_slot.disarm();
                         let recovered = self.guard.record_success();
                         if recovered {
                             self.metrics.record_difficulty_breaker_recovered();
@@ -241,12 +272,14 @@ impl DifficultyRouter {
                         }
                     }
                     Ok(Ok(Err(error))) => {
+                        probe_slot.disarm();
                         self.record_failure_tracked(Instant::now());
                         self.metrics.record_difficulty_classifier_failed();
                         tracing::debug!(?error, "{}", t("difficulty-classifier-failed"));
                         None
                     }
                     Ok(Err(join_error)) => {
+                        probe_slot.disarm();
                         self.record_failure_tracked(Instant::now());
                         self.metrics.record_difficulty_classifier_failed();
                         tracing::debug!(
@@ -257,6 +290,7 @@ impl DifficultyRouter {
                         None
                     }
                     Err(_elapsed) => {
+                        probe_slot.disarm();
                         self.record_failure_tracked(Instant::now());
                         self.metrics.record_difficulty_classifier_failed();
                         tracing::debug!("{}", t("difficulty-classifier-timeout"));
@@ -310,7 +344,8 @@ impl DifficultyRouter {
         let cached = self.cache.get(&key).await;
 
         let r = rule_score(&features, &d.scoring);
-        let availability = self.guard.check(Instant::now());
+        // 解释面只读：不得迁移熔断状态或占用半开探测槽
+        let availability = self.guard.peek(Instant::now());
         let (p_clf, classifier_error) = match (&self.classifier, availability) {
             (Some(classifier), Availability::Available | Availability::Probe)
                 if d.w_clf > 0.0 && d.w_clf.is_finite() =>

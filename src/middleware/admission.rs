@@ -13,7 +13,7 @@
 //! Drop 释放（panic 展开亦不泄漏）。
 
 use crate::config::{AdmissionSection, AuthTier, ConfigManager};
-use crate::middleware::auth::{extract_api_key, ApiAuthState};
+use crate::middleware::auth::extract_api_key;
 use crate::vendor::VendorManager;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -76,12 +76,17 @@ pub fn admission_priority(
 /// 请求的档位判定 — 请求 key（明文）经热配置 `[auth]` 段的
 /// `keys` 子表查档（`ApiAuthState::tier_for_key`，与认证同一摘要比较）；
 /// 无 key / `[auth]` 缺失或关闭 → 缺省档 elastic。
-pub fn tier_for_request(config: &ConfigManager, headers: &axum::http::HeaderMap) -> AuthTier {
+pub fn tier_for_request(
+    config: &ConfigManager,
+    auth_cache: &crate::middleware::auth::AuthContextCache,
+    headers: &axum::http::HeaderMap,
+) -> AuthTier {
     let Some(key) = extract_api_key(headers) else {
         return AuthTier::Elastic;
     };
-    match config.read().auth.as_ref() {
-        Some(section) if section.enabled => ApiAuthState::from_section(section).tier_for_key(&key),
+    let snapshot = config.read();
+    match snapshot.auth.as_ref() {
+        Some(section) if section.enabled => auth_cache.context(&snapshot).state.tier_for_key(&key),
         _ => AuthTier::Elastic,
     }
 }
@@ -150,11 +155,12 @@ impl AdmissionState {
         now_ms: u64,
     ) -> Result<AdmissionGuard, u64> {
         let section = self.config.read().admission.clone();
-        let stats = self.stats_for(key_hash);
-        self.record_arrival(&stats, now_ms);
         if !section.enabled {
+            // 关闭态只记在途 guard（纯内存观测），不取 per-key 锁、不更新 EWMA
             return Ok(self.guard(tier));
         }
+        let stats = self.stats_for(key_hash);
+        self.record_arrival(&stats, now_ms);
         // 拥塞信号：网关侧并发占用率（容量 0 = 无实例，按无拥塞处理）
         let (in_flight, capacity) = self.vendor_manager.fleet_concurrency();
         let congested =
@@ -208,14 +214,21 @@ impl AdmissionState {
 
     /// per-key 状态取用（惰性创建 + 容量守卫：超限退化共享单桶）。
     fn stats_for(&self, key_hash: &str) -> Arc<KeyStats> {
-        if let Some(s) = self
+        let read = self
             .key_stats
             .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .get(key_hash)
-        {
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(s) = read.get(key_hash) {
             return s.clone();
         }
+        // 表满后的新键落到共享溢出桶：读快路径同样要查它，否则稳态下
+        // 每个新键都要升级写锁再命中同一桶。
+        if read.len() >= MAX_KEY_STATS {
+            if let Some(s) = read.get(OVERFLOW_KEY) {
+                return s.clone();
+            }
+        }
+        drop(read);
         let mut guard = self
             .key_stats
             .write()

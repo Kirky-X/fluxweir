@@ -38,7 +38,8 @@ pub struct Router {
     affinity: Option<Arc<AffinityTable>>,
     /// SLA 虚拟队列 Q：键 = 租户（无租户 "global"），每轮加权选择后
     /// 对偶更新 Q ← max(0, Q + α − ŝ)；sla_v=0（默认）不读写。重启归零。
-    sla_queues: Arc<RwLock<HashMap<String, f64>>>,
+    /// 条目带最后更新时间：键数达上限时按最旧时间淘汰（防多租户无界增长）。
+    sla_queues: Arc<RwLock<HashMap<String, SlaQueueEntry>>>,
     /// 「候选集全无定价」一次性 warn 标记（防每请求刷屏）
     sla_no_pricing_warned: Arc<AtomicBool>,
     /// LinUCB 臂状态。None = 未接线，该档回退 weighted
@@ -292,9 +293,9 @@ impl Router {
             .metrics()
             .record_embedding_group_exhausted();
         GateError::Validation {
-            field: t_args(
-                "router-embedding-group-exhausted",
-                &[("model", model.to_string()), ("group", group.to_string())],
+            field: format!(
+                "router-embedding-group-exhausted|{}",
+                serde_json::json!({ "model": model.to_string(), "group": group.to_string() })
             ),
         }
     }
@@ -374,9 +375,9 @@ impl Router {
     /// rerank 无可用候选：显式错误含配置指引（type_ / model_type / enabled）
     fn rerank_capability_exhausted_error(&self, model: &str) -> GateError {
         GateError::Validation {
-            field: t_args(
-                "router-rerank-no-capable-vendor",
-                &[("model", model.to_string())],
+            field: format!(
+                "router-rerank-no-capable-vendor|{}",
+                serde_json::json!({ "model": model.to_string() })
             ),
         }
     }
@@ -437,9 +438,9 @@ impl Router {
 
     fn responses_native_exhausted_error(&self, model: &str) -> GateError {
         GateError::Validation {
-            field: t_args(
-                "router-responses-no-native-vendor",
-                &[("model", model.to_string())],
+            field: format!(
+                "router-responses-no-native-vendor|{}",
+                serde_json::json!({ "model": model.to_string() })
             ),
         }
     }
@@ -500,9 +501,9 @@ impl Router {
 
     fn gemini_native_exhausted_error(&self, model: &str) -> GateError {
         GateError::Validation {
-            field: t_args(
-                "router-gemini-no-native-vendor",
-                &[("model", model.to_string())],
+            field: format!(
+                "router-gemini-no-native-vendor|{}",
+                serde_json::json!({ "model": model.to_string() })
             ),
         }
     }
@@ -601,7 +602,10 @@ impl Router {
             // 静默空转或把「管理员关闭」误报成「模型不存在」
             if !self.config.is_global_model_enabled() {
                 return Err(GateError::Validation {
-                    field: format!("global-model-disabled:{abstract_model}"),
+                    field: format!(
+                        "error-validation-global-model-disabled|{}",
+                        serde_json::json!({"model": abstract_model})
+                    ),
                 });
             }
             if let Some(decision) = self
@@ -621,8 +625,36 @@ impl Router {
             }
         }
 
+        // 模型已在配置中声明但所有候选不可用（禁用/熔断/降级）→ 503；
+        // 仅当模型未在任何厂商声明时才归请求字段错误（400）。
+        if self.model_is_declared(&normalized) {
+            return Err(GateError::VendorUnavailable {
+                vendor: format!(
+                    "error-all-candidates-unavailable|{}",
+                    serde_json::json!({"model": abstract_model})
+                ),
+            });
+        }
         Err(GateError::Validation {
-            field: format!("model-not-found:{abstract_model}"),
+            field: format!(
+                "error-validation-model-not-found|{}",
+                serde_json::json!({"model": abstract_model})
+            ),
+        })
+    }
+
+    /// 模型是否在配置中声明（含被禁用/暂不可用的 vendor 与条目）：
+    /// 用于区分「未声明模型（400）」与「已声明但无可用候选（503）」。
+    fn model_is_declared(&self, normalized: &str) -> bool {
+        let config = self.config.read();
+        config.vendors.iter().any(|vendor| {
+            vendor.models.iter().any(|model| {
+                model.model_id.eq_ignore_ascii_case(normalized)
+                    || model
+                        .abstract_id
+                        .as_deref()
+                        .is_some_and(|a| a.eq_ignore_ascii_case(normalized))
+            })
         })
     }
 
@@ -997,12 +1029,7 @@ impl Router {
         // 入口统一过权重门控（route_weighted 末尾二次门控幂等）
         let request_weight = self.gate_request_weight(request_weight);
         if let Some(vendor_id) = preferred_vendor {
-            if let Some(decision) = self.try_vendor_route(vendor_id, preferred_model).await {
-                return Ok(decision);
-            }
-            return Err(GateError::Validation {
-                field: format!("vendor-unavailable:{vendor_id}"),
-            });
+            return self.try_vendor_route(vendor_id, preferred_model).await;
         }
 
         // hints 是显式指定，不接亲和。臂键与奖励侧同源归一
@@ -1041,24 +1068,39 @@ impl Router {
         .await
     }
 
+    /// 显式厂商提示路由。miss 分类按状态码语义区分：
+    /// - 厂商未配置 / 已禁用 / 模型提示不存在 → `Validation`（400，配置或请求问题）；
+    /// - 厂商存在且启用、但当前状态非 Available（或无可服务模型）→
+    ///   `VendorUnavailable`（503，可重试的服务面不可用）。
     async fn try_vendor_route(
         &self,
         vendor_id: &str,
         model_hint: Option<&str>,
-    ) -> Option<RoutingDecision> {
+    ) -> Result<RoutingDecision, GateError> {
+        let not_configured = || GateError::Validation {
+            field: format!(
+                "error-validation-vendor-unavailable|{}",
+                serde_json::json!({"vendor": vendor_id})
+            ),
+        };
         // 请求头书写大小写不敏感；状态查询用配置规范 id，避免门控漂移
-        let vendor = self.config.get_vendor_ci(vendor_id)?;
+        let vendor = self
+            .config
+            .get_vendor_ci(vendor_id)
+            .ok_or_else(not_configured)?;
         if !vendor.enabled {
-            return None;
+            return Err(not_configured());
         }
 
         if self.vendor_manager.get_status(&vendor.id).await != VendorStatus::Available {
-            return None;
+            return Err(GateError::VendorUnavailable {
+                vendor: vendor.id.clone(),
+            });
         }
 
         // 模型名匹配与直连路径同源：ASCII 大小写折叠、零分配
         if let Some(model_id) = model_hint {
-            if let Some(model) = vendor
+            let found = vendor
                 .models
                 .iter()
                 .find(|m| {
@@ -1068,32 +1110,38 @@ impl Router {
                                 .as_ref()
                                 .is_some_and(|a| a.eq_ignore_ascii_case(model_id)))
                 })
-                .cloned()
-            {
-                return Some(RoutingDecision {
+                .cloned();
+            return match found {
+                Some(model) => Ok(RoutingDecision {
                     vendor,
                     model,
                     strategy: RoutingStrategy::Direct,
-                });
-            }
+                }),
+                None => Err(GateError::Validation {
+                    field: format!(
+                        "error-validation-model-not-found|{}",
+                        serde_json::json!({"model": model_id})
+                    ),
+                }),
+            };
         }
 
-        // 无提示时取第一个启用模型
-        let model = vendor.models.iter().find(|m| m.enabled)?.clone();
-        Some(RoutingDecision {
-            vendor,
-            model,
-            strategy: RoutingStrategy::Direct,
-        })
+        // 无提示时取第一个启用模型；该厂商无可服务模型即不可用（503）
+        match vendor.models.iter().find(|m| m.enabled).cloned() {
+            Some(model) => Ok(RoutingDecision {
+                vendor,
+                model,
+                strategy: RoutingStrategy::Direct,
+            }),
+            None => Err(GateError::VendorUnavailable {
+                vendor: vendor.id.clone(),
+            }),
+        }
     }
 
     async fn try_direct_route(&self, input: &str, excluded: &[String]) -> Option<RoutingDecision> {
-        let parts: Vec<&str> = input.splitn(2, '.').collect();
-        if parts.len() != 2 {
-            return None;
-        }
-
-        let (vendor_id, model_id) = (parts[0], parts[1]);
+        // split_once 零分配（旧 splitn().collect::<Vec<_>>() 每次直连多一次堆分配）
+        let (vendor_id, model_id) = input.split_once('.')?;
 
         // 排除集内容为配置规范 id，与请求侧书写大小写无关地比较
         if excluded.iter().any(|e| e.eq_ignore_ascii_case(vendor_id)) {
@@ -1314,6 +1362,9 @@ impl Router {
     ) {
         let mut available: Vec<(VendorConfig, ModelConfig)> = Vec::new();
         let mut status_dropped: Vec<(VendorConfig, ModelConfig)> = Vec::new();
+        // 状态只依赖 vendor.id：同 vendor 多模型时只查一次（get_status 内部
+        // 还会 await 熔断器/限流状态，按模型重复调用代价非零）。
+        let mut status_cache: HashMap<String, VendorStatus> = HashMap::new();
         for (vendor, model) in self.config.resolve_model(abstract_id) {
             if !vendor.enabled || !model.enabled {
                 continue;
@@ -1322,7 +1373,15 @@ impl Router {
             if excluded.iter().any(|e| e.eq_ignore_ascii_case(&vendor.id)) {
                 continue;
             }
-            if self.vendor_manager.get_status(&vendor.id).await == VendorStatus::Available {
+            let status = match status_cache.get(&vendor.id) {
+                Some(status) => *status,
+                None => {
+                    let status = self.vendor_manager.get_status(&vendor.id).await;
+                    status_cache.insert(vendor.id.clone(), status);
+                    status
+                }
+            };
+            if status == VendorStatus::Available {
                 available.push((vendor, model));
             } else {
                 status_dropped.push((vendor, model));
@@ -1351,16 +1410,17 @@ impl Router {
                 continue;
             }
 
+            // 状态判一次覆盖全部模型（同 vendor 的 N 个模型不再重复 await）
+            let available =
+                self.vendor_manager.get_status(&vendor.id).await == VendorStatus::Available;
             for model in &vendor.models {
                 if !model.enabled {
                     continue;
                 }
-
-                if self.vendor_manager.get_status(&vendor.id).await != VendorStatus::Available {
+                if !available {
                     status_dropped.push((vendor.clone(), model.clone()));
                     continue;
                 }
-
                 all_models.push((vendor.clone(), model.clone()));
             }
         }
@@ -1583,7 +1643,14 @@ impl Router {
             .calculate_weights_overridden(candidates, request_weight, tenant, ctx)
             .await;
         if let Some((vendor_id, factor)) = affinity_boost {
-            apply_affinity_boost(&mut weighted, vendor_id, factor);
+            if !apply_affinity_boost(&mut weighted, vendor_id, factor) {
+                // 亲和目标不在候选集（被排除/禁用/无可用模型）：本次按常规
+                // 加权选择；记录以便区分「亲和未生效」与「亲和无命中」。
+                tracing::debug!(
+                    vendor = vendor_id,
+                    "affinity boost target absent from candidate set; falling back to weighted pick"
+                );
+            }
         }
         let pair = ctx.as_ref().and_then(|c| {
             routing_pair_enabled(self)
@@ -1846,6 +1913,12 @@ impl Router {
         rng: &mut dyn rand::Rng,
         pair: Option<(usize, usize)>,
     ) -> RoutingDecision {
+        // 不变量：调用方必须已剔除不可用候选；空集会令后续 `weighted[idx]`
+        // 越界 panic（且无处返回合法决策），在入口快速失败并指明契约。
+        assert!(
+            !weighted.is_empty(),
+            "weighted_select_with 要求非空候选集（调用方须先过滤不可用 vendor）"
+        );
         // 系数与温度热读（同步段，无 await）
         let routing = self.config.read().routing.clone();
 
@@ -2044,7 +2117,9 @@ impl Router {
         self.sla_queues
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+            .iter()
+            .map(|(key, entry)| (key.clone(), entry.q))
+            .collect()
     }
 
     /// 失败率软降权：failure_rate_gate 开启且样本达标且超阈时
@@ -2248,7 +2323,7 @@ impl Router {
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .get(queue_key)
-            .copied()
+            .map(|entry| entry.q)
             .unwrap_or(0.0);
         let entries = costs
             .into_iter()
@@ -2268,16 +2343,42 @@ impl Router {
     fn sla_record_dual_update(&self, vendor_id: &str, tenant: Option<&str>, alpha: f64) {
         let satisfaction = self.satisfaction(vendor_id);
         let queue_key = sla_queue_key(tenant);
+        let now = std::time::Instant::now();
         let mut guard = self
             .sla_queues
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let q = guard.get(queue_key).copied().unwrap_or(0.0);
+        let q = guard.get(queue_key).map(|entry| entry.q).unwrap_or(0.0);
+        let next_q = sla_dual_update(q, alpha, satisfaction).min(SLA_QUEUE_CAP);
+        if !guard.contains_key(queue_key) && guard.len() >= SLA_QUEUE_MAX_TENANTS {
+            // 键数上限：淘汰最久未更新的租户（O(n) 扫描仅在新键且满员时发生）
+            if let Some(oldest) = guard
+                .iter()
+                .min_by_key(|(_, entry)| entry.last_seen)
+                .map(|(key, _)| key.clone())
+            {
+                guard.remove(&oldest);
+            }
+        }
         guard.insert(
             queue_key.to_string(),
-            sla_dual_update(q, alpha, satisfaction),
+            SlaQueueEntry {
+                q: next_q,
+                last_seen: now,
+            },
         );
     }
+}
+
+/// SLA 虚拟队列：单租户 Q 上限（α−ŝ 每轮累计不设限会无界增长）。
+const SLA_QUEUE_CAP: f64 = 64.0;
+/// SLA 虚拟队列：在册租户键数上限（超出按最旧更新时间淘汰）。
+const SLA_QUEUE_MAX_TENANTS: usize = 4096;
+
+/// SLA 虚拟队列条目：队列深度 Q + 最后更新时间（LRU 淘汰依据）。
+struct SlaQueueEntry {
+    q: f64,
+    last_seen: std::time::Instant,
 }
 
 /// LPS 软约束的候选集级快照 — 因子与候选顺序对齐。
@@ -2329,19 +2430,24 @@ pub fn relative_in_flight_to_len(in_flight: f64, fleet_mean: f64) -> usize {
 
 /// 亲和 boost 权重乘子（soft 模式）：命中 vendor ×(1 + factor)，
 /// 其余不动；factor <= 0 无操作。pub 供确定性单测
+/// 应用 soft 亲和乘子；返回是否命中候选集（未命中说明亲和目标已被
+/// 排除/禁用，调用方据此记录观测，避免静默失效）。
 pub fn apply_affinity_boost(
     weighted: &mut [(f64, (VendorConfig, ModelConfig))],
     vendor_id: &str,
     factor: f64,
-) {
+) -> bool {
     if factor <= 0.0 {
-        return;
+        return false;
     }
+    let mut hit = false;
     for (w, (v, _)) in weighted.iter_mut() {
         if v.id == vendor_id {
             *w *= 1.0 + factor;
+            hit = true;
         }
     }
+    hit
 }
 
 /// SLA 惩罚因子：1 / (1 + V·Ĉ + max(0, Q·(α − ŝ)))，因子 ∈ (0,1]；

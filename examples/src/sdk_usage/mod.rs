@@ -11,7 +11,7 @@ pub mod rerank;
 pub mod responses;
 pub mod stream_chat;
 
-/// 读取必填环境变量：缺失或为空即显性退出，四个示例共用（不带空值发请求）。
+/// 读取必填环境变量：缺失或为空即显性退出，六个示例共用（不带空值发请求）。
 pub(crate) fn require_env(name: &str) -> String {
     match std::env::var(name) {
         Ok(v) if !v.trim().is_empty() => v,

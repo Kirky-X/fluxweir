@@ -116,6 +116,7 @@ async fn build_app_with(config: Config, fetcher: GuardedFetcher) -> Router {
         vendor_manager.clone(),
     ));
     let state = Arc::new(ApiState {
+        auth_cache: std::sync::Arc::new(Default::default()),
         config: config_manager,
         vendor_manager,
         router,

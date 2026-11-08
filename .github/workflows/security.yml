@@ -4,9 +4,15 @@
 name: security
 on:
   push:
-    branches: [main, master]
+    branches: [main, develop]
   pull_request:
+    branches: [main, develop]
   workflow_dispatch:
+
+# 重复推送取消在跑的同 ref 扫描（与 ci.yml / feature-matrix.yml 同口径）
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -14,6 +20,8 @@ permissions:
 jobs:
   security:
     runs-on: ubuntu-latest
+    # 与其余 job 一致：gitleaks/trivy/zizmor 任一挂起不得无限占用 runner
+    timeout-minutes: 10
     steps:
       # 写法对齐 vecboost/garrison/CodeNexus 同一 workflow：SHA 钉 + fetch-depth: 0。
       # 浅克隆会让 gitleaks-action 的 `<head>^..<head>` 区间无法解析（报
@@ -21,10 +29,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: actionlint
-        # 第三方 docker action 钉具体版本：latest 可变，上游可静默换镜像。
-        # Docker Hub 实际 tag 无 v 前缀（v1.7.7 manifest unknown 必红），钉 1.7.12
-        uses: docker://rhysd/actionlint:1.7.12
+        # 第三方 docker action 钉 digest：tag 可变，上游可静默换镜像。
+        # 版本 1.7.12（Docker Hub 无 v 前缀）；digest 为 1.7.12 多架构索引。
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
           # shellcheck 子检查降到 error 级：YAML 语法/表达式错误仍阻断，
           # 风格级（SC2086/SC2034 等）不阻断，避免打断既有流水线。

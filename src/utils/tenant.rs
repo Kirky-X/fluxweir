@@ -8,7 +8,7 @@
 use axum::http::HeaderMap;
 use sha2::{Digest, Sha256};
 
-/// 从请求头提取 API key：`Authorization: Bearer` 优先，`x-api-key` 兜底。
+/// 从请求头提取 API key：`Authorization: Bearer` > `x-api-key` > `x-goog-api-key`。
 pub fn extract_api_key(headers: &HeaderMap) -> Option<String> {
     // 尝试从 Authorization header 提取
     if let Some(auth) = headers.get("authorization") {
@@ -44,6 +44,7 @@ pub fn extract_api_key(headers: &HeaderMap) -> Option<String> {
 pub fn api_key_digest(headers: &HeaderMap) -> String {
     match extract_api_key(headers) {
         Some(key) => {
+            #[cfg(feature = "oidc")]
             if let Some(mother) = crate::utils::oidc_keys::resolve(&key) {
                 return mother;
             }

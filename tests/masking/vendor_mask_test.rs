@@ -400,6 +400,7 @@ mod stats_endpoint {
         .expect("内存库");
         let repository = Arc::new(fluxweir::database::Repository::new(pool.clone()));
         let state = Arc::new(fluxweir::api::ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: Arc::clone(&cm),
             vendor_manager: vm,
@@ -492,6 +493,7 @@ mod ledger_endpoint {
             Arc::new(VendorManager::new(Arc::clone(&cm))),
         ));
         Arc::new(fluxweir::api::ApiState {
+            auth_cache: std::sync::Arc::new(Default::default()),
             affinity_writer: None,
             config: cm,
             vendor_manager: vm,

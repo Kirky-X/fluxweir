@@ -936,7 +936,11 @@ async fn dispatch_unified_request(
     #[cfg(not(feature = "resilience"))]
     match state
         .vendor_manager
-        .execute_request_with_options(&decision.vendor.id, request, ctx.call_options.clone())
+        .execute_request_with_options(
+            &decision.vendor.id,
+            std::sync::Arc::new(request),
+            ctx.call_options.clone(),
+        )
         .await
     {
         Ok(r) => Ok((r, decision, axum::http::HeaderMap::new())),
@@ -1312,7 +1316,7 @@ pub(crate) async fn execute_embeddings(
     // 只支持 OpenAI vendor（兼容组/pin 契约按 OpenAI 形状定义）
     if !matches!(decision.vendor.protocol(), VendorProtocol::OpenAi) {
         return Err(FluxweirError::from(GateError::Protocol {
-            source: t("api-embeddings-openai-only"),
+            source: "api-embeddings-openai-only".to_string(),
             inner: None,
         }));
     }
@@ -1394,16 +1398,17 @@ pub(crate) async fn execute_embeddings(
                         .metrics()
                         .record_embedding_dimension_mismatch();
                     let error = FluxweirError::from(GateError::Protocol {
-                        source: t_args(
-                            "api-embeddings-dimension-mismatch",
-                            &[
-                                ("vendor", decision.vendor.id.clone()),
-                                ("model", decision.model.model_id.clone()),
-                                ("old", old.to_string()),
-                                ("new", now.to_string()),
-                                ("abstract", crate::router::bandit::linucb_arm_key(&model)),
-                            ],
+                        source: format!(
+                            "api-embeddings-dimension-mismatch|{}",
+                            serde_json::json!({
+                                "vendor": decision.vendor.id,
+                                "model": decision.model.model_id,
+                                "old": old,
+                                "new": now,
+                                "abstract": crate::router::bandit::linucb_arm_key(&model),
+                            })
                         ),
+
                         inner: None,
                     });
                     let duration_ms = start_time.elapsed().as_millis() as i64;

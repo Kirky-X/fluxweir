@@ -62,6 +62,37 @@ pub enum GateError {
     MaskingBlocked { kind: String },
 }
 
+/// 载荷锚点本地化：`"<ftl-key>"` 或 `"<ftl-key>|{json-object}"`。
+/// 锚名恒英文机器标识且必须是已登记的 FTL 键（键在 en/zh 至少一侧存在）；
+/// 未登记或 JSON 损坏 → None（调用方走通用模板回退）。本地化只在
+/// `user_message` 单点发生——`Display` 因此恒为语言中性串。
+pub(crate) fn localize_anchor(payload: &str) -> Option<String> {
+    use crate::i18n::{has_key, t_dynamic};
+    match payload.split_once('|') {
+        None => has_key(payload).then(|| t_dynamic(payload, &[])),
+        Some((key, json)) => {
+            if !has_key(key) {
+                return None;
+            }
+            let obj: serde_json::Map<String, serde_json::Value> =
+                serde_json::from_str(json).ok()?;
+            let owned: Vec<(String, String)> = obj
+                .into_iter()
+                .map(|(k, v)| {
+                    let value = v
+                        .as_str()
+                        .map(str::to_string)
+                        .unwrap_or_else(|| v.to_string());
+                    (k, value)
+                })
+                .collect();
+            let refs: Vec<(&str, String)> =
+                owned.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
+            Some(t_dynamic(key, &refs))
+        }
+    }
+}
+
 impl GateError {
     /// 固定客户端状态映射（u16：本 crate 不引 http 类型，应用层转 `StatusCode`）。
     pub fn status_code(&self) -> u16 {
@@ -84,49 +115,33 @@ impl GateError {
     /// 本地化用户消息（展示轨道）：随 locale 查 FTL 目录，写入响应体 error.message。
     pub fn user_message(&self) -> String {
         match self {
-            GateError::Config { message } => {
-                t_args("error-config", &[("message", message.clone())])
-            }
-            GateError::Io { message } => t_args("error-io", &[("message", message.clone())]),
-            GateError::Protocol { source, .. } => {
-                t_args("error-protocol", &[("source", source.clone())])
-            }
+            GateError::Config { message } => localize_anchor(message)
+                .unwrap_or_else(|| t_args("error-config", &[("message", message.clone())])),
+            GateError::Io { message } => localize_anchor(message)
+                .unwrap_or_else(|| t_args("error-io", &[("message", message.clone())])),
+            GateError::Protocol { source, .. } => localize_anchor(source)
+                .unwrap_or_else(|| t_args("error-protocol", &[("source", source.clone())])),
+            // vendor 维度承载两类值：纯厂商 id（走模板插值）或语言中性锚点
+            // （执行层以锚点描述具体原因）。锚点命中时直接作为用户消息，
+            // 避免把键名/JSON 当厂商名插进模板。
             GateError::VendorUnavailable { vendor } => {
-                t_args("error-vendor-unavailable", &[("vendor", vendor.clone())])
+                localize_anchor(vendor).unwrap_or_else(|| {
+                    t_args("error-vendor-unavailable", &[("vendor", vendor.clone())])
+                })
             }
             GateError::VendorCircuitOpen { vendor } => {
-                t_args("error-vendor-circuit-open", &[("vendor", vendor.clone())])
+                localize_anchor(vendor).unwrap_or_else(|| {
+                    t_args("error-vendor-circuit-open", &[("vendor", vendor.clone())])
+                })
             }
-            GateError::Timeout { vendor } => t_args("error-timeout", &[("vendor", vendor.clone())]),
-            GateError::RateLimited { vendor } => {
-                t_args("error-rate-limited", &[("vendor", vendor.clone())])
-            }
-            GateError::Validation { field } => {
-                // 路由层 Validation 以「锚点:取值」形态携带机器可读信息
-                //（field 恒英文、无本地化句子）；本地化在此单层完成，
-                // 未识别锚点走通用模板回退
-                if let Some(model) = field.strip_prefix("model-not-found:") {
-                    t_args(
-                        "error-validation-model-not-found",
-                        &[("model", model.to_string())],
-                    )
-                } else if let Some(model) = field.strip_prefix("global-model-disabled:") {
-                    t_args(
-                        "error-validation-global-model-disabled",
-                        &[("model", model.to_string())],
-                    )
-                } else if let Some(vendor) = field.strip_prefix("vendor-unavailable:") {
-                    t_args(
-                        "error-validation-vendor-unavailable",
-                        &[("vendor", vendor.to_string())],
-                    )
-                } else {
-                    t_args("error-validation", &[("field", field.clone())])
-                }
-            }
-            GateError::Routing { message } => {
-                t_args("error-routing", &[("message", message.clone())])
-            }
+            GateError::Timeout { vendor } => localize_anchor(vendor)
+                .unwrap_or_else(|| t_args("error-timeout", &[("vendor", vendor.clone())])),
+            GateError::RateLimited { vendor } => localize_anchor(vendor)
+                .unwrap_or_else(|| t_args("error-rate-limited", &[("vendor", vendor.clone())])),
+            GateError::Validation { field } => localize_anchor(field)
+                .unwrap_or_else(|| t_args("error-validation", &[("field", field.clone())])),
+            GateError::Routing { message } => localize_anchor(message)
+                .unwrap_or_else(|| t_args("error-routing", &[("message", message.clone())])),
             GateError::AllVendorsThrottled { retry_after_secs } => t_args(
                 "error-all-vendors-throttled",
                 &[("retry_after_secs", retry_after_secs.to_string())],
@@ -166,9 +181,11 @@ impl GateError {
 }
 
 impl From<tokio::sync::oneshot::error::RecvError> for GateError {
+    /// oneshot 通道关闭（发送端提前 drop）是进程内同步失败，不是上游超时：
+    /// 归 `Io`（500），避免把内部错误误标成可重试的 vendor 超时。
     fn from(_e: tokio::sync::oneshot::error::RecvError) -> Self {
-        GateError::Timeout {
-            vendor: "unknown".to_string(),
+        GateError::Io {
+            message: "oneshot channel closed before response".to_string(),
         }
     }
 }
@@ -181,12 +198,20 @@ mod tests {
     fn validation_anchors_localize_without_nested_sentences() {
         // field 存语言中性锚点：Display 恒英文规范串，user_message 单层本地化
         let not_found = GateError::Validation {
-            field: "model-not-found:GLM-4.5".to_string(),
+            field: format!(
+                "error-validation-model-not-found|{}",
+                serde_json::json!({"model": "GLM-4.5"})
+            ),
         };
-        assert_eq!(
-            not_found.to_string(),
-            "Request validation failed: model-not-found:GLM-4.5",
-            "Display 必须恒英文规范串，不得混入本地化句子"
+        assert!(
+            not_found
+                .to_string()
+                .contains("error-validation-model-not-found"),
+            "Display 必须携带语言中性锚点（英文键名）: {not_found}"
+        );
+        assert!(
+            !not_found.to_string().contains('模'),
+            "Display 不得混入本地化句子: {not_found}"
         );
         let message = not_found.user_message();
         assert_ne!(
@@ -198,12 +223,15 @@ mod tests {
             "占位符 $model 必须被替换: {message}"
         );
         assert!(
-            !message.contains("model-not-found:"),
-            "本地化消息不得携带机器锚点前缀: {message}"
+            !message.contains("error-validation-model-not-found"),
+            "本地化消息不得携带机器锚点: {message}"
         );
 
         let vendor = GateError::Validation {
-            field: "vendor-unavailable:openai".to_string(),
+            field: format!(
+                "error-validation-vendor-unavailable|{}",
+                serde_json::json!({"vendor": "openai"})
+            ),
         };
         let vendor_message = vendor.user_message();
         assert_ne!(vendor_message, "error-validation-vendor-unavailable");
@@ -212,8 +240,8 @@ mod tests {
             "占位符 $vendor 必须被替换: {vendor_message}"
         );
         assert!(
-            !vendor_message.contains("vendor-unavailable:"),
-            "本地化消息不得携带机器锚点前缀: {vendor_message}"
+            !vendor_message.contains("error-validation-vendor-unavailable"),
+            "本地化消息不得携带机器锚点: {vendor_message}"
         );
 
         // 未识别锚点原样走通用模板（既有行为）
@@ -360,13 +388,13 @@ mod tests {
 
         let err: GateError = recv_err.into();
         match err {
-            GateError::Timeout { vendor } => {
-                assert_eq!(
-                    vendor, "unknown",
-                    "From<RecvError> should set vendor to 'unknown'"
+            GateError::Io { message } => {
+                assert!(
+                    message.contains("oneshot"),
+                    "From<RecvError> 必须标明通道关闭: {message}"
                 );
             }
-            _ => panic!("From<RecvError> should produce Timeout variant"),
+            _ => panic!("From<RecvError> 应产生 Io 变体（内部同步失败，非上游超时）"),
         }
     }
 }

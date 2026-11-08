@@ -42,6 +42,9 @@ pub struct InboundLimitState {
     ///（[admission].enabled 热读；默认 false 时判定旁路
     ///）。健康检查白名单（函数头部）先于本判定，永不卸载。
     admission: Arc<AdmissionState>,
+    /// 认证上下文缓存（与 auth 中间件同一实例）：档位判定复用同一代
+    /// ApiAuthState，避免每请求重建 key 摘要表。
+    auth_cache: Arc<crate::middleware::auth::AuthContextCache>,
 }
 
 /// 配额豁免路径（tower 键提取器与端点中间件共用同一判定，行为单点一致）。
@@ -492,7 +495,11 @@ async fn admission_middleware(
     // 拥塞感知优先级准入（热读 [admission].enabled，
     // 默认 false = 判定旁路）。请求档位经
     // [auth].keys 表（认证已在本中间件外层通过）。
-    let tier = tier_for_request(admission_config.as_ref(), request.headers());
+    let tier = tier_for_request(
+        admission_config.as_ref(),
+        &state.auth_cache,
+        request.headers(),
+    );
     // RED 记录（sdforge 全局 registry，供 /metrics 抓取；与内部
     // GlobalMetrics 并存不迁移）。路由标签走静态模板表归一（通配段不
     // 爆炸基数）；基础设施自观察（/metrics、/readyz）不计入。
@@ -551,109 +558,82 @@ async fn admission_middleware(
 /// 未知路径归 `unmatched`（基数有界）。
 /// 返回均为 `'static`（模板表/字面量），调用方零分配。
 fn metrics_route_label(path: &str) -> &'static str {
-    #[cfg(feature = "vault")]
-    const TEMPLATES: [&str; 36] = [
-        "/v1/chat/completions",
-        "/v1/embeddings",
-        "/v1/rerank",
-        "/v1/responses",
-        "/v1/responses/input_tokens",
-        "/v1/responses/{id}",
-        "/v1/responses/{id}/cancel",
-        "/v1/messages",
-        "/v1/messages/count_tokens",
-        "/v1beta/models",
-        "/v1beta/models/{id}",
-        "/v1/models",
-        "/admin/route/explain",
-        "/admin/logs",
-        "/admin/logs/search",
-        "/admin/stats/tokens",
-        "/admin/cost",
-        "/admin/sessions",
-        "/admin/context-stats",
-        "/admin/metrics",
-        "/admin/quota/ledger",
-        "/admin/vendor-budgets",
-        "/admin/vendors",
-        "/admin/vendors/config",
-        "/admin/vendors/{id}",
-        "/admin/vendors/{id}/status",
-        "/admin/vendors/{id}/reset",
-        "/admin/embedding-pins",
-        "/admin/embedding-pins/{id}/reset",
-        "/admin/config",
-        "/admin/models",
-        "/admin/models/{id}",
-        // catalog-sync 路由模板（feature 关闭时路径不存在，归一表多一条
-        // 无害死条目；开表条件组合会随 feature 矩阵爆炸，故无条件收录）
-        "/admin/catalog/sync",
-        "/admin/vault/keys",
-        "/admin/vault/keys/{id}",
-        "/api/v1/health",
-    ];
-    #[cfg(not(feature = "vault"))]
-    const TEMPLATES: [&str; 34] = [
-        "/v1/chat/completions",
-        "/v1/embeddings",
-        "/v1/rerank",
-        "/v1/responses",
-        "/v1/responses/input_tokens",
-        "/v1/responses/{id}",
-        "/v1/responses/{id}/cancel",
-        "/v1/messages",
-        "/v1/messages/count_tokens",
-        "/v1beta/models",
-        "/v1beta/models/{id}",
-        "/v1/models",
-        "/admin/route/explain",
-        "/admin/logs",
-        "/admin/logs/search",
-        "/admin/stats/tokens",
-        "/admin/cost",
-        "/admin/sessions",
-        "/admin/context-stats",
-        "/admin/metrics",
-        "/admin/quota/ledger",
-        "/admin/vendor-budgets",
-        "/admin/vendors",
-        "/admin/vendors/config",
-        "/admin/vendors/{id}",
-        "/admin/vendors/{id}/status",
-        "/admin/vendors/{id}/reset",
-        "/admin/embedding-pins",
-        "/admin/embedding-pins/{id}/reset",
-        "/admin/config",
-        "/admin/models",
-        "/admin/models/{id}",
-        "/admin/catalog/sync",
-        "/api/v1/health",
-    ];
+    // 基础模板表（vault 关闭时的全集）；vault 开启时追加两条 vault 管理路由。
+    // 旧实现两份逐字重复的定长数组只差两条，长度字面量需与新增路由同步维护。
+    static TEMPLATES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    let templates = TEMPLATES.get_or_init(|| {
+        // vault 开时追加两条模板才需要 mut；非 vault 构建无写操作
+        #[cfg_attr(not(feature = "vault"), allow(unused_mut))]
+        let mut table: Vec<&'static str> = vec![
+            "/v1/chat/completions",
+            "/v1/embeddings",
+            "/v1/rerank",
+            "/v1/responses",
+            "/v1/responses/input_tokens",
+            "/v1/responses/{id}",
+            "/v1/responses/{id}/cancel",
+            "/v1/messages",
+            "/v1/messages/count_tokens",
+            "/v1beta/models",
+            "/v1beta/models/{id}",
+            "/v1/models",
+            "/admin/route/explain",
+            "/admin/logs",
+            "/admin/logs/search",
+            "/admin/stats/tokens",
+            "/admin/cost",
+            "/admin/sessions",
+            "/admin/context-stats",
+            "/admin/metrics",
+            "/admin/quota/ledger",
+            "/admin/vendor-budgets",
+            "/admin/vendors",
+            "/admin/vendors/config",
+            "/admin/vendors/{id}",
+            "/admin/vendors/{id}/status",
+            "/admin/vendors/{id}/reset",
+            "/admin/embedding-pins",
+            "/admin/embedding-pins/{id}/reset",
+            "/admin/config",
+            "/admin/models",
+            "/admin/models/{id}",
+            // catalog-sync 路由模板（feature 关闭时路径不存在，归一表多一条
+            // 无害死条目；开表条件组合会随 feature 矩阵爆炸，故无条件收录）
+            "/admin/catalog/sync",
+            "/api/v1/health",
+        ];
+        #[cfg(feature = "vault")]
+        {
+            table.push("/admin/vault/keys");
+            table.push("/admin/vault/keys/{id}");
+        }
+        table
+    });
     // 注：/readyz、/metrics 不在模板表——RED 记录跳过二者（基础设施自观察
     // 不计入），未知路径归 unmatched（见函数尾）。
     // 订阅管理面模板（subscription-vendor feature 门控；与主表同匹配规则）
     #[cfg(feature = "subscription-vendor")]
-    const SUBSCRIPTION_TEMPLATES: [&str; 4] = [
+    const SUBSCRIPTION_templates: [&str; 4] = [
         "/admin/subscription/authorize",
         "/admin/subscription/callback",
         "/admin/subscription/accounts",
         "/admin/subscription/accounts/{id}",
     ];
-    if let Some(exact) = TEMPLATES
+    if let Some(exact) = templates
         .iter()
         .find(|t| !t.contains("{id}") && **t == path)
     {
         return exact;
     }
     #[cfg(feature = "subscription-vendor")]
-    if let Some(exact) = SUBSCRIPTION_TEMPLATES
+    if let Some(exact) = SUBSCRIPTION_templates
         .iter()
         .find(|t| !t.contains("{id}") && **t == path)
     {
         return exact;
     }
     let path_segs: Vec<&str> = path.split('/').collect();
-    for template in TEMPLATES.iter().filter(|t| t.contains("{id}")) {
+    for template in templates.iter().filter(|t| t.contains("{id}")) {
         let template_segs: Vec<&str> = template.split('/').collect();
         if template_segs.len() != path_segs.len() {
             continue;
@@ -667,7 +647,7 @@ fn metrics_route_label(path: &str) -> &'static str {
         }
     }
     #[cfg(feature = "subscription-vendor")]
-    for template in SUBSCRIPTION_TEMPLATES.iter().filter(|t| t.contains("{id}")) {
+    for template in SUBSCRIPTION_templates.iter().filter(|t| t.contains("{id}")) {
         let template_segs: Vec<&str> = template.split('/').collect();
         if template_segs.len() != path_segs.len() {
             continue;
@@ -780,6 +760,7 @@ pub async fn create_router(state: Arc<ApiState>) -> Router {
     let limit_state = Arc::new(InboundLimitState {
         endpoint_table,
         admission,
+        auth_cache: state.auth_cache.clone(),
     });
 
     let router = Router::new()
@@ -950,7 +931,13 @@ pub async fn create_router(state: Arc<ApiState>) -> Router {
             },
             quota_middleware,
         ))
-        .layer(from_fn_with_state(state.config.clone(), auth_middleware))
+        .layer(from_fn_with_state(
+            crate::middleware::auth::AuthMiddlewareState {
+                config: state.config.clone(),
+                cache: state.auth_cache.clone(),
+            },
+            auth_middleware,
+        ))
         .layer(TraceLayer::new_for_http())
         // 请求追踪最外层——X-Request-Id 解析/生成 + task_local 挂载 +
         // 响应头回传（sdforge context）；span 关联在准入中间件内完成。
@@ -1043,6 +1030,7 @@ mod tests {
         let (global_layers, endpoint_table) = build_inbound_limits(&section);
         let state = Arc::new(InboundLimitState {
             endpoint_table,
+            auth_cache: Arc::new(Default::default()),
             admission: {
                 // 白名单单测不需要准入状态：空 manager 接线（enabled 默认
                 // false，判定旁路）

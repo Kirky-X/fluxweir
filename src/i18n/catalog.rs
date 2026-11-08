@@ -81,11 +81,15 @@ fn format_from_bundle(lang: &str, key: &str, args: &[(&str, String)]) -> Option<
         fluent_args.set(*name, FluentValue::from(value.clone()));
     }
     let mut errors = vec![];
-    Some(
-        bundle
-            .format_pattern(pattern, Some(&fluent_args), &mut errors)
-            .to_string(),
-    )
+    let formatted = bundle
+        .format_pattern(pattern, Some(&fluent_args), &mut errors)
+        .to_string();
+    // 占位符缺失/类型不符等任何格式化错误 → 视为本束失败，走回退链
+    if errors.is_empty() {
+        Some(formatted)
+    } else {
+        None
+    }
 }
 
 /// 翻译：当前语言束 → en 束回退 → 键名本身。
@@ -112,6 +116,20 @@ pub fn t_args(key: &str, args: &[(&str, String)]) -> String {
     translate(key, args)
 }
 
+/// 动态键本地化 — 仅供错误载荷锚点路由（键名来自语言中性锚点，
+/// 非字面调用点）。锚点键的存在性由 `error::app` 的契约守卫静态校验。
+pub fn t_dynamic(key: &str, args: &[(&str, String)]) -> String {
+    translate(key, args)
+}
+
+/// 键是否已登记（锚点路由判定用：未登记 → 通用模板回退）。
+///
+/// 以 **en 束**为准：`translate` 的回退链终点是 en，仅 zh 侧登记的键在
+/// en 客户端会原样吐出键名（等于泄漏键名），因此按未登记处理。
+pub fn has_key(key: &str) -> bool {
+    bundle_for("en").get_message(key).is_some()
+}
+
 /// 预热：触发检测链并构建 EN/ZH 双束。可选调用——[`t`]/[`t_args`]
 /// 首次调用本就会惰性初始化。
 pub fn init() {
@@ -123,7 +141,7 @@ pub fn init() {
 fn build_bundle(lang: &'static str, files: &[(&str, &str)]) -> FluentBundle<FluentResource> {
     let langid: LanguageIdentifier = lang
         .parse()
-        .unwrap_or_else(|_| panic!("'{lang}' is a valid language identifier"));
+        .unwrap_or_else(|_| panic!("'{lang}' is not a valid language identifier"));
     let mut bundle = FluentBundle::new_concurrent(vec![langid]);
     // 关闭 Unicode 隔离符，避免输出夹带 U+2068/U+2069
     bundle.set_use_isolating(false);

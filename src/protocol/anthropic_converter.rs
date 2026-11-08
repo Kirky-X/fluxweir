@@ -4,7 +4,7 @@
 use super::*;
 use crate::config::model_catalog::CacheBreakpointPolicy;
 use crate::error::GateError;
-use crate::i18n::{t, t_args};
+use crate::i18n::t;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 
@@ -503,7 +503,8 @@ impl ProtocolConverter for AnthropicConverter {
             .message
             .as_ref()
             .map(message_to_anthropic)
-            .unwrap_or_else(|| json!({ "content": "" }));
+            // Anthropic content 必须是块数组；对象形态会被上游拒收
+            .unwrap_or_else(|| json!([]));
 
         // finish 结构化槽优先
         let stop_reason = choice
@@ -564,9 +565,9 @@ impl ProtocolConverter for AnthropicConverter {
                 .unwrap_or("unknown")
                 .to_string();
             return Err(GateError::Protocol {
-                source: t_args(
-                    "protocol-anthropic-error",
-                    &[("type", error_type), ("message", message)],
+                source: format!(
+                    "protocol-anthropic-error|{}",
+                    serde_json::json!({ "type": error_type, "message": message })
                 ),
                 inner: None,
             });

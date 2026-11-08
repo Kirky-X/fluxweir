@@ -280,7 +280,7 @@ fn config_toml_example_parses() {
         .as_ref()
         .expect("config.example.toml 示例必须带 [grpc] 段");
     assert!(!grpc.enabled, "示例 [grpc] 默认禁用（显式 opt-in）");
-    assert_eq!(grpc.host, "0.0.0.0");
+    assert_eq!(grpc.host, "127.0.0.1", "gRPC 安全默认只监听回环");
     assert_eq!(grpc.port, 50051);
     assert_eq!(grpc.timeout_seconds, 30);
     assert_eq!(grpc.max_connections, 1000);

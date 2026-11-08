@@ -4,9 +4,12 @@
 use crate::error::GateError;
 use crate::protocol::{UnifiedRequest, UnifiedResponse};
 use async_channel::{bounded, Receiver, Sender};
+use std::sync::Arc;
 
 pub struct PendingRequest {
-    pub request: UnifiedRequest,
+    /// 请求体按 Arc 共享：fallback 循环持引用时每轮 manager 需深拷贝
+    ///（单发独占路径由 unwrap_or_clone 零拷贝）
+    pub request: Arc<UnifiedRequest>,
     /// 调用级可选参数（beta 转发等；缺省零行为）
     pub options: crate::vendor::manager::VendorCallOptions,
     pub response_tx: tokio::sync::oneshot::Sender<Result<UnifiedResponse, GateError>>,

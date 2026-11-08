@@ -22,24 +22,24 @@ pub async fn route_difficulty_explain(
         .and_then(Value::as_str)
         .ok_or_else(|| {
             FluxweirError::from(GateError::Validation {
-                field: crate::i18n::t("api-route-explain-model-invalid"),
+                field: "api-route-explain-model-invalid".to_string(),
             })
         })?;
     let body = payload.get("body").cloned().unwrap_or(Value::Null);
 
     let difficulty = state.difficulty.as_ref().ok_or_else(|| {
         FluxweirError::from(GateError::Validation {
-            field: crate::i18n::t_args(
-                "api-route-explain-model-unknown",
-                &[("model", model.to_string())],
+            field: format!(
+                "api-route-explain-model-unknown|{}",
+                serde_json::json!({ "model": (model.to_string()) })
             ),
         })
     })?;
     let explanation = difficulty.explain(model, &body).await.ok_or_else(|| {
         FluxweirError::from(GateError::Validation {
-            field: crate::i18n::t_args(
-                "api-route-explain-model-unknown",
-                &[("model", model.to_string())],
+            field: format!(
+                "api-route-explain-model-unknown|{}",
+                serde_json::json!({ "model": (model.to_string()) })
             ),
         })
     })?;

@@ -96,6 +96,7 @@ async fn build_app() -> (Router, Arc<ApiState>, DbPool) {
         vendor_manager.metrics().clone(),
     ));
     let state = Arc::new(ApiState {
+        auth_cache: std::sync::Arc::new(Default::default()),
         affinity_writer: None,
         config: config_manager,
         vendor_manager,
@@ -315,6 +316,7 @@ async fn admin_metrics_exposes_quota_counters() {
         vendor_manager.clone(),
     ));
     let state = Arc::new(ApiState {
+        auth_cache: std::sync::Arc::new(Default::default()),
         affinity_writer: None,
         config: config_manager,
         vendor_manager,

@@ -138,16 +138,25 @@ pub struct CatalogCostEstimate {
 }
 
 /// 定价查找：精确命中 → 短名前缀回退（多命中取字典序最小，确定性）。
+/// 大小写不敏感：模型 ID 大小写敏感路由到上游，但计价目录按归一视图匹配，
+/// 防止混合大小写变体被当作未登记（0 价）绕过成本型配额。
 pub fn lookup_pricing_entry<'a>(
     catalog: &'a [ModelCatalogEntry],
     model_id: &str,
 ) -> Option<&'a ModelCatalogEntry> {
-    if let Some(entry) = catalog.iter().find(|e| e.model_id == model_id) {
+    if let Some(entry) = catalog
+        .iter()
+        .find(|e| e.model_id.eq_ignore_ascii_case(model_id))
+    {
         return Some(entry);
     }
     catalog
         .iter()
-        .filter(|e| e.model_id.starts_with(model_id))
+        .filter(|e| {
+            e.model_id
+                .get(..model_id.len())
+                .is_some_and(|head| head.eq_ignore_ascii_case(model_id))
+        })
         .min_by(|a, b| a.model_id.cmp(&b.model_id))
 }
 
@@ -589,5 +598,31 @@ mod long_context_pricing_tests {
         )
         .unwrap();
         assert!((est.input_cost - 300_000.0 / 1e6 * 3.0).abs() < 1e-9);
+    }
+
+    /// 计价查找大小写不敏感：混合大小写变体不得被当作未登记（0 价绕过配额）
+    #[test]
+    fn pricing_lookup_is_case_insensitive() {
+        let catalog = vec![crate::config::model_catalog::ModelCatalogEntry {
+            model_id: "gpt-4o".to_string(),
+            ..Default::default()
+        }];
+        assert!(
+            super::lookup_pricing_entry(&catalog, "another-model").is_none(),
+            "不同模型不得被误命中"
+        );
+        assert!(
+            super::lookup_pricing_entry(&catalog, "GPT-4O").is_some(),
+            "大小写变体必须命中登记条目"
+        );
+        // 短名前缀回退：目录长名（版本后缀）按查询短名命中
+        let long_catalog = vec![crate::config::model_catalog::ModelCatalogEntry {
+            model_id: "gpt-4o-2026-08-06".to_string(),
+            ..Default::default()
+        }];
+        assert!(
+            super::lookup_pricing_entry(&long_catalog, "GPT-4O").is_some(),
+            "短名前缀回退须大小写不敏感"
+        );
     }
 }

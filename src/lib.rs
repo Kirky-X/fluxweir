@@ -52,6 +52,8 @@ pub use config::{
     VendorConfig,
 };
 pub use error::{FluxweirError, GateError};
+#[cfg(feature = "vault")]
+pub use vault::{KeyStore, VaultError};
 
 #[cfg(feature = "web-server")]
 pub use api::ApiState;

@@ -6,7 +6,7 @@
 //! 调用方注入时钟（`Instant` 入参），确定性可测。降级不抛错——调用方
 //! 据 [`Availability`] 决定是否调用分类器，失败请求一律退纯规则。
 
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -34,6 +34,9 @@ pub struct Guard {
     /// 热读参数（orchestrator 每请求从 [routing.difficulty].classifier 刷新）
     failure_threshold: AtomicU32,
     probe_interval_secs: AtomicU64,
+    /// 半开探测占位：同一时刻只放行一个探测请求，其余按 Unavailable 走
+    /// 纯规则降级，避免并发探测反复打到正在恢复的分类器。
+    probe_in_flight: AtomicBool,
 }
 
 impl Guard {
@@ -45,6 +48,7 @@ impl Guard {
             consecutive_failures: Mutex::new(0),
             failure_threshold: AtomicU32::new(failure_threshold.max(1)),
             probe_interval_secs: AtomicU64::new(probe_interval_secs),
+            probe_in_flight: AtomicBool::new(false),
         }
     }
 
@@ -57,6 +61,7 @@ impl Guard {
             failure_threshold: AtomicU32::new(1),
             // u64::MAX 秒 = 实际不探测（F3 常驻降级语义）
             probe_interval_secs: AtomicU64::new(u64::MAX),
+            probe_in_flight: AtomicBool::new(false),
         }
     }
 
@@ -82,6 +87,36 @@ impl Guard {
                     Duration::from_secs(self.probe_interval_secs.load(Ordering::Relaxed));
                 if now.duration_since(opened_at) >= probe_interval {
                     *state = State::HalfOpen;
+                    self.probe_in_flight.store(true, Ordering::Relaxed);
+                    Availability::Probe
+                } else {
+                    Availability::Unavailable
+                }
+            }
+            // 半开期只放行一个探测；已有探测在飞时其余请求按不可用降级
+            State::HalfOpen => {
+                if !self.probe_in_flight.swap(true, Ordering::Relaxed) {
+                    Availability::Probe
+                } else {
+                    Availability::Unavailable
+                }
+            }
+        }
+    }
+
+    /// 只读窥视（不迁移状态、不占用探测槽）：供解释/观测面使用，避免
+    /// admin 查询把唯一半开探测槽消费掉（消费后无 record → 槽永久占用）。
+    pub fn peek(&self, now: Instant) -> Availability {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match *state {
+            State::Closed => Availability::Available,
+            State::Open { opened_at } => {
+                let probe_interval =
+                    Duration::from_secs(self.probe_interval_secs.load(Ordering::Relaxed));
+                if now.duration_since(opened_at) >= probe_interval {
                     Availability::Probe
                 } else {
                     Availability::Unavailable
@@ -89,6 +124,12 @@ impl Guard {
             }
             State::HalfOpen => Availability::Probe,
         }
+    }
+
+    /// 释放半开探测槽（RAII 守卫在探测 future 被取消时调用；状态不变，
+    /// 让后续请求可再探测）。
+    pub fn release_probe(&self) {
+        self.probe_in_flight.store(false, Ordering::Relaxed);
     }
 
     /// 探测/调用成功：返回 true 表示发生了 open→closed 恢复迁移（供调用方记恢复事件）。
@@ -102,6 +143,9 @@ impl Guard {
         let recovered = match *state {
             State::HalfOpen => {
                 *state = State::Closed;
+                // 仅半开探测的 record 才拥有槽：非探测请求的迟到成功不得
+                // 清掉并发探测持有的槽。
+                self.probe_in_flight.store(false, Ordering::Relaxed);
                 true
             }
             State::Open { .. } | State::Closed => false,
@@ -122,6 +166,7 @@ impl Guard {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         match *state {
             State::HalfOpen => {
+                self.probe_in_flight.store(false, Ordering::Relaxed);
                 *state = State::Open { opened_at: now };
                 true
             }
@@ -143,10 +188,9 @@ impl Guard {
         }
     }
 
-    /// 当前是否处于降级态（观测面：/admin/route/difficulty-explain 的
-    /// classifier.breaker 字段按需读取；无独立 gauge——事件计数 + 快照读足够）
+    /// 当前是否处于降级态（只读观测：用 `peek`，不迁移状态、不占探测槽）。
     pub fn is_degraded(&self, now: Instant) -> bool {
-        self.check(now) == Availability::Unavailable
+        self.peek(now) == Availability::Unavailable
     }
 }
 
@@ -211,6 +255,55 @@ mod tests {
         assert_eq!(g.check(t2), Availability::Probe, "到期放行探测");
         assert!(g.record_success(), "探测成功 →open 恢复迁移");
         assert_eq!(g.check(t2), Availability::Available);
+    }
+
+    #[test]
+    fn half_open_allows_single_probe_in_flight() {
+        let g = guard();
+        let t0 = Instant::now();
+        for _ in 0..3 {
+            g.record_failure(t0);
+        }
+        let t1 = t0 + Duration::from_secs(30);
+        assert_eq!(g.check(t1), Availability::Probe, "到期放行首个探测");
+        assert_eq!(
+            g.check(t1),
+            Availability::Unavailable,
+            "探测在飞期间并发请求必须降级，不得二次探测"
+        );
+        assert!(g.record_success(), "探测成功 → 恢复");
+        assert_eq!(g.check(t1), Availability::Available, "恢复后全量放行");
+    }
+
+    #[test]
+    fn peek_does_not_consume_probe_slot() {
+        let g = guard();
+        let t0 = Instant::now();
+        for _ in 0..3 {
+            g.record_failure(t0);
+        }
+        let t1 = t0 + Duration::from_secs(30);
+        // 只读窥视：可重复调用，不迁移状态、不占槽
+        assert_eq!(g.peek(t1), Availability::Probe);
+        assert_eq!(g.peek(t1), Availability::Probe);
+        // 真实 check 仍能拿到探测槽
+        assert_eq!(g.check(t1), Availability::Probe);
+        assert_eq!(g.check(t1), Availability::Unavailable);
+    }
+
+    #[test]
+    fn release_probe_reopens_probe_slot() {
+        let g = guard();
+        let t0 = Instant::now();
+        for _ in 0..3 {
+            g.record_failure(t0);
+        }
+        let t1 = t0 + Duration::from_secs(30);
+        assert_eq!(g.check(t1), Availability::Probe);
+        assert_eq!(g.check(t1), Availability::Unavailable, "槽已占用");
+        // 模拟探测 future 被取消：RAII Drop 释放槽后应可再次探测
+        g.release_probe();
+        assert_eq!(g.check(t1), Availability::Probe, "取消后槽必须释放");
     }
 
     #[test]

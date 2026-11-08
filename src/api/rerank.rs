@@ -11,7 +11,6 @@
 use crate::config::{ModelTask, VendorProtocol};
 use crate::database::RequestLog;
 use crate::error::{FluxweirError, GateError};
-use crate::i18n::t;
 use crate::protocol::rerank_converter::{
     normalize_rerank_scores, parse_rerank_request, parse_rerank_response, to_upstream_request,
     RerankRequest,
@@ -51,7 +50,7 @@ pub async fn rerank(
             != Some(ModelTask::Rerank)
     {
         let error = FluxweirError::from(GateError::Protocol {
-            source: t("api-rerank-capability-mismatch"),
+            source: "api-rerank-capability-mismatch".to_string(),
             inner: None,
         });
         push_rerank_log(
@@ -245,7 +244,7 @@ fn validate_rerank_hints(state: &Arc<ApiState>, headers: &HeaderMap) -> Result<(
     let hints = crate::api::routing_hints::hints_from_state(&state.config.read(), headers);
     let mismatch = || {
         FluxweirError::from(GateError::Protocol {
-            source: t("api-rerank-capability-mismatch"),
+            source: "api-rerank-capability-mismatch".to_string(),
             inner: None,
         })
     };
@@ -612,6 +611,7 @@ mod rerank_cost_db_tests {
             pre_aggregator: None,
             affinity: None,
             response_cache: None,
+            auth_cache: std::sync::Arc::new(Default::default()),
             bandit: None,
             quota: None,
             difficulty: None,

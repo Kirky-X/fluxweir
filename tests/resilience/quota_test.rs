@@ -213,6 +213,7 @@ async fn make_state_with_cache(config: Config, with_quota: bool) -> Arc<ApiState
     ));
 
     Arc::new(ApiState {
+        auth_cache: std::sync::Arc::new(Default::default()),
         config: config_manager,
         vendor_manager,
         router,
@@ -273,6 +274,7 @@ async fn make_state_inner(
 
     Arc::new(ApiState {
         affinity_writer: None,
+        auth_cache: std::sync::Arc::new(Default::default()),
         config: config_manager,
         vendor_manager,
         router,
@@ -1617,6 +1619,7 @@ async fn make_state_with_budget_ledger(config: Config, ledger: KeyBudgetLedger) 
 
     Arc::new(ApiState {
         affinity_writer: None,
+        auth_cache: std::sync::Arc::new(Default::default()),
         config: config_manager,
         vendor_manager,
         router,

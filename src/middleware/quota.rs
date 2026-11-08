@@ -48,7 +48,10 @@ pub fn usd_to_millicents(usd: f64) -> u64 {
 pub fn max_unit_prices(pricing: &[PricingConfig], model: &str) -> (f64, f64) {
     let mut input = 0.0f64;
     let mut output = 0.0f64;
-    for entry in pricing.iter().filter(|p| p.model_id == model) {
+    for entry in pricing
+        .iter()
+        .filter(|p| p.model_id.eq_ignore_ascii_case(model))
+    {
         if entry.input_per_1k_tokens.is_finite() && entry.input_per_1k_tokens > 0.0 {
             input = input.max(entry.input_per_1k_tokens);
         }

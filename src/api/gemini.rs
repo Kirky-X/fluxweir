@@ -12,7 +12,7 @@ use crate::api::RoutingHints;
 use crate::config::{ModelTask, VendorProtocol};
 use crate::database::RequestLog;
 use crate::error::{FluxweirError, GateError};
-use crate::i18n::{t, t_args};
+use crate::i18n::t_args;
 use crate::protocol::gemini::types::{normalize_model, GeminiAction};
 use crate::protocol::gemini::{convert_in, convert_out, GeminiStreamEncoder};
 use crate::protocol::StreamChunk;
@@ -81,9 +81,9 @@ async fn dispatch_inner(
         .split_once(':')
         .ok_or_else(|| validation("api-gemini-action-required"))?;
     let action = GeminiAction::parse(action_raw).ok_or_else(|| GateError::Validation {
-        field: t_args(
-            "api-gemini-action-unknown",
-            &[("action", action_raw.to_string())],
+        field: format!(
+            "api-gemini-action-unknown|{}",
+            serde_json::json!({ "action": (action_raw.to_string()) })
         ),
     })?;
     let model = normalize_model(model_raw).to_string();
@@ -542,9 +542,12 @@ where
                 }
                 Err(error) => {
                     metrics.record_gemini_upstream_failure();
+                    // 出站固定安全文案：内部错误详情只进 tracing（防拓扑/锚点外泄）。
+                    let safe_text = crate::i18n::t("protocol-stream-error-frame");
+                    tracing::warn!(error = %error, "{safe_text}");
                     let body = json!({"error": {
                         "code": 502,
-                        "message": t_args("api-gemini-stream-failed", &[("error", error.to_string())]),
+                        "message": safe_text,
                         "status": "UNAVAILABLE",
                     }});
                     yield Ok(bytes::Bytes::from(sse_frame(&body)));
@@ -593,9 +596,9 @@ fn ensure_native_vendor(state: &Arc<ApiState>, ctx: &GeminiCtx) -> Result<(), Fl
         Ok(())
     } else {
         Err(GateError::Validation {
-            field: t_args(
-                "api-gemini-native-vendor-mismatch",
-                &[("vendor", vendor.to_string())],
+            field: format!(
+                "api-gemini-native-vendor-mismatch|{}",
+                serde_json::json!({ "vendor": (vendor.to_string()) })
             ),
         }
         .into())
@@ -975,7 +978,9 @@ fn parts_text_chars(parts: Option<&Value>) -> usize {
 }
 
 fn validation(key: &str) -> GateError {
-    GateError::Validation { field: t(key) }
+    GateError::Validation {
+        field: key.to_string(),
+    }
 }
 
 async fn embed_content(
@@ -1037,10 +1042,7 @@ async fn batch_embed_contents(
         if let Some(request_model) = request.get("model").and_then(Value::as_str) {
             if normalize_model(request_model) != model {
                 return Err(GateError::Validation {
-                    field: t_args(
-                        "api-gemini-model-mismatch",
-                        &[("body", request_model.to_string()), ("path", model.clone())],
-                    ),
+                    field: format!("api-gemini-model-mismatch|{}", serde_json::json!({ "body": (request_model.to_string()), "path": (model.clone()) })),
                 }
                 .into());
             }
@@ -1079,7 +1081,7 @@ async fn batch_embed_contents(
         .get("data")
         .and_then(Value::as_array)
         .ok_or_else(|| GateError::Protocol {
-            source: t_args("api-gemini-response-invalid", &[]),
+            source: format!("api-gemini-response-invalid|{}", serde_json::json!({})),
             inner: None,
         })?;
     let mut embeddings = Vec::with_capacity(data.len());
@@ -1095,13 +1097,7 @@ fn check_body_model(body: &Value, model: &str) -> Result<(), FluxweirError> {
     if let Some(body_model) = body.get("model").and_then(Value::as_str) {
         if normalize_model(body_model) != model {
             return Err(GateError::Validation {
-                field: t_args(
-                    "api-gemini-model-mismatch",
-                    &[
-                        ("body", body_model.to_string()),
-                        ("path", model.to_string()),
-                    ],
-                ),
+                field: format!("api-gemini-model-mismatch|{}", serde_json::json!({ "body": (body_model.to_string()), "path": (model.to_string()) })),
             }
             .into());
         }
@@ -1134,7 +1130,7 @@ fn first_embedding_values(response: &Value) -> Result<Value, GateError> {
         .and_then(Value::as_array)
         .and_then(|data| data.first())
         .ok_or_else(|| GateError::Protocol {
-            source: t_args("api-gemini-response-invalid", &[]),
+            source: format!("api-gemini-response-invalid|{}", serde_json::json!({})),
             inner: None,
         })?;
     embedding_values(item.get("embedding"))
@@ -1145,13 +1141,13 @@ fn embedding_values(value: Option<&Value>) -> Result<Value, GateError> {
         Some(Value::Array(values)) => Ok(Value::Array(values.clone())),
         Some(Value::String(encoded)) => {
             let values = decode_base64_f32(encoded).ok_or_else(|| GateError::Protocol {
-                source: t_args("api-gemini-response-invalid", &[]),
+                source: format!("api-gemini-response-invalid|{}", serde_json::json!({})),
                 inner: None,
             })?;
             Ok(json!(values))
         }
         _ => Err(GateError::Protocol {
-            source: t_args("api-gemini-response-invalid", &[]),
+            source: format!("api-gemini-response-invalid|{}", serde_json::json!({})),
             inner: None,
         }),
     }

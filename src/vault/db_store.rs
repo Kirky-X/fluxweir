@@ -11,7 +11,6 @@ use sea_orm::{ConnectionTrait, Value};
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::database::raw_statement;
-use crate::i18n::t_args;
 use crate::vault::crypto;
 use crate::vault::{KeyStore, SecretKeyRecord, VaultError};
 
@@ -41,7 +40,10 @@ impl DbKeyStore {
 
 fn db_err(e: impl std::fmt::Display) -> VaultError {
     VaultError::Storage {
-        message: t_args("vault-db-access-failed", &[("error", e.to_string())]),
+        message: format!(
+            "vault-db-access-failed|{}",
+            serde_json::json!({ "error": e.to_string() })
+        ),
     }
 }
 
@@ -64,7 +66,9 @@ impl KeyStore for DbKeyStore {
 
         // 原子 upsert：SELECT 预检 + INSERT/UPDATE 两段式在并发同键时会撞
         // idx_vault_keys_vendor_fingerprint 唯一索引（TOCTOU → VaultError::Storage），
-        // 改为单语句；冲突臂保留既有行 id，仅覆盖业务列。
+        // 改为单语句；冲突臂保留既有行 id 与既有 payload（fingerprint = SHA256(明文)，
+        // 同指纹即同明文，重写新 nonce 密文无意义且多付一次 AEAD/写放大），
+        // 仅覆盖 label/mask/updated_at 等业务列。
         let blob = crypto::seal(&self.master_key, plaintext)?;
         let id = crypto::new_id();
         let upsert_sql = match backend {
@@ -72,15 +76,15 @@ impl KeyStore for DbKeyStore {
                 // VALUES() 在 MySQL 8.0.20+ 标记 deprecated 但全版本可用
                 "INSERT INTO vault_keys (id, vendor_id, label, payload, mask, fingerprint, created_at, updated_at) \
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?) \
-                 ON DUPLICATE KEY UPDATE label = VALUES(label), payload = VALUES(payload), \
+                 ON DUPLICATE KEY UPDATE label = VALUES(label), \
                  mask = VALUES(mask), updated_at = VALUES(updated_at)"
             }
             _ => {
                 "INSERT INTO vault_keys (id, vendor_id, label, payload, mask, fingerprint, created_at, updated_at) \
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?) \
                  ON CONFLICT(vendor_id, fingerprint) DO UPDATE SET \
-                 label = excluded.label, payload = excluded.payload, \
-                 mask = excluded.mask, updated_at = excluded.updated_at"
+                 label = excluded.label, mask = excluded.mask, \
+                 updated_at = excluded.updated_at"
             }
         };
         let upsert = raw_statement(

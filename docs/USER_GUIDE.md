@@ -1204,8 +1204,9 @@ healthcheck:
 ```toml
 # config.toml
 [grpc]
-enabled = true        # 默认 false，显式启用
-host = "0.0.0.0"
+enabled = false       # 默认 false，显式启用
+# 默认只监听回环；需要对外时显式改为 0.0.0.0 或具体网卡地址
+host = "127.0.0.1"
 port = 50051          # gRPC 惯例端口
 timeout_seconds = 30  # per-call 超时，0 = 不限
 max_connections = 1000

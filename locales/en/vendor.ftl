@@ -45,7 +45,7 @@ vendor-probe-free-failed = free probe failed; state unchanged
 vendor-probe-minimal-recovered = health probe minimal_call succeeded: key cooldown/blacklist cleared (passive recovery)
 vendor-probe-minimal-non-2xx = minimal_call probe returned non-2xx; state unchanged
 vendor-probe-minimal-failed = minimal_call probe failed; state unchanged
-vendor-probe-semaphore-closed = probe semaphore never closes
+vendor-probe-semaphore-closed = probe semaphore is closed
 
 # ---- manager.rs extra_headers 注入告警 ----
 vendor-extra-header-conflict = extra_headers conflicts with a gateway header; skipped

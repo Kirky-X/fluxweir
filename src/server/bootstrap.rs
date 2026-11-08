@@ -71,7 +71,10 @@ pub(crate) async fn init_logger() -> Result<inklog::LoggerManager, FluxweirError
         .await
         .map_err(|e| {
             FluxweirError::from(GateError::Config {
-                message: t_args("main-logger-init-failed", &[("error", e.to_string())]),
+                message: format!(
+                    "main-logger-init-failed|{}",
+                    serde_json::json!({ "error": e.to_string() })
+                ),
             })
         })
 }
@@ -119,7 +122,7 @@ pub(crate) async fn assemble(
     use crate::database::resolve_database_url;
     use crate::database::Database;
 
-    println!("{}", t("main-starting"));
+    tracing::info!("{}", t("main-starting"));
 
     let db_config = {
         let config = config_manager.read();
@@ -636,6 +639,7 @@ pub(crate) async fn assemble_with_database(
         affinity: Some(affinity_table.clone()),
         affinity_writer: Some(affinity_writer.clone()),
         response_cache: Some(response_cache),
+        auth_cache: std::sync::Arc::new(Default::default()),
         bandit: Some(bandit_state),
         // 配额账本：中间件入口预扣与回补钩共享同一实例（enabled=false 时零判限）。
         // 落盘接线（quota-aware-routing）：结算 UPSERT + 30s 全量 flush +

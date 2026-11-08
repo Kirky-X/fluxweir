@@ -45,7 +45,7 @@ impl ProtocolConverter for GeminiConverter {
             .get("model")
             .and_then(Value::as_str)
             .ok_or(GateError::Validation {
-                field: crate::i18n::t("api-gemini-model-required"),
+                field: "api-gemini-model-required".to_string(),
             })?;
         let stream = body.get("stream").and_then(Value::as_bool).unwrap_or(false);
         convert_in::to_unified_request(&body, model, stream)
@@ -196,6 +196,78 @@ fn ir_finish_to_gemini(raw: &str) -> &'static str {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn message_parts_cover_all_content_variants() {
+        use crate::protocol::{MessageContent, ToolCall, ToolCallFunction, ToolResult};
+
+        // 纯文本
+        let parts = super::message_parts(&MessageContent::Text("hi".into()));
+        assert_eq!(parts, vec![json!({"text": "hi"})]);
+
+        // 工具调用：合法 JSON 对象 → 结构化 args；非对象 → raw 回退
+        let call = |args: &str| {
+            MessageContent::ToolCalls(vec![ToolCall {
+                id: "c1".into(),
+                call_type: "function".into(),
+                function: ToolCallFunction {
+                    name: "f".into(),
+                    arguments: args.into(),
+                },
+            }])
+        };
+        let parts = super::message_parts(&call("{\"a\":1}"));
+        assert_eq!(parts[0]["functionCall"]["args"], json!({"a": 1}));
+        let parts = super::message_parts(&call("not-json"));
+        assert_eq!(parts[0]["functionCall"]["args"], json!({"raw": "not-json"}));
+
+        // 文本 + 工具调用：文本 part 在前
+        let parts = super::message_parts(&MessageContent::TextWithToolCalls {
+            text: "think".into(),
+            tool_calls: match call("[1,2]") {
+                MessageContent::ToolCalls(calls) => calls,
+                _ => unreachable!(),
+            },
+            reasoning: None,
+        });
+        assert_eq!(parts[0]["text"], "think");
+        assert_eq!(parts[1]["functionCall"]["args"], json!({"raw": "[1,2]"}));
+
+        // 工具结果：对象 → response；非对象 → result 回退
+        let result = |content: &str| {
+            MessageContent::ToolResult(ToolResult {
+                tool_call_id: "c1".into(),
+                function_name: "f".into(),
+                content: content.into(),
+                is_error: false,
+            })
+        };
+        let parts = super::message_parts(&result("{\"ok\":true}"));
+        assert_eq!(
+            parts[0]["functionResponse"]["response"],
+            json!({"ok": true})
+        );
+        let parts = super::message_parts(&result("plain"));
+        assert_eq!(
+            parts[0]["functionResponse"]["response"],
+            json!({"result": "plain"})
+        );
+
+        // reasoning 无 Gemini part：丢弃（debug 显性化）
+        let parts = super::message_parts(&MessageContent::Reasoning {
+            text: "r".into(),
+            signature: None,
+        });
+        assert!(parts.is_empty());
+    }
+
+    #[test]
+    fn ir_finish_to_gemini_maps_known_and_unknown() {
+        assert_eq!(super::ir_finish_to_gemini("length"), "MAX_TOKENS");
+        assert_eq!(super::ir_finish_to_gemini("content_filter"), "SAFETY");
+        assert_eq!(super::ir_finish_to_gemini("tool_calls"), "STOP");
+        assert_eq!(super::ir_finish_to_gemini("weird"), "OTHER");
+    }
 
     #[test]
     fn protocols_are_gemini() {

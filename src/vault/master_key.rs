@@ -7,7 +7,6 @@
 
 use rand::RngExt;
 
-use crate::i18n::{t, t_args};
 use crate::vault::crypto::MASTER_KEY_BYTES;
 use crate::vault::VaultError;
 
@@ -46,7 +45,7 @@ fn resolve_master_key_path(
     if let Some(path) = env_file.filter(|s| !s.trim().is_empty()) {
         return Ok(std::path::PathBuf::from(path));
     }
-    let home = home.ok_or_else(|| VaultError::MasterKey(t("vault-home-not-found")))?;
+    let home = home.ok_or_else(|| VaultError::MasterKey("vault-home-not-found".to_string()))?;
     Ok(home.join(".fluxweir").join("vault_master.key"))
 }
 
@@ -71,19 +70,15 @@ pub fn load_or_create_at(
 fn parse_hex_key(value: &str) -> Result<Vec<u8>, VaultError> {
     let trimmed = value.trim();
     if trimmed.len() != MASTER_KEY_HEX_LEN || !trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(VaultError::MasterKey(t_args(
-            "vault-master-key-hex-len",
-            &[
-                ("env", MASTER_KEY_ENV.to_string()),
-                ("expected", MASTER_KEY_HEX_LEN.to_string()),
-                ("actual", trimmed.len().to_string()),
-            ],
+        return Err(VaultError::MasterKey(format!(
+            "vault-master-key-hex-len|{}",
+            serde_json::json!({ "env": (MASTER_KEY_ENV.to_string()), "expected": (MASTER_KEY_HEX_LEN.to_string()), "actual": (trimmed.len().to_string()) })
         )));
     }
     hex::decode(trimmed).map_err(|e| {
-        VaultError::MasterKey(t_args(
-            "vault-master-key-hex-decode-failed",
-            &[("error", e.to_string())],
+        VaultError::MasterKey(format!(
+            "vault-master-key-hex-decode-failed|{}",
+            serde_json::json!({ "error": (e.to_string()) })
         ))
     })
 }
@@ -91,9 +86,9 @@ fn parse_hex_key(value: &str) -> Result<Vec<u8>, VaultError> {
 fn write_key_file(path: &std::path::Path, key: &[u8]) -> Result<(), VaultError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| {
-            VaultError::MasterKey(t_args(
-                "vault-master-key-create-dir-failed",
-                &[("error", e.to_string())],
+            VaultError::MasterKey(format!(
+                "vault-master-key-create-dir-failed|{}",
+                serde_json::json!({ "error": (e.to_string()) })
             ))
         })?;
     }
@@ -113,24 +108,24 @@ fn write_key_file(path: &std::path::Path, key: &[u8]) -> Result<(), VaultError> 
             .mode(0o600)
             .open(path)
             .map_err(|e| {
-                VaultError::MasterKey(t_args(
-                    "vault-master-key-write-failed",
-                    &[("error", e.to_string())],
+                VaultError::MasterKey(format!(
+                    "vault-master-key-write-failed|{}",
+                    serde_json::json!({ "error": (e.to_string()) })
                 ))
             })?;
         file.write_all(hex::encode(key).as_bytes()).map_err(|e| {
-            VaultError::MasterKey(t_args(
-                "vault-master-key-write-failed",
-                &[("error", e.to_string())],
+            VaultError::MasterKey(format!(
+                "vault-master-key-write-failed|{}",
+                serde_json::json!({ "error": (e.to_string()) })
             ))
         })?;
     }
     #[cfg(not(unix))]
     {
         std::fs::write(path, hex::encode(key)).map_err(|e| {
-            VaultError::MasterKey(t_args(
-                "vault-master-key-write-failed",
-                &[("error", e.to_string())],
+            VaultError::MasterKey(format!(
+                "vault-master-key-write-failed|{}",
+                serde_json::json!({ "error": (e.to_string()) })
             ))
         })?;
     }
@@ -138,9 +133,9 @@ fn write_key_file(path: &std::path::Path, key: &[u8]) -> Result<(), VaultError> 
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).map_err(|e| {
-            VaultError::MasterKey(t_args(
-                "vault-master-key-restrict-failed",
-                &[("error", e.to_string())],
+            VaultError::MasterKey(format!(
+                "vault-master-key-restrict-failed|{}",
+                serde_json::json!({ "error": (e.to_string()) })
             ))
         })?;
     }

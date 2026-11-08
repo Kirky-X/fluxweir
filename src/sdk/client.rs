@@ -502,7 +502,13 @@ impl FluxweirClient {
 
         let resp = send_with_retry(&request, &policy).await?;
 
-        let v: serde_json::Value = resp.json().await?;
+        let v: serde_json::Value = resp.json().await.map_err(|_e| {
+            // 2xx + 非 JSON 是协议面故障（如 HTML 错误页），不是网络故障
+            // 只给固定分类：reqwest Display 可能带调用方自配 URL
+            FluxweirSdkError::Protocol {
+                message: "invalid JSON in response body".to_string(),
+            }
+        })?;
         ChatResponse::from_wire(&v)
     }
 

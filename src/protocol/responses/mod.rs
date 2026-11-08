@@ -193,9 +193,9 @@ impl ProtocolConverter for ResponsesConverter {
     fn parse_response(&self, response: Value) -> Result<UnifiedResponse, GateError> {
         let parsed: ResponsesResponse =
             serde_json::from_value(response).map_err(|error| GateError::Protocol {
-                source: crate::i18n::t_args(
-                    "protocol-responses-parse-response",
-                    &[("error", error.to_string())],
+                source: format!(
+                    "protocol-responses-parse-response|{}",
+                    serde_json::json!({ "error": (error.to_string()) })
                 ),
                 inner: None,
             })?;

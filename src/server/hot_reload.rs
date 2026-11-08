@@ -378,10 +378,22 @@ mod tests {
         let mut watcher = FsWatcher::new(&path, 100).await.expect("watch");
         assert!(watcher.is_running());
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        std::fs::write(&path, "a = 2\n").expect("rewrite");
-        let event = tokio::time::timeout(std::time::Duration::from_secs(30), watcher.recv())
-            .await
-            .expect("30s 内必须收到事件（慢盘/高载下事件延迟可达秒级，语义仍是必须到达）");
+        // FSEvents 后端正实遇到「单次改写事件被吞」：fseventsd 高负载时首写
+        // 可达 30s 不达（同代码重跑即可通过）。语义是「改写必须最终可见」，
+        // 因此在预算内周期性重放改写，而非只写一次赌事件必达。
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+        let mut seq = 2;
+        let event = loop {
+            std::fs::write(&path, format!("a = {seq}\n")).expect("rewrite");
+            seq += 1;
+            match tokio::time::timeout(std::time::Duration::from_secs(2), watcher.recv()).await {
+                Ok(event) => break event,
+                Err(_) => assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "30s 内必须收到事件（慢盘/高载下事件延迟可达秒级，语义仍是必须到达；已重放改写）"
+                ),
+            }
+        };
         assert!(event.is_some(), "改写必须产生事件");
     }
 
@@ -427,9 +439,14 @@ concurrency = { requests_per_second = 1 }
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
         // 热字段：max_retries 3 → 9，运行时生效
-        std::fs::write(&path, base.replace("max_retries = 3", "max_retries = 9")).expect("rewrite");
+        let hot_content = base.replace("max_retries = 3", "max_retries = 9");
+        std::fs::write(&path, &hot_content).expect("rewrite");
         let mut applied = false;
-        for _ in 0..300 {
+        for i in 0..300 {
+            // 事件可能被 FSEvents 吞掉：每 2s 重放一次改写（内容不变，幂等）
+            if i > 0 && i % 20 == 0 {
+                std::fs::write(&path, &hot_content).expect("rewrite replay");
+            }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             if manager.read().retry.max_retries == 9 {
                 applied = true;
@@ -448,15 +465,20 @@ concurrency = { requests_per_second = 1 }
             "{}\n[[vendors]]\nid = \"v2\"\nname = \"V2\"\ntype_ = \"openai\"\napi_key_env = \"T011_TEST_KEY\"\nrate_limit = {{ type = \"token\", max_tokens = 1 }}\nconcurrency = {{ requests_per_second = 1 }}\n",
             base.replace("max_retries = 3", "max_retries = 9")
         );
-        std::fs::write(&path, structural).expect("rewrite vendors");
+        std::fs::write(&path, &structural).expect("rewrite vendors");
         // 事件到达是延迟敏感面（慢盘/高载下秒级）：轮询到「拒绝已计入」
-        // 再断言拒绝语义，不依赖固定窗口
+        // 再断言拒绝语义，不依赖固定窗口；每 2s 重放改写防事件被吞
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+        let mut ticks = 0u32;
         while reloader.reload_failures() == 0 {
             assert!(
                 tokio::time::Instant::now() < deadline,
                 "30s 内结构变更未被记为重载失败"
             );
+            ticks += 1;
+            if ticks.is_multiple_of(20) {
+                std::fs::write(&path, &structural).expect("rewrite replay");
+            }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
         assert_eq!(
@@ -510,9 +532,19 @@ concurrency = { requests_per_second = 1 }
         let reloader = maybe_start_hot_reload(&manager)
             .await
             .expect("watcher must start");
-        let reload_events = reloader.subscribe();
+        let mut reload_events = reloader.subscribe();
         // 等待监听线程就绪，否则首写事件可能早于 watch 生效。
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        // 排空启动期事件（监听根初始化/种子文件可能产生一次迟到事件，
+        // 与"旁路噪声不得触发重载"的断言无关）；只在确有事件时消费。
+        for _ in 0..10 {
+            if reload_events.has_changed().unwrap_or(false) {
+                let _ = reload_events.borrow_and_update();
+            } else {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        }
 
         // 旁路噪声：同目录兄弟文件 + 子目录写盘（等 ≥3 个去抖窗口）
         std::fs::write(dir.path().join("sibling.toml"), "noise = 1\n").expect("sibling noise");
@@ -537,7 +569,14 @@ concurrency = { requests_per_second = 1 }
         std::fs::rename(&tmp, &path).expect("atomic replace");
 
         let mut applied = false;
-        for _ in 0..300 {
+        let replace_content = base.replace("max_retries = 3", "max_retries = 9");
+        for i in 0..300 {
+            // 事件可能被 FSEvents 吞掉：每 2s 重放 tmp+rename（内容幂等）
+            if i > 0 && i % 20 == 0 {
+                let tmp = dir.path().join("config.toml.tmp");
+                std::fs::write(&tmp, &replace_content).expect("tmp replay");
+                std::fs::rename(&tmp, &path).expect("atomic replace replay");
+            }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             if manager.read().retry.max_retries == 9 {
                 applied = true;
@@ -591,8 +630,10 @@ concurrency = { requests_per_second = 1 }
             .expect("watcher must start");
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
-        // 注释级外部编辑：字节变、解析结果 == 内存态（桥接走等价分支）
-        std::fs::write(&path, format!("# 外部注释\n{base}")).expect("comment-only edit");
+        // 注释级外部编辑：字节变、解析结果 == 内存态（桥接走等价分支）。
+        // 事件可能被 FSEvents 吞掉：轮询期间每 2s 重放同一改写（内容幂等）。
+        let comment_edit = format!("# 外部注释\n{base}");
+        std::fs::write(&path, &comment_edit).expect("comment-only edit");
 
         // 桥接收纳后（去抖 500ms）管理面写回必须恢复，不得冻结至重启
         let mut next = crate::config::loader::load_config_from_path(&path).expect("re-parse");
@@ -604,7 +645,10 @@ concurrency = { requests_per_second = 1 }
             "采纳前写回必须被外部编辑保护拒绝"
         );
         let mut recovered = false;
-        for _ in 0..300 {
+        for i in 0..300 {
+            if i > 0 && i % 20 == 0 {
+                std::fs::write(&path, &comment_edit).expect("comment-only edit replay");
+            }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             if manager.update_config(next.clone()).is_ok() {
                 recovered = true;
@@ -783,13 +827,19 @@ concurrency = { requests_per_second = 1 }
         // 等待监听线程就绪，否则首写事件可能早于 watch 生效
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
-        std::fs::write(&path, "not [ valid toml").expect("rewrite invalid config");
+        let invalid = "not [ valid toml";
+        std::fs::write(&path, invalid).expect("rewrite invalid config");
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+        let mut ticks = 0u32;
         while reloader.reload_failures() == 0 {
             assert!(
                 tokio::time::Instant::now() < deadline,
                 "30s 内非法改写未被记为重载失败（慢盘/高载容忍）"
             );
+            ticks += 1;
+            if ticks.is_multiple_of(20) {
+                std::fs::write(&path, invalid).expect("rewrite replay");
+            }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
         assert_eq!(

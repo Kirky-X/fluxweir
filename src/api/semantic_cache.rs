@@ -91,7 +91,9 @@ impl SemanticCacheLayer {
 
     /// 入列（嵌入失败静默 + 计数）；容量满 FIFO 逐出
     pub fn store(&self, tenant: &str, body: &Value, response: &Value) {
-        let vector = match self.embed_query(body) {
+        // 嵌入是同步 CPU 推理（Candle）：异步调用方线程上直接跑会占住
+        // executor，统一走阻塞收口（多线程 runtime 让出 worker）。
+        let vector = match crate::utils::blocking::run_blocking(|| self.embed_query(body)) {
             Ok(v) => v,
             Err(_) => {
                 self.counters.store_failures.fetch_add(1, Ordering::Relaxed);
