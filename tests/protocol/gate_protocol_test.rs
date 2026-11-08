@@ -2128,17 +2128,6 @@ mod converter {
                 json!(""),
             ),
             (
-                MessageContent::ToolCalls(vec![ToolCall {
-                    id: "c".into(),
-                    call_type: "function".into(),
-                    function: ToolCallFunction {
-                        name: "f".into(),
-                        arguments: "{}".into(),
-                    },
-                }]),
-                json!(""),
-            ),
-            (
                 MessageContent::ToolResult(ToolResult {
                     tool_call_id: "c".into(),
                     function_name: String::new(),
@@ -2167,6 +2156,33 @@ mod converter {
                 .expect("delta chunk");
             assert_eq!(out["choices"][0]["delta"]["content"], expected);
         }
+
+        // 非规范 ToolCalls 回退形状 → delta.tool_calls（不再丢成空 content）
+        let out = converter
+            .stream_chunk_to_external(StreamChunk::Content {
+                index: 0,
+                delta: MessageContent::ToolCalls(vec![ToolCall {
+                    id: "c".into(),
+                    call_type: "function".into(),
+                    function: ToolCallFunction {
+                        name: "f".into(),
+                        arguments: "{}".into(),
+                    },
+                }]),
+                finish_reason: Some("tool_calls".into()),
+                logprobs: None,
+            })
+            .expect("tool call delta chunk");
+        assert_eq!(out["choices"][0]["delta"]["tool_calls"][0]["id"], "c");
+        assert_eq!(
+            out["choices"][0]["delta"]["tool_calls"][0]["function"]["name"],
+            "f"
+        );
+        assert!(
+            out["choices"][0]["delta"].get("content").is_none(),
+            "工具帧不得携带空 content 键: {}",
+            out["choices"][0]["delta"]
+        );
 
         let out = converter
             .stream_chunk_to_external(StreamChunk::Usage {
@@ -4182,9 +4198,10 @@ mod converter {
 
     // 协议边界场景补测
 
-    /// 入站：model 混合大小写 → to_lowercase 归一（路由按小写匹配模型目录）。
+    /// 入站：model 混合大小写 → 保留原串（模型 ID 大小写敏感；路由/匹配侧
+    /// 内部自行归一）。
     #[tokio::test]
-    async fn test_openai_to_unified_model_mixed_case_normalized_lowercase() {
+    async fn test_openai_to_unified_model_preserves_case() {
         let converter = OpenAIConverter::new();
         let unified = converter
             .to_unified(json!({
@@ -4192,7 +4209,7 @@ mod converter {
                 "messages": [{"role": "user", "content": "hi"}]
             }))
             .expect("to_unified");
-        assert_eq!(unified.model, "gpt-4o-mini");
+        assert_eq!(unified.model, "GPT-4o-Mini");
     }
 
     /// 工具未携带 parameters → 出站省略 parameters 键。

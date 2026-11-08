@@ -3231,9 +3231,21 @@ mod route_gap_coverage {
         };
         assert!(field.contains("auto"), "错误需携带请求模型名: {field}");
         assert!(
-            field.contains("global_model"),
-            "错误需显性说明开关来源（[global_model].enabled=false）: {field}"
+            field.starts_with("global-model-disabled:"),
+            "错误需显性区分「全局开关关闭」与「模型不存在」锚点: {field}"
         );
+        // 开关来源说明由本地化模板承载（error-validation-global-model-disabled）
+        assert!(
+            err_user_message_contains_switch_note("auto"),
+            "用户消息需说明 [global_model].enabled=false 开关来源"
+        );
+    }
+
+    /// 用同一错误走 user_message 校验本地化模板含开关来源说明
+    fn err_user_message_contains_switch_note(model: &str) -> bool {
+        let field = format!("global-model-disabled:{model}");
+        let message = GateError::Validation { field }.user_message();
+        message.contains("global_model") || message.contains("全局模型")
     }
 
     /// 同一开关只作用于 auto 档：显式模型名（抽象路由）不受影响。
