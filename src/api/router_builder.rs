@@ -613,7 +613,7 @@ fn metrics_route_label(path: &str) -> &'static str {
     // 不计入），未知路径归 unmatched（见函数尾）。
     // 订阅管理面模板（subscription-vendor feature 门控；与主表同匹配规则）
     #[cfg(feature = "subscription-vendor")]
-    const SUBSCRIPTION_templates: [&str; 4] = [
+    const SUBSCRIPTION_TEMPLATES: [&str; 4] = [
         "/admin/subscription/authorize",
         "/admin/subscription/callback",
         "/admin/subscription/accounts",
@@ -626,7 +626,7 @@ fn metrics_route_label(path: &str) -> &'static str {
         return exact;
     }
     #[cfg(feature = "subscription-vendor")]
-    if let Some(exact) = SUBSCRIPTION_templates
+    if let Some(exact) = SUBSCRIPTION_TEMPLATES
         .iter()
         .find(|t| !t.contains("{id}") && **t == path)
     {
@@ -647,7 +647,7 @@ fn metrics_route_label(path: &str) -> &'static str {
         }
     }
     #[cfg(feature = "subscription-vendor")]
-    for template in SUBSCRIPTION_templates.iter().filter(|t| t.contains("{id}")) {
+    for template in SUBSCRIPTION_TEMPLATES.iter().filter(|t| t.contains("{id}")) {
         let template_segs: Vec<&str> = template.split('/').collect();
         if template_segs.len() != path_segs.len() {
             continue;
