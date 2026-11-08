@@ -139,36 +139,75 @@ impl ApiAuthState {
 /// 此处 re-export 维持既有引用路径。
 pub(crate) use crate::utils::tenant::extract_api_key;
 
+/// 认证上下文缓存条目：按配置快照代际（`Arc::ptr_eq`）派生，
+/// 快照换代后首次请求重建一次。`generation` 持有旧快照保活以便指针比对。
+pub(crate) struct CachedAuthContext {
+    pub(crate) generation: Arc<crate::config::Config>,
+    pub(crate) state: Arc<ApiAuthState>,
+    /// OIDC 规则面（oidc feature 门控）：有规则才携带整段 auth
+    ///（验签路径要读 api_keys/keys 做母键在位校验）；无段/无规则 = 关闭
+    pub(crate) oidc: Option<AuthSection>,
+}
+
+impl ConfigManager {
+    /// 取当前快照对应的认证上下文：同一代配置返回同一 `Arc`（热路径零重建），
+    /// 配置 swap 后首次调用重建。并发首建良性竞争（后写覆盖，返回各自合法值）。
+    pub(crate) fn auth_context(
+        &self,
+        snapshot: &Arc<crate::config::Config>,
+    ) -> Arc<CachedAuthContext> {
+        if let Some(cached) = self
+            .auth_cache
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+        {
+            if Arc::ptr_eq(&cached.generation, snapshot) {
+                return cached;
+            }
+        }
+        #[cfg(feature = "oidc")]
+        let oidc = snapshot
+            .auth
+            .as_ref()
+            .filter(|auth| auth.enabled)
+            .filter(|auth| {
+                auth.oidc_rules
+                    .as_ref()
+                    .is_some_and(|section| !section.rules.is_empty())
+            })
+            .cloned();
+        #[cfg(not(feature = "oidc"))]
+        let oidc: Option<AuthSection> = None;
+        let context = Arc::new(CachedAuthContext {
+            generation: snapshot.clone(),
+            state: Arc::new(match snapshot.auth.as_ref() {
+                Some(section) => ApiAuthState::from_section(section),
+                None => ApiAuthState::new(false),
+            }),
+            oidc,
+        });
+        *self
+            .auth_cache
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(context.clone());
+        context
+    }
+}
+
 /// API Key 认证中间件（from_fn_with_state 挂载形态）— State 是 `Arc<ConfigManager>`：
-/// 每请求从热配置现读 `[auth]` 段构造 ApiAuthState，key 吊销/轮换与 enabled 开关热生效。
-/// 第三参数是裸 `Arc<ApiAuthState>`（便于直调/测试），此包装补齐该形态。
+/// 认证状态按配置代际缓存（同一快照零重建，swap 后重建），key 吊销/轮换与
+/// enabled 开关仍热生效。第三参数是裸 `Arc<ApiAuthState>`（便于直调/测试），
+/// 此包装补齐该形态。
 pub async fn auth_middleware(
     axum::extract::State(config_manager): axum::extract::State<Arc<ConfigManager>>,
     request: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
     let snapshot = config_manager.read();
-    let auth_state = match snapshot.auth.as_ref() {
-        Some(section) => ApiAuthState::from_section(section),
-        None => ApiAuthState::new(false),
-    };
-    // OIDC 规则面（oidc feature 门控）：有规则才携带整段 auth（验签路径
-    // 要读 api_keys/keys 做母键在位校验）；无段/无规则 = 路径整体关闭
-    #[cfg(feature = "oidc")]
-    let oidc_auth: Option<AuthSection> = snapshot
-        .auth
-        .as_ref()
-        .filter(|auth| auth.enabled)
-        .filter(|auth| {
-            auth.oidc_rules
-                .as_ref()
-                .is_some_and(|section| !section.rules.is_empty())
-        })
-        .cloned();
-    #[cfg(not(feature = "oidc"))]
-    let oidc_auth: Option<AuthSection> = None;
+    let context = config_manager.auth_context(&snapshot);
     drop(snapshot);
-    api_auth_middleware_with_oidc(request, next, Arc::new(auth_state), oidc_auth.as_ref()).await
+    api_auth_middleware_with_oidc(request, next, context.state.clone(), context.oidc.as_ref()).await
 }
 
 /// API Key 认证中间件（无 OIDC 形态，历史公开签名保持不变）
@@ -567,6 +606,42 @@ mod tests {
         );
         let response = app.oneshot(request).await.expect("response");
         assert_eq!(response.status(), 200);
+    }
+
+    #[test]
+    fn auth_context_cached_per_config_generation() {
+        fn manager_with_key(hash: &str) -> ConfigManager {
+            let toml = format!(
+                "vendors = []\n[server]\nhost = \"127.0.0.1\"\nport = 0\n\n\
+                 [database]\npath = \":memory:\"\n\n\
+                 [auth]\nenabled = true\napi_keys = [\"{hash}\"]\n"
+            );
+            let config =
+                crate::config::parse_config_content(std::path::Path::new("config.toml"), &toml)
+                    .expect("auth 测试配置必须合法");
+            ConfigManager::new(config)
+        }
+
+        let manager = manager_with_key(KNOWN_HASH);
+        let snap1 = manager.read();
+        let ctx1 = manager.auth_context(&snap1);
+        let snap2 = manager.read();
+        let ctx2 = manager.auth_context(&snap2);
+        assert!(
+            Arc::ptr_eq(&ctx1, &ctx2),
+            "同一代配置必须命中缓存（返回同一 Arc，零重建）"
+        );
+        assert!(ctx1.state.validate_key(KNOWN_KEY));
+
+        // 换代（key 轮换）：缓存重建，旧键吊销、新键生效
+        let rotated_hash = sha256_hex("rotated-key");
+        let rotated = manager_with_key(&rotated_hash).get_config();
+        manager.swap_memory(rotated).expect("swap");
+        let snap3 = manager.read();
+        let ctx3 = manager.auth_context(&snap3);
+        assert!(!Arc::ptr_eq(&ctx1, &ctx3), "配置换代后必须重建认证状态");
+        assert!(ctx3.state.validate_key("rotated-key"), "新键生效");
+        assert!(!ctx3.state.validate_key(KNOWN_KEY), "旧键已吊销");
     }
 
     #[test]

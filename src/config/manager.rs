@@ -89,6 +89,9 @@ pub struct ConfigManager {
     write_lock: Arc<Mutex<()>>,
     /// 应用成功钩子注册表（内存态切换后触发；Arc 共享使 Clone 视图同注册表）
     swap_hooks: Arc<RwLock<Vec<SwapHook>>>,
+    /// 认证上下文缓存（按配置代际派生：快照换代即重建；见
+    /// `middleware::auth::CachedAuthContext`）
+    pub(crate) auth_cache: Arc<RwLock<Option<Arc<crate::middleware::auth::CachedAuthContext>>>>,
 }
 
 impl ConfigManager {
@@ -100,6 +103,7 @@ impl ConfigManager {
             fingerprint_hash: RandomState::new(),
             write_lock: Arc::new(Mutex::new(())),
             swap_hooks: Arc::new(RwLock::new(Vec::new())),
+            auth_cache: Arc::new(RwLock::new(None)),
         }
     }
 
