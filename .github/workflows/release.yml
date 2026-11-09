@@ -88,10 +88,17 @@ jobs:
             exit 1
           fi
           # vecboost 的 path+version 双写依赖：发布面（registry 包）版本以
-          # tag commit 的 Cargo.toml 声明为单一真源，下游 job 不再各自硬编码
-          VB_VERSION="$(grep -m1 '^vecboost = {' Cargo.toml | sed 's/.*version = "\([^"]*\)".*/\1/')"
+          # tag commit 的 Cargo.lock 锁定值为单一真源（--locked 构建的解析
+          # 结果，与下载的 .crate 严格一致），下游 job 不再各自硬编码。
+          # 历史教训（v0.1.1 首发实录）：曾从 Cargo.toml 行首 grep
+          # `vecboost = {` 提取——a907b58 把依赖收口进 [workspace.dependencies]
+          # 后该 grep 命中成员段的 `workspace = true` 声明（无 version 键，
+          # sed 不替换原样输出整行），vb_version 变垃圾串致下载 URL
+          # malformed（curl exit 3）。lock 段 `name`+`version` 相邻行不受
+          # 依赖声明形态影响。
+          VB_VERSION="$(grep -A1 '^name = "vecboost"$' Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p' | head -n1)"
           if [[ -z "$VB_VERSION" ]]; then
-            echo "::error::未能从 Cargo.toml 解析 vecboost version 声明"
+            echo "::error::未能从 Cargo.lock 解析 vecboost 锁定版本"
             exit 1
           fi
           echo "vb_version=${VB_VERSION}" >> "$GITHUB_OUTPUT"
