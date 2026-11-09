@@ -167,6 +167,8 @@ pub enum FetchError {
 }
 
 /// reqwest 错误 → 脱敏类别文本（原文可能带内部主机名/URL）。
+/// 仅 fetcher 面使用：`netguard` 单开（无 `web-search`）时 reqwest 未链接。
+#[cfg(feature = "web-search")]
 fn classify_reqwest_error(e: &reqwest::Error) -> String {
     if e.is_timeout() {
         "timeout".to_string()
