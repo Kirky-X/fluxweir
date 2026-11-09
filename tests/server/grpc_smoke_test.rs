@@ -127,15 +127,30 @@ async fn grpc_facade_serves_auth_and_shuts_down() {
     });
     wait_ready(addr).await;
 
-    // ① GetInfo 免认证（sdforge 门面 authenticate 仅覆盖 call/call_stream）
+    // ① GetInfo：无 key → UNAUTHENTICATED，对 key → 可达。sdforge 门面语义
+    //    是配置 auth_verifier 即全服务认证（全局拦截层覆盖所有方法，含
+    //    GetInfo）——与 0.1.0 生产行为一致；探活免认证走同进程 HTTP /health，
+    //    GetInfo 免认证白名单列入 0.2.0 上游计划（发布报告 2026-11-09 裁决）。
     {
         let mut client = connect_client(addr).await;
-        let info = client
+        let err = client
             .get_info(Request::new(InfoRequest {
                 version: String::new(),
             }))
             .await
-            .expect("GetInfo 应免认证可达（/health 对等白名单位置）");
+            .expect_err("无 key 的 GetInfo 必须被拒（sdforge 全服务认证语义）");
+        assert_eq!(err.code(), Status::unauthenticated("").code());
+
+        let mut request = Request::new(InfoRequest {
+            version: String::new(),
+        });
+        request
+            .metadata_mut()
+            .insert("x-api-key", SMOKE_KEY.parse().expect("metadata value"));
+        let info = client
+            .get_info(request)
+            .await
+            .expect("对 key 的 GetInfo 应可达");
         let info = info.into_inner();
         assert!(!info.name.is_empty());
     }

@@ -3,8 +3,10 @@
 
 //! gRPC 服务器：sdforge grpc 门面装配与优雅停机 serve（停接新连接、等
 //! in-flight 完成后返回）。服务面（v1）：`sdforge.v1.SdForgeService`
-//!（GetInfo/Call/CallStream，JSON over gRPC）；Call/CallStream 经 per-call
-//! `auth_verifier` 校验（[auth] 段 SHA256 摘要 + 常量时间比较），GetInfo 免认证。
+//!（GetInfo/Call/CallStream，JSON over gRPC）；`auth_verifier` 经 sdforge
+//! 全局拦截层覆盖**全部方法**（含 GetInfo；[auth] 段 SHA256 摘要 + 常量时间
+//! 比较）——探活免认证走同进程 HTTP /health，GetInfo 免认证白名单列入
+//! 0.2.0 上游计划（2026-11-09 发布预检裁决，对齐 0.1.0 生产行为）。
 //! TLS 不经 sdforge 终结，由外部反代承担。
 
 use std::future::Future;
@@ -107,8 +109,8 @@ fn grpc_addr(grpc_config: &GrpcConfig) -> Result<SocketAddr, FluxweirError> {
 
 /// GrpcServerConfig 构建（[grpc] 段 → sdforge 门面配置）。
 ///
-/// `require_auth = false`：认证走 per-call `auth_verifier`（[auth] SHA256 摘要制，
-/// 非 JWT）；TLS 恒 None，不经 sdforge 终结。
+/// `require_auth = false`：认证走 `auth_verifier`（sdforge 全局拦截层装配，
+/// 覆盖全部方法；[auth] SHA256 摘要制，非 JWT）；TLS 恒 None，不经 sdforge 终结。
 fn sdforge_grpc_config(
     config_manager: &Arc<ConfigManager>,
     auth_cache: &Arc<crate::middleware::auth::AuthContextCache>,
