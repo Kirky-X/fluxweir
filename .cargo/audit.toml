@@ -7,8 +7,19 @@
 # - RUSTSEC-2026-0387（crypto-bigint 0.5.5 常时操作时序变化）：修复版
 #   >=0.7.6，但被 rsa 0.9.10 锁死 0.5 线（Cargo.lock 传递依赖），随上一条
 #   rsa 的修复一并解除。
+# - RUSTSEC-2026-0459（libsqlite3-sys 0.37.0 bundled SQLite < 3.54 WAL
+#   页大小不匹配时返回未初始化页缓存内存，CVE-2026-119375，CVSS:4.0
+#   AV:L/AC:L/UI:P medium 6.8）：修复版 >=0.39.0，但唯一消费者
+#   sqlx-sqlite 0.9.0（sqlx 0.9.0 为上游最新）硬约束 libsqlite3-sys
+#   "<0.38.0"，sea-orm 2.0.4 / dbnexus 0.6.0-rc.11 / inklog 0.3.0-rc.12
+#   全链均已锁各自最新——修复路径被上游阻塞（2026-11-09 发布预检实锤）。
+#   缓解：攻击向量本地且需低信任方可写 db 与 -wal 文件；本仓 sqlite 为
+#   运维自建本地观测/记账库（default 特性 db-sqlite），不接收外部提供的
+#   .db 文件，威胁场景不成立。解锁前提：sqlx 发布支持 libsqlite3-sys
+#   >=0.39 的版本后立即升级并移除本条（0.1.1 发布用户裁决放行）。
 [advisories]
 ignore = [
     "RUSTSEC-2023-0071",
     "RUSTSEC-2026-0387",
+    "RUSTSEC-2026-0459",
 ]
