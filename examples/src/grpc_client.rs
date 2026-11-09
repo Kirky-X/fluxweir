@@ -5,13 +5,14 @@
 //!
 //! 网关侧（`cargo run --features grpc` + config.toml `[grpc] enabled = true`）
 //! 暴露 sdforge 的 `sdforge.v1.SdForgeService` 门面（GetInfo / Call /
-//! CallStream，JSON over gRPC）。本样例演示：GetInfo 免认证直取服务信息；
-//! Call 无凭据与带凭据两条路径——凭据从 `FLUXWEIR_API_KEY` 环境变量读取，
-//! 源码不落任何 key 材料。
+//! CallStream，JSON over gRPC）。本样例演示：GetInfo 无凭据撞认证门与带
+//! 凭据取服务信息两态；Call 无凭据与带凭据两条路径——凭据从
+//! `FLUXWEIR_API_KEY` 环境变量读取，源码不落任何 key 材料。
 //!
-//! 与 HTTP `/health` 白名单的差异以代码为准：门面仅对 Call/CallStream 挂
-//! auth_verifier，GetInfo 免认证（Fluxweir src/server/grpc.rs 模块文档；
-//! sdforge src/grpc/grpc_impl.rs `get_info` 不经过 `authenticate`）。
+//! 认证语义与 HTTP `/health` 白名单不同：sdforge 门面配置 auth_verifier
+//! 即全局拦截层覆盖**全部方法**（含 GetInfo；Fluxweir src/server/grpc.rs
+//! 模块文档，2026-11-09 发布预检对齐 0.1.0 生产行为）——探活免认证走
+//! 同进程 HTTP /health。
 //!
 //! 本模块整体由 `grpc` feature 门控（见 lib.rs），代码生成经 build.rs 在启用
 //! `grpc` 时从 `proto/sdforge.v1.proto` 产出，故 OUT_DIR 引用只在该 feature 下存在。
@@ -51,8 +52,9 @@ pub async fn run() {
     };
     let mut client = SdForgeServiceClient::new(channel);
 
-    // GetInfo 免认证：失败即网关不可用（端口/feature/配置任一不满足），
-    // 后续调用必败，fail-fast 终止而非带着坏连接继续演示。
+    // 无凭据 GetInfo——认证门演示。sdforge 门面语义：配置 auth_verifier
+    // 即全服务认证（含 GetInfo），被拒为 Unauthenticated 是预期观察值；
+    // [auth] enabled=false 时放行，两种观察值都原样打印。
     match client
         .get_info(InfoRequest {
             version: String::new(),
@@ -62,7 +64,58 @@ pub async fn run() {
         Ok(resp) => {
             let info = resp.into_inner();
             println!(
-                "GetInfo: {} v{} — {}",
+                "[无凭据 GetInfo] 网关放行（[auth] enabled=false？）: {} v{}",
+                info.name, info.version
+            );
+        }
+        Err(status) => {
+            println!(
+                "[无凭据 GetInfo] 被拒: code={:?} message={}",
+                status.code(),
+                status.message()
+            );
+        }
+    }
+
+    // 凭据读取——`x-api-key` 裸值（服务器侧优先提取）；等价形态是
+    // `authorization` metadata 携带 `Bearer <key>`。网关对明文 key 现场算
+    // SHA256 摘要后与 [auth].api_keys 常量时间比较。
+    let api_key = match std::env::var("FLUXWEIR_API_KEY") {
+        Ok(key) if !key.is_empty() => key,
+        Ok(_) => {
+            println!("[带凭据调用] FLUXWEIR_API_KEY 为空，跳过");
+            return;
+        }
+        Err(std::env::VarError::NotPresent) => {
+            println!("[带凭据调用] 未设置 FLUXWEIR_API_KEY，跳过");
+            return;
+        }
+        Err(e) => {
+            eprintln!("[带凭据调用] FLUXWEIR_API_KEY 读取失败: {e}");
+            std::process::exit(1);
+        }
+    };
+    let key_value = match MetadataValue::try_from(api_key.as_str()) {
+        Ok(value) => value,
+        Err(e) => {
+            eprintln!("[带凭据调用] API key 含非法 metadata 字符: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    // 带凭据 GetInfo——真实取服务信息；带凭据仍失败即网关真故障
+    // （端口/feature/配置任一不满足），fail-fast 终止。
+    let mut info_request = Request::new(InfoRequest {
+        version: String::new(),
+    });
+    info_request
+        .metadata_mut()
+        .insert("x-api-key", key_value.clone());
+    match client.get_info(info_request).await {
+        Ok(resp) => {
+            let info = resp.into_inner();
+            println!(
+                "[带凭据 GetInfo] {} v{} — {}",
                 info.name, info.version, info.description
             );
             println!(
@@ -76,7 +129,7 @@ pub async fn run() {
         }
         Err(status) => {
             eprintln!(
-                "GetInfo 失败: code={:?} message={}",
+                "[带凭据 GetInfo] 失败: code={:?} message={}",
                 status.code(),
                 status.message()
             );
@@ -109,31 +162,7 @@ pub async fn run() {
         }
     }
 
-    // 带凭据 Call——`x-api-key` 裸值（服务器侧优先提取）；等价形态是
-    // `authorization` metadata 携带 `Bearer <key>`。网关对明文 key 现场算
-    // SHA256 摘要后与 [auth].api_keys 常量时间比较。
-    let api_key = match std::env::var("FLUXWEIR_API_KEY") {
-        Ok(key) if !key.is_empty() => key,
-        Ok(_) => {
-            println!("[带凭据 Call] FLUXWEIR_API_KEY 为空，跳过");
-            return;
-        }
-        Err(std::env::VarError::NotPresent) => {
-            println!("[带凭据 Call] 未设置 FLUXWEIR_API_KEY，跳过");
-            return;
-        }
-        Err(e) => {
-            eprintln!("[带凭据 Call] FLUXWEIR_API_KEY 读取失败: {e}");
-            std::process::exit(1);
-        }
-    };
-    let key_value = match MetadataValue::try_from(api_key.as_str()) {
-        Ok(value) => value,
-        Err(e) => {
-            eprintln!("[带凭据 Call] API key 含非法 metadata 字符: {e}");
-            std::process::exit(1);
-        }
-    };
+    // 带凭据 Call——凭据与 key_value 已在 GetInfo 段读取构造。
     // parameters 逐键映射为 handler 参数（值恒为字符串）；data 仅在 handler
     // 声明 body 参数时投递（缺声明而 data 非空会被网关拒绝）。
     let mut authenticated = Request::new(CallRequest {

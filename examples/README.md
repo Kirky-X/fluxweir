@@ -104,7 +104,7 @@ cd examples/assets/rest-http && npm install openai && FLUXWEIR_API_KEY=你的key
 
 ## grpc-client — tonic gRPC 客户端（`mod grpc_client`）
 
-**是什么**：`build.rs`（启用 `grpc` feature 时）经 tonic-prost-build 0.14 从 vendored proto（`proto/sdforge.v1.proto`，sdforge 仓库同名文件的逐字节副本）生成 `sdforge.v1.SdForgeService` 客户端 stub；`src/grpc_client.rs` 依次演示三条路径：GetInfo 免认证直取服务信息、Call 无凭据撞认证门（`Unauthenticated`）、Call 带 `x-api-key` 凭据（库存网关终点 `NotFound`，gRPC Status details 携带 UnifiedError JSON）。三路径均在真实网关端到端实测。
+**是什么**：`build.rs`（启用 `grpc` feature 时）经 tonic-prost-build 0.14 从 vendored proto（`proto/sdforge.v1.proto`，sdforge 仓库同名文件的逐字节副本）生成 `sdforge.v1.SdForgeService` 客户端 stub；`src/grpc_client.rs` 依次演示四条路径：GetInfo 无凭据撞认证门（`Unauthenticated`——sdforge 门面语义为配置 auth_verifier 即全服务认证，含 GetInfo，与 0.1.0 生产行为一致；探活免认证走同进程 HTTP `/health`）、GetInfo 带 `x-api-key` 凭据取服务信息、Call 无凭据撞认证门、Call 带凭据（库存网关终点 `NotFound`，gRPC Status details 携带 UnifiedError JSON）。各路径均在真实网关端到端实测。
 
 **依赖与 feature**：本样例不依赖 fluxweir 本体（客户端只消费 proto wire 契约），故 `grpc` feature 不声明 fluxweir；演示的网关侧配置是 fluxweir 的 `grpc = ["dep:sdforge", "sdforge/grpc"]`（根 `Cargo.toml`，独立门控不进 `full`），以 `cargo build --features grpc` 启用。样例自身依赖（均 `default-features = false`）：`tonic 0.14 [channel, codegen]`（弃 `transport` 防拖入 h2/socket2 服务端栈）、`tonic-prost 0.14`、`prost 0.14 [derive]`、`tokio 1`；build-dependencies 与 sdforge build.rs 同套：`tonic-build 0.14` + `tonic-prost-build 0.14`。版本与 Fluxweir `Cargo.lock` 对齐，零新增外部包。
 

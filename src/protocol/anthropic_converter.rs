@@ -502,8 +502,11 @@ impl ProtocolConverter for AnthropicConverter {
         let content = choice
             .message
             .as_ref()
-            .map(message_to_anthropic)
-            // Anthropic content 必须是块数组；对象形态会被上游拒收
+            // message_to_anthropic 产出 message 对象 {role, content:[块]}——
+            // envelope 只取其 content 块数组（Anthropic content 必须是块
+            // 数组；对象形态会被上游拒收。0.1.0 回包实测嵌套对象，示例
+            // rest_http 首个真实消费者暴露，2026-11-09 发布预检修复）
+            .map(|m| message_to_anthropic(m)["content"].clone())
             .unwrap_or_else(|| json!([]));
 
         // finish 结构化槽优先
@@ -2501,6 +2504,37 @@ mod tests {
         request.tool_choice = Some(ToolChoice::Strategy("none".into()));
         let body = converter.request_to_external(request).expect("to external");
         assert_eq!(body["tool_choice"], json!({"type": "none"}));
+    }
+
+    /// 非流式回包 content 形状：必须是块数组。envelope.content 曾被塞进
+    /// message_to_anthropic 的整对象（{role, content:[…]} 嵌套），上游与
+    /// 示例取 content[0].text 失败——0.1.0 真实缺陷，示例 rest_http 首个
+    /// 真实消费方暴露（2026-11-09 发布预检 Step 12 修复）。
+    #[test]
+    fn response_content_is_block_array_not_nested_message() {
+        let converter = AnthropicConverter::new();
+        let unified = converter
+            .parse_response(json!({
+                "id": "msg_shape",
+                "model": "claude-x",
+                "content": [{"type": "text", "text": "hi"}],
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 1, "output_tokens": 1}
+            }))
+            .expect("parse");
+        let external = converter
+            .response_to_external(unified)
+            .expect("to external");
+        assert!(
+            external["content"].is_array(),
+            "envelope.content 必须是块数组，实测 {}",
+            external["content"]
+        );
+        assert_eq!(external["content"][0]["type"], "text");
+        assert_eq!(external["content"][0]["text"], "hi");
+        // 嵌套 message 对象形态（缺陷形状）不得复现
+        assert!(external["content"].get("role").is_none());
+        assert!(external["content"].get("content").is_none());
     }
 
     #[test]
