@@ -55,9 +55,7 @@ jobs:
       # vecboost 就位：path+version 双写依赖在解析期必须可定位（CI 无 sibling checkout）
       - uses: ./.github/actions/fetch-vecboost
       # grpc 特性组合要编 proto（sdforge grpc 门面 / examples 的 tonic 客户端）
-      - uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: ./.github/actions/setup-protoc
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ env.RUST_VERSION }}

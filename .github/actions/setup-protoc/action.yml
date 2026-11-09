@@ -1,0 +1,42 @@
+# 本地 protoc 安装（替代 arduino/setup-protoc：其最新 v3.0.0 仍以
+# `runs.using: node20` 发布，无法通过升级消除 Node 20 弃用告警）。
+#
+# 仅支持 Linux x86_64（当前所有使用点均为 ubuntu-latest）；下载官方 release
+# 并用 sha256 钉校验后解包到 RUNNER_TOOL_CACHE，加入 PATH 与 PROTOC。
+# 升级版本时必须同步更新 sha256。
+name: 'Setup protoc (pinned release)'
+description: 'Download a pinned protoc release, verify sha256, and add it to PATH'
+inputs:
+  version:
+    description: 'protoc release version (tag without leading v)'
+    required: false
+    default: '29.3'
+runs:
+  using: 'composite'
+  steps:
+    - shell: bash
+      env:
+        PROTOC_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        case "${PROTOC_VERSION}" in
+          29.3)
+            sha256=3e866620c5be27664f3d2fa2d656b5f3e09b5152b42f1bedbf427b333e90021a
+            ;;
+          *)
+            echo "未钉校验和的 protoc 版本: ${PROTOC_VERSION}（先补充 sha256）" >&2
+            exit 1
+            ;;
+        esac
+        dest="${RUNNER_TOOL_CACHE}/protoc-${PROTOC_VERSION}"
+        if [ ! -x "${dest}/bin/protoc" ]; then
+          curl --proto '=https' --tlsv1.2 --silent --show-error --fail --location \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" \
+            -o /tmp/protoc.zip
+          echo "${sha256}  /tmp/protoc.zip" | sha256sum -c --strict -
+          mkdir -p "${dest}"
+          unzip -q -o /tmp/protoc.zip -d "${dest}"
+        fi
+        echo "${dest}/bin" >> "${GITHUB_PATH}"
+        echo "PROTOC=${dest}/bin/protoc" >> "${GITHUB_ENV}"
+        "${dest}/bin/protoc" --version
