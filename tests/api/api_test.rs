@@ -4485,10 +4485,7 @@ mod api_handler_coverage {
         let body = body_json(response).await;
         assert_eq!(body["type"], "message", "body: {body}");
         assert_eq!(body["role"], "assistant", "body: {body}");
-        assert_eq!(
-            body["content"]["content"][0]["text"], "hi there",
-            "body: {body}"
-        );
+        assert_eq!(body["content"][0]["text"], "hi there", "body: {body}");
         assert_eq!(body["usage"]["input_tokens"], 3, "body: {body}");
         assert_eq!(body["usage"]["output_tokens"], 2, "body: {body}");
 

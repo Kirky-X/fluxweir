@@ -1922,9 +1922,13 @@ mod converter {
         assert_eq!(content[2], json!({"type": "unknown"}));
     }
 
-    /// response_to_external：System 角色消息 + 文本与工具调用并列 → Anthropic 形状。
+    /// response_to_external：文本与工具调用并列 → Anthropic 形状（content 为
+    /// 块数组，envelope role 恒 assistant）。原断言读的是嵌套 message 对象的
+    /// `content.role`/`content.content`——那是 0.1.0 的缺陷形状（envelope.content
+    /// 被塞进整个 message 对象），已随 2026-11-09 发布预检修复；请求方向的
+    /// system 角色映射由本文件 messages[0].role 断言覆盖。
     #[tokio::test]
-    async fn test_anthropic_response_to_external_system_role_with_tool_calls() {
+    async fn test_anthropic_response_to_external_text_and_tool_calls() {
         let converter = AnthropicConverter::new();
         let response = UnifiedResponse {
             id: "m".into(),
@@ -1964,10 +1968,13 @@ mod converter {
         let out = converter
             .response_to_external(response)
             .expect("to external");
-        assert_eq!(out["content"]["role"], "system");
-        let blocks = out["content"]["content"]
+        assert_eq!(
+            out["role"], "assistant",
+            "响应 envelope 的 role 恒 assistant"
+        );
+        let blocks = out["content"]
             .as_array()
-            .expect("content blocks");
+            .expect("content blocks（Anthropic 契约：content 为块数组）");
         assert_eq!(blocks[0], json!({"type": "text", "text": "let me check"}));
         assert_eq!(blocks[1]["type"], "tool_use");
         assert_eq!(blocks[1]["id"], "t1");
