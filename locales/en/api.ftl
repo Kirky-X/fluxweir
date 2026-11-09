@@ -187,3 +187,9 @@ admin-subscription-degraded = Subscription account is in degraded cooldown; retr
 subscription-vault-unwired = vault store not wired
 api-responses-history-lookup-failed = response history lookup failed
 api-responses-store-op-failed = response store operation failed; see server logs for details
+
+# ---- api/responses.rs（responses 存储运维日志，原文经 error 结构化字段承载）----
+api-log-responses-store-insert-failed = responses store insert failed
+api-log-responses-store-op-failed = responses store operation failed
+api-log-responses-history-lookup-failed = responses history lookup failed
+api-log-responses-conversation-lookup-failed = responses conversation lookup failed

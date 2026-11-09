@@ -187,3 +187,9 @@ admin-subscription-degraded = 订阅账号处于降级冷却期，请稍后重�
 subscription-vault-unwired = vault 存储未接线
 api-responses-history-lookup-failed = 响应历史查询失败
 api-responses-store-op-failed = 响应存储操作失败，详情见服务端日志
+
+# ---- api/responses.rs（responses 存储运维日志，原文经 error 结构化字段承载）----
+api-log-responses-store-insert-failed = 响应存储插入失败
+api-log-responses-store-op-failed = 响应存储操作失败
+api-log-responses-history-lookup-failed = 响应历史查询失败
+api-log-responses-conversation-lookup-failed = 响应会话查询失败

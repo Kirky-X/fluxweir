@@ -803,7 +803,11 @@ async fn background_response(
             .metrics()
             .record_responses_store_failure();
         // 存储错误原文（表名/驱动细节）只进日志，不进响应体
-        tracing::warn!(error = %error, "responses store insert failed");
+        tracing::warn!(
+            error = %error,
+            "{}",
+            crate::i18n::t("api-log-responses-store-insert-failed")
+        );
         return Err(FluxweirError::from(GateError::Config {
             message: "api-responses-store-op-failed".to_string(),
         }));
@@ -1125,7 +1129,11 @@ pub async fn get_response(
         .get_response(&id, &tenant, now)
         .await
         .map_err(|error| {
-            tracing::warn!(error = %error, "responses store operation failed");
+            tracing::warn!(
+                error = %error,
+                "{}",
+                crate::i18n::t("api-log-responses-store-op-failed")
+            );
             GateError::Config {
                 message: "api-responses-store-op-failed".to_string(),
             }
@@ -1164,7 +1172,11 @@ pub async fn delete_response(
         .delete_response(&id, &tenant, now)
         .await
         .map_err(|error| {
-            tracing::warn!(error = %error, "responses store operation failed");
+            tracing::warn!(
+                error = %error,
+                "{}",
+                crate::i18n::t("api-log-responses-store-op-failed")
+            );
             GateError::Config {
                 message: "api-responses-store-op-failed".to_string(),
             }
@@ -1203,7 +1215,11 @@ pub async fn cancel_response(
         .get_response(&id, &tenant, now)
         .await
         .map_err(|error| {
-            tracing::warn!(error = %error, "responses store operation failed");
+            tracing::warn!(
+                error = %error,
+                "{}",
+                crate::i18n::t("api-log-responses-store-op-failed")
+            );
             GateError::Config {
                 message: "api-responses-store-op-failed".to_string(),
             }
@@ -1230,7 +1246,11 @@ pub async fn cancel_response(
         .set_response_status(&id, &tenant, "cancelled", &value.to_string())
         .await
         .map_err(|error| {
-            tracing::warn!(error = %error, "responses store operation failed");
+            tracing::warn!(
+                error = %error,
+                "{}",
+                crate::i18n::t("api-log-responses-store-op-failed")
+            );
             GateError::Config {
                 message: "api-responses-store-op-failed".to_string(),
             }
@@ -1288,7 +1308,11 @@ async fn resolve_history(
                     .get_response(&id, tenant_hash, now)
                     .await
                     .map_err(|error| {
-                        tracing::warn!(error = %error, "responses history lookup failed");
+                        tracing::warn!(
+                            error = %error,
+                            "{}",
+                            crate::i18n::t("api-log-responses-history-lookup-failed")
+                        );
                         HistoryError::NotFound("api-responses-history-lookup-failed".to_string())
                     })?
                     .ok_or_else(|| {
@@ -1312,7 +1336,11 @@ async fn resolve_history(
                 .list_conversation(conversation, tenant_hash, now)
                 .await
                 .map_err(|error| {
-                    tracing::warn!(error = %error, "responses conversation lookup failed");
+                    tracing::warn!(
+                        error = %error,
+                        "{}",
+                        crate::i18n::t("api-log-responses-conversation-lookup-failed")
+                    );
                     HistoryError::NotFound("api-responses-history-lookup-failed".to_string())
                 })?;
             for row in rows {
