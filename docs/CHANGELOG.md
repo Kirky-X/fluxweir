@@ -4,11 +4,32 @@
 
 本格式基于 [Keep a Changelog 1.0.0](https://keepachangelog.com/en/1.0.0/)，版本号遵循语义化版本。
 
-> **注**：以下版本对应 `Cargo.toml` 的版本线（当前 `version = "0.1.0"`）。
+> **注**：以下版本对应 `Cargo.toml` 的版本线（当前 `version = "0.1.1"`）。
 
 ---
 
 ## [Unreleased]
+
+## [0.1.1] - 2026-11-10
+
+### Added（发布流水线收口）
+
+- **迁移 SQL 外部化**：`src/database/migration.rs` 的 V1..=V9 全部 40 个 SQL 常量（27 UP 三方言 + 13 DOWN）外置为 `src/database/migrations/core/*.sql`（`v{n}_{backend}.up.sql` / `.down.sql`），经 `include_str!` 编译期嵌入——单二进制部署、无运行时路径依赖；FROZEN 内容逐字节不变（三方独立验证 40/40），`core_migration_file` 分发与 `-- UP`/`-- DOWN` 拼接零改动。
+- **CI 供应链收口**：新增本地 composite action `.github/actions/setup-protoc`（钉 protoc 29.3 + sha256 校验）替代 node20 运行时的 `arduino/setup-protoc`；`taiki-e/install-action` bump v2.87.32→v2.89.1、`zizmorcore/zizmor-action` v0.8.0→v0.8.1（SHA 钉定）。
+
+### Fixed
+
+- **Anthropic 非流式回包 content 形状**：`response_to_external` 曾把 `message_to_anthropic` 的整对象（`{role, content:[块]}`）塞进 envelope 顶层 `content` 字段，产出 `content = {role, content:[…]}` 嵌套对象——违反 Anthropic Messages 契约（`content` 必须为块数组），示例取 `content[0].text` 失败。修复后 envelope 为 `{role: "assistant", content: [块数组], …}`，并新增内联回归测试锁定；两处锁定旧形状的既有断言同步改为契约形状。
+- **gRPC 认证语义文档对齐**：`src/server/grpc.rs` 与 `grpc_client` 示例、examples/README 曾声称 "GetInfo 免认证"；实际 sdforge 门面语义为配置 `auth_verifier` 即全局拦截层覆盖全部方法（含 GetInfo，0.1.0 生产行为即如此）。文档/示例/测试三面对齐现实（冒烟测试改双向断言），探活免认证走同进程 HTTP `/health`；GetInfo 免认证白名单列入 0.2.0 上游计划。
+- **responses.rs 日志 i18n 补录**：7 处 warn 级英文裸文案补录 Fluent 登记（en 键值与原文逐字一致，零行为变化；zh 对齐翻译）。
+
+### Security
+
+- **RUSTSEC-2026-0459 豁免登记**（libsqlite3-sys 0.37.0 bundled SQLite < 3.54 WAL 页缓存未初始化内存，CVE-2026-119375，medium）：修复版 ≥0.39.0 被上游 sqlx 0.9.0（已为最新）硬约束阻塞；按本地攻击向量 + 运维自建库不接收外部 .db 文件的缓解评估登记 `.cargo/audit.toml`，sqlx 发兼容版后立即升级移除。
+
+### Changed（文档一致性）
+
+- 发布前一致性收口 17 处：测试目标计数以 `[[test]]` 实数对齐（default 口径 61）、schema.*.sql 头注释对齐外部化真源、守卫测试覆盖面如实化（仅 sqlite 全集 vs schema.sql 有守卫）、0.1.0 日期以 tag creatordate 为权威（2026-11-05）、SECURITY 版本矩阵补 v0.1.0 已发布；`scripts/check_docs_links.py` 复跑 12 文件零死链。
 
 ### Added
 

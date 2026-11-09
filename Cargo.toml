@@ -1,6 +1,6 @@
 [package]
 name = "fluxweir"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 # MSRV 单一事实源：cargo 解析期据此硬拒更低工具链；CI 用此下限，Docker/release 用当前 stable。
 rust-version = "1.97.1"
