@@ -43,7 +43,7 @@
 
 - **BREAKING：熔断拒绝结构化**（`GateError` 变体集扩充）：CB Open 拒绝由 `VendorUnavailable{vendor: "{id} (circuit open)"}` 字符串标记改为专用变体 `VendorCircuitOpen{vendor: <纯 id>}`——fallback 触发器（`CircuitOpen`/`RateLimited`/`Http5xx`）与 `is_circuit_open_error` 改按变体判别，消除 locale 依赖的字符串回环；`GateErrorClassifier` 对该变体不计 CB 失败（防 half-open 探测期拒绝再抬计数、熔断永难恢复）。穷举 match `GateError` 的外部代码需补臂（嵌入方 agentstem-gate 已同步适配）。
 
-## [0.1.0] - 2026-11-04
+## [0.1.0] - 2026-11-05
 
 ### Changed（项目更名）
 

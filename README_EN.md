@@ -381,7 +381,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 - The three groups are mutually exclusive, enforced by dbnexus's compile-time guard (embedded and server-side backends cannot mix). `--all-features` therefore fails to compile — this is expected; CI and pre-commit use explicit feature matrices instead.
 - On the config side, `[database] url` (a full connection URL) takes precedence when set; when empty, `path` falls back to the sqlite file store (without the db-sqlite feature the startup fails with `database-backend-missing` and a rebuild hint).
-- Schema and column migrations dispatch on the connected backend (`schema.postgres.sql` / `schema.mysql.sql` are dialect projections of `schema.sql`; keep all three in sync when adding tables/columns).
+- Schema and column migrations dispatch on the connected backend (the migration SQL source of truth lives in `src/database/migrations/core/` (`v{n}_{backend}.sql` per dialect, embedded via `include_str!`) — new tables/columns go through a new migration version; `schema.sql` / `schema.postgres.sql` / `schema.mysql.sql` are readable documentation, with the `schema.sql` table set locked to the migration set by a guard test).
 
 > The SDK is an "HTTP client" (calling the gateway REST API, including SSE streaming), not an in-process route-core binding; for embedding use `fluxweir::server` and `fluxweir::api` directly.
 
@@ -391,7 +391,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### 🎯 Strategy
 
-Unit tests live inline in `src/` (`#[cfg(test)]`); integration tests are organized by functional domain under `tests/` subdirectories (api / routing / resilience / config / database / protocol / vendor / cost / server / i18n / matrix / utils / guard / vault / masking / replay, 67 `.rs` files in total — 66 test binaries plus the `tests/common/mod.rs` helper), each binary explicitly registered via `[[test]]` in the root `Cargo.toml` (one binary per file, process-exclusive semantics preserved; the grpc_smoke / grpc_coverage pair carries `required-features` and compiles only under the `grpc` caliber — default builds no empty binaries). Mocks use mockito (HTTP wire-level stubs) plus hand-written fakes for in-process doubles (e.g. `MockDifficultyClassifier`); time-sensitive tests inject the limiteron MockClock fake clock.
+Unit tests live inline in `src/` (`#[cfg(test)]`); integration tests are organized by functional domain under `tests/` subdirectories (api / routing / resilience / config / database / protocol / vendor / cost / server / i18n / matrix / utils / guard / vault / masking / replay, 69 `.rs` files in total — 68 test binaries plus the `tests/common/mod.rs` helper), each binary explicitly registered via `[[test]]` in the root `Cargo.toml` (one binary per file, process-exclusive semantics preserved; the grpc_smoke / grpc_coverage pair carries `required-features` and compiles only under the `grpc` caliber — default builds no empty binaries). Mocks use mockito (HTTP wire-level stubs) plus hand-written fakes for in-process doubles (e.g. `MockDifficultyClassifier`); time-sensitive tests inject the limiteron MockClock fake clock.
 
 ### ▶️ Commands (CI-consistent)
 
@@ -414,7 +414,7 @@ Caliber note: default already carries `full + db-sqlite`; `--all-features` opens
 
 ### 📊 Scale
 
-As of 2026-11-04 (measured with `cargo test --workspace --no-fail-fast`, local zh-locale caliber): **2085 tests executed, 2081 passed** — 993 unit tests (inline in `src/`) plus 1092 integration tests (64 default-caliber test binaries under `tests/`; grpc_smoke / grpc_coverage build with the `grpc` feature); the 4 failures are all error-message i18n assertions hitting Chinese text under the zh locale (green under English CI), not functional defects; one hot-reload watcher test additionally shows kqueue platform flake (passes on rerun; serialization mitigated in 76bc09f). One `rust,ignore` example doctest is listed but not executed. Overall line coverage is measured with `cargo llvm-cov --workspace`. Main distribution:
+As of 2026-11-04 (measured with `cargo test --workspace --no-fail-fast`, local zh-locale caliber): **2085 tests executed, 2081 passed** — 993 unit tests (inline in `src/`) plus 1092 integration tests (61 default-caliber test binaries under `tests/`; grpc_smoke / grpc_coverage build with the `grpc` feature); the 4 failures are all error-message i18n assertions hitting Chinese text under the zh locale (green under English CI), not functional defects; one hot-reload watcher test additionally shows kqueue platform flake (passes on rerun; serialization mitigated in 76bc09f). One `rust,ignore` example doctest is listed but not executed. Overall line coverage is measured with `cargo llvm-cov --workspace`. Main distribution:
 
 <details>
 <summary>📋 Table</summary>
@@ -577,7 +577,7 @@ The full version history lives in the [📋 Changelog](docs/CHANGELOG.md) (follo
 
 | Version | Date       | Highlights                                                                                                                                                                                                                                                                                       |
 | ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 0.1.0   | 2026-11-03 | Initial release (including the 2026-10-12 initial batch), continuously iterated: protocol-converting gateway, 6-factor weighted routing (quota-budget factor included) with optional smart layers, limiteron resilience system, async logging & pre-aggregation, cost tracking, confers hot-reload foundation, i18n |
+| 0.1.0   | 2026-11-05 | Initial release (including the 2026-10-12 initial batch), continuously iterated: protocol-converting gateway, 6-factor weighted routing (quota-budget factor included) with optional smart layers, limiteron resilience system, async logging & pre-aggregation, cost tracking, confers hot-reload foundation, i18n |
 
 </details>
 

@@ -102,7 +102,7 @@ Fluxweir 深度依赖 7 个自研库，经 **crates.io registry** 集成——�
 |:-----|:-----|
 | `src/server` | **服务器装配链**库模块（`all(web-server, logging)` 门控）：bootstrap / http / handle / shutdown，`run()` 起服、`build_app()` 返回 `(Router, ServerHandle)`（停机 flush 收尾，幂等；同进程二次装配 panic，见 `# Panics` 文档） |
 | `src/sdk` | **Rust 客户端 SDK** 模块（`sdk` feature 门控）：chat / embed / models / vendors / health，含 SSE 流式（原顶层 `sdk/` 独立 crate 已并入） |
-| `tests/` | **集成测试**（按功能域目录化，69 个 `.rs` 文件 = 68 个 `[[test]]` 登记 + `common/mod.rs` helper；default 口径执行 63 个集成目标：HTTP 全链路 / 路由 / 协议转换 / 厂商 / 熔断 / 重试 / 成本 / 配置示例断言 / feature 组合矩阵 / 死代码守卫等；grpc_smoke / grpc_coverage 带 `required-features`，随 `grpc` 特性编译，default 口径无空壳二进制） |
+| `tests/` | **集成测试**（按功能域目录化，69 个 `.rs` 文件 = 68 个 `[[test]]` 登记 + `common/mod.rs` helper；default 口径执行 61 个集成目标：HTTP 全链路 / 路由 / 协议转换 / 厂商 / 熔断 / 重试 / 成本 / 配置示例断言 / feature 组合矩阵 / 死代码守卫等；grpc_smoke / grpc_coverage 带 `required-features`，随 `grpc` 特性编译，default 口径无空壳二进制） |
 
 > 架构惯例：`mod.rs` 只保留接口与 re-export，具体实现放独立文件（如 `router/router.rs`、`config/manager.rs`）。新增代码请遵循同一惯例。
 
@@ -140,9 +140,9 @@ cargo build --release
 | 类型 | 数量 | 位置 | 写法 |
 |:-----|:-----|:-----|:-----|
 | 单元测试 | **1149 个**（2026-11-09 实测） | `src/` 各模块内 | `#[cfg(test)] mod tests { ... }` 内联 |
-| 集成测试 | **1197 个（63 个 default 口径集成目标）** | `tests/`（69 个 `.rs` 文件 = 68 个 `[[test]]` 登记 + `common/mod.rs`；grpc_smoke / grpc_coverage 随 `grpc` 特性编译） | HTTP 全链路 / 跨模块行为 |
+| 集成测试 | **1197 个（61 个 default 口径集成目标）** | `tests/`（69 个 `.rs` 文件 = 68 个 `[[test]]` 登记 + `common/mod.rs`；grpc_smoke / grpc_coverage 随 `grpc` 特性编译） | HTTP 全链路 / 跨模块行为 |
 
-> 口径：`cargo test --workspace --no-fail-fast` 实测于 2026-11-09——default 与 `FLUXWEIR_LANG=en` 双口径各 64 个测试目标（1 个 lib + 63 个集成）、2346 通过、0 失败；hot-reload watcher 用例已做事件重放加固（FSEvents 吞事件时重放改写）。
+> 口径：`cargo test --workspace --no-fail-fast` 实测于 2026-11-09——default 与 `FLUXWEIR_LANG=en` 双口径各 62 个测试目标（1 个 lib + 61 个集成）、2346 通过、0 失败；hot-reload watcher 用例已做事件重放加固（FSEvents 吞事件时重放改写）。
 
 约定与工具：
 

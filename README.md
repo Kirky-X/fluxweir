@@ -377,7 +377,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 - 三组互斥由 dbnexus 编译期守卫强制（embedded 与 server-side 不可混），`--all-features` 会编译失败——这是预期行为，CI 与 pre-commit 均以显式特性矩阵替代
 - 配置侧 `[database] url`（完整连接 URL）非空时优先；留空则 `path` 按 sqlite 文件库回退（未编译 db-sqlite 时启动报 `database-backend-missing` 并附重建指引）
-- schema 与列迁移按连接后端自动分派（`schema.postgres.sql` / `schema.mysql.sql` 为 `schema.sql` 的方言投影，加表/加列时三处同改）
+- schema 与列迁移按连接后端自动分派（迁移 SQL 真源外置于 `src/database/migrations/core/`（`v{n}_{backend}.sql` 三方言，经 `include_str!` 嵌入），新表/新列走新迁移版本；`schema.sql` / `schema.postgres.sql` / `schema.mysql.sql` 为可读文档，`schema.sql` 表集合与迁移全集的一致性由守卫测试锁定）
 
 > SDK 是「HTTP 客户端」（调用网关 REST API，含 SSE 流式），不是进程内直连路由核心；嵌入式直用 `fluxweir::server` 与 `fluxweir::api` 即可。
 
@@ -387,7 +387,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### 🎯 测试策略
 
-单元测试内联于 `src/`（`#[cfg(test)]`），集成测试按功能域组织在 `tests/` 子目录（api / routing / resilience / config / database / protocol / vendor / cost / server / i18n / matrix / utils / guard / vault / masking / replay，共 67 个 `.rs` 文件——66 个测试二进制 + `tests/common/mod.rs` helper，由根 `Cargo.toml` 的 `[[test]]` 逐二进制显式注册；一文件一二进制，进程独占语义不变；grpc_smoke / grpc_coverage 两个按 `required-features` 随 `grpc` 特性编译，default 口径不产出空壳二进制），Mock 使用 mockito（HTTP 上游线级桩）+ 手写 fake（进程内替身，如 `MockDifficultyClassifier`），时间敏感测试注入 limiteron MockClock 假时钟。
+单元测试内联于 `src/`（`#[cfg(test)]`），集成测试按功能域组织在 `tests/` 子目录（api / routing / resilience / config / database / protocol / vendor / cost / server / i18n / matrix / utils / guard / vault / masking / replay，共 69 个 `.rs` 文件——68 个测试二进制 + `tests/common/mod.rs` helper，由根 `Cargo.toml` 的 `[[test]]` 逐二进制显式注册；一文件一二进制，进程独占语义不变；grpc_smoke / grpc_coverage 两个按 `required-features` 随 `grpc` 特性编译，default 口径不产出空壳二进制），Mock 使用 mockito（HTTP 上游线级桩）+ 手写 fake（进程内替身，如 `MockDifficultyClassifier`），时间敏感测试注入 limiteron MockClock 假时钟。
 
 ### ▶️ 运行命令（与 CI 一致）
 
@@ -409,7 +409,7 @@ cargo check -p fluxweir --no-default-features --features "full,db-mysql"
 
 ### 📊 测试规模
 
-截至 2026-11-04（`cargo test --workspace --no-fail-fast` 实测，本机 zh locale 口径）：**执行 2085 个用例、通过 2081**——单元测试 993 个（`src/` 内联）+ 集成测试 1092 个（`tests/` 64 个 default 口径测试二进制，grpc_smoke / grpc_coverage 随 `grpc` 特性编译）；4 个失败均为错误文案 i18n 断言在 zh locale 回中文所致（英文环境为绿），非功能缺陷；另有 1 个 hot-reload watcher 用例存在 kqueue 平台抖动（复跑通过，76bc09f 已串行化缓解）。1 个 `rust,ignore` 示例 doctest 列出但不执行。整体行覆盖率以 `cargo llvm-cov --workspace` 实测为准。主要分布：
+截至 2026-11-04（`cargo test --workspace --no-fail-fast` 实测，本机 zh locale 口径）：**执行 2085 个用例、通过 2081**——单元测试 993 个（`src/` 内联）+ 集成测试 1092 个（`tests/` 61 个 default 口径测试二进制，grpc_smoke / grpc_coverage 随 `grpc` 特性编译）；4 个失败均为错误文案 i18n 断言在 zh locale 回中文所致（英文环境为绿），非功能缺陷；另有 1 个 hot-reload watcher 用例存在 kqueue 平台抖动（复跑通过，76bc09f 已串行化缓解）。1 个 `rust,ignore` 示例 doctest 列出但不执行。整体行覆盖率以 `cargo llvm-cov --workspace` 实测为准。主要分布：
 
 <details>
 <summary>📋 表格</summary>
@@ -564,7 +564,7 @@ docker compose -f docker/docker-compose.yml up -d
 
 | 版本  | 日期       | 要点                                                                                                                                                                |
 | ----- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0.1.0 | 2026-11-03 | 初始发布（含 2026-10-12 初始批次）并持续迭代：协议互转网关、6 因子加权路由（含配额预算因子）与可选智能层、limiteron 弹性体系、异步日志与预聚合、成本追踪、confers 热更新底座、i18n |
+| 0.1.0 | 2026-11-05 | 初始发布（含 2026-10-12 初始批次）并持续迭代：协议互转网关、6 因子加权路由（含配额预算因子）与可选智能层、limiteron 弹性体系、异步日志与预聚合、成本追踪、confers 热更新底座、i18n |
 
 </details>
 
