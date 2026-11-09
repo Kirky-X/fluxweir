@@ -164,7 +164,7 @@ flowchart TB
 | 文件                         | 职责                                                                                                                                                                                                            |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `database/database.rs`       | `Database`：连接建立（path + pool_size）与 repository 句柄                                                                                                                                                      |
-| `database/migration.rs`      | 版本化迁移：V1 FROZEN + V2..V9 迁移（sqlite/postgres/mysql 三方言，当前 `CORE_SCHEMA_VERSION = 9`）经 dbnexus `MigrationExecutor` 执行（UP 建表 + DOWN 回滚）；`schema.*.sql` 退为可读文档，一致性由守卫测试锁定 |
+| `database/migration.rs` + `database/migrations/core/` | 版本化迁移：V1 FROZEN + V2..V9 迁移（sqlite/postgres/mysql 三方言，当前 `CORE_SCHEMA_VERSION = 9`）SQL 真源外置于 `migrations/core/*.sql`（`include_str!` 编译期嵌入），经 dbnexus `MigrationExecutor` 执行（UP 建表 + DOWN 回滚）；`schema.*.sql` 退为可读文档，一致性由守卫测试锁定 |
 | `database/repository.rs`     | 仓储：dbnexus 会话防御链上的参数化批量 INSERT（`execute_with_params` + 单事务批量）                                                                                                                             |
 | `database/async_logger.rs`   | recId=9 背压语义异步日志写入器：`try_send` 满即丢弃计数，绝不阻塞响应路径；落库前经 inklog secret gate 脱敏                                                                                                     |
 | `database/dialect.rs`        | 三方言（sqlite/postgres/mysql）SQL 方言差异收口                                                                                                |
@@ -338,7 +338,7 @@ weight = w_model·model.weight + w_queue·queue_factor
 
 #### 粘性落盘与启动恢复
 
-`affinity_sticks` 表（迁移 V6，复合主键 `(tenant, session_key)`，三方言建表单源 `src/database/migration.rs`）：
+`affinity_sticks` 表（迁移 V6，复合主键 `(tenant, session_key)`，三方言建表单源 `src/database/migrations/core/`（V6 迁移文件，经 `migration.rs` 嵌入））：
 
 ```mermaid
 flowchart LR
@@ -354,7 +354,7 @@ flowchart LR
 
 ### 配额账本落盘（quota_ledger，quota-aware-routing）
 
-`quota_ledger` 表（迁移 V7，复合主键 `(api_key_hash, window_id, window_start)`，三方言建表单源 `src/database/migration.rs`）——多窗预算（`[[quota.windows]]`）与 vendor 预算（`[[vendor_budgets]]`）的持久化面：
+`quota_ledger` 表（迁移 V7，复合主键 `(api_key_hash, window_id, window_start)`，三方言建表单源 `src/database/migrations/core/`（V7 迁移文件，经 `migration.rs` 嵌入）——多窗预算（`[[quota.windows]]`）与 vendor 预算（`[[vendor_budgets]]`）的持久化面：
 
 ```mermaid
 flowchart LR
@@ -489,7 +489,7 @@ stateDiagram-v2
 
 ### 存储模型
 
-SQLite，8 张表（迁移 V1↔V9 定义于 `src/database/migration.rs`（当前 `CORE_SCHEMA_VERSION = 9`），`schema.*.sql` 为同源可读文档）：
+SQLite，8 张表（迁移 V1↔V9 定义于 `src/database/migrations/core/`（`include_str!` 经 `migration.rs` 嵌入，当前 `CORE_SCHEMA_VERSION = 9`），`schema.*.sql` 为同源可读文档）：
 
 | 表              | 用途                                                 | 状态                    |
 | --------------- | ---------------------------------------------------- | ----------------------- |

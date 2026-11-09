@@ -15,6 +15,13 @@
 //! V9 为 request_logs 补上游键归因列 upstream_key_fingerprint（可空；failover
 //! 后记实际命中键的指纹，历史行 NULL）。
 //! 已发布的迁移常量禁止改动（已部署库的历史行指向它们），新变更走新版本。
+//! 迁移 SQL 正文外置于 `migrations/core/`（`v{n}_{backend}.up.sql` 与
+//! `.down.sql`；三后端共享的 DOWN 无方言后缀），经 `include_str!` 编译期
+//! 嵌入——单二进制部署、无运行时路径依赖。.sql 文件即已发布迁移的逐字节
+//! 真源，与常量同受 FROZEN 约束：禁止改动，新变更写新版本文件。
+//! 各 .sql 文件首尾的空行是从原 raw string 常量逐字节搬运的刻意保留
+//!（保证 `core_migration_file` 产出的 content 与外部化前完全一致），
+//! 勿以格式化工具「清理」。
 //! 存量库基线 = 幂等重放（V1 UP 全 `IF NOT EXISTS`）；迁移失败直接上浮（无静默降级）。
 
 use dbnexus::{DatabaseType, DbError, DbPool, MigrationExecutor, MigrationFile};
@@ -26,221 +33,21 @@ use std::time::{Duration, Instant};
 pub(crate) const CORE_SCHEMA_VERSION: u32 = 9;
 
 /// V1 UP（sqlite，FROZEN；含 cost 列与 4 索引）。
-const UP_SQLITE: &str = r#"
-CREATE TABLE IF NOT EXISTS request_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    request_id TEXT UNIQUE NOT NULL,
-    timestamp INTEGER NOT NULL,
-    endpoint TEXT NOT NULL,
-    input_format TEXT NOT NULL,
-    abstract_model TEXT,
-    messages TEXT NOT NULL,
-    actual_vendor TEXT NOT NULL,
-    actual_model TEXT NOT NULL,
-    routing_strategy TEXT NOT NULL,
-    status_code INTEGER,
-    response TEXT,
-    error_message TEXT,
-    prompt_tokens INTEGER,
-    completion_tokens INTEGER,
-    total_tokens INTEGER,
-    duration_ms INTEGER,
-    cost_usd REAL DEFAULT 0.0
-);
-CREATE TABLE IF NOT EXISTS token_usage (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    vendor TEXT NOT NULL,
-    model TEXT NOT NULL,
-    date TEXT NOT NULL,
-    hour INTEGER NOT NULL,
-    request_count INTEGER DEFAULT 0,
-    total_tokens INTEGER DEFAULT 0,
-    prompt_tokens INTEGER DEFAULT 0,
-    completion_tokens INTEGER DEFAULT 0,
-    cost_usd_sum REAL DEFAULT 0.0,
-    UNIQUE(vendor, model, date, hour)
-);
-CREATE TABLE IF NOT EXISTS vendor_status (
-    vendor TEXT PRIMARY KEY,
-    status TEXT NOT NULL,
-    last_updated INTEGER NOT NULL,
-    window_used_tokens INTEGER DEFAULT 0,
-    window_reset_at INTEGER,
-    error_count INTEGER DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS model_stats (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    model TEXT NOT NULL,
-    vendor TEXT NOT NULL,
-    date TEXT NOT NULL,
-    request_count INTEGER DEFAULT 0,
-    success_count INTEGER DEFAULT 0,
-    error_count INTEGER DEFAULT 0,
-    avg_duration_ms REAL,
-    UNIQUE(model, vendor, date)
-);
-CREATE INDEX IF NOT EXISTS idx_timestamp ON request_logs(timestamp);
-CREATE INDEX IF NOT EXISTS idx_vendor ON request_logs(actual_vendor);
-CREATE INDEX IF NOT EXISTS idx_model ON request_logs(abstract_model);
-CREATE INDEX IF NOT EXISTS idx_request_id ON request_logs(request_id);
-"#;
+const UP_V1_SQLITE: &str = include_str!("migrations/core/v1_sqlite.up.sql");
 
 /// V1 UP（postgres，FROZEN）。
-const UP_POSTGRES: &str = r#"
-CREATE TABLE IF NOT EXISTS request_logs (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    request_id TEXT UNIQUE NOT NULL,
-    timestamp BIGINT NOT NULL,
-    endpoint TEXT NOT NULL,
-    input_format TEXT NOT NULL,
-    abstract_model TEXT,
-    messages TEXT NOT NULL,
-    actual_vendor TEXT NOT NULL,
-    actual_model TEXT NOT NULL,
-    routing_strategy TEXT NOT NULL,
-    status_code BIGINT,
-    response TEXT,
-    error_message TEXT,
-    prompt_tokens BIGINT,
-    completion_tokens BIGINT,
-    total_tokens BIGINT,
-    duration_ms BIGINT,
-    cost_usd DOUBLE PRECISION DEFAULT 0.0
-);
-CREATE TABLE IF NOT EXISTS token_usage (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    vendor TEXT NOT NULL,
-    model TEXT NOT NULL,
-    date TEXT NOT NULL,
-    hour INTEGER NOT NULL,
-    request_count BIGINT DEFAULT 0,
-    total_tokens BIGINT DEFAULT 0,
-    prompt_tokens BIGINT DEFAULT 0,
-    completion_tokens BIGINT DEFAULT 0,
-    cost_usd_sum DOUBLE PRECISION DEFAULT 0.0,
-    UNIQUE(vendor, model, date, hour)
-);
-CREATE TABLE IF NOT EXISTS vendor_status (
-    vendor TEXT PRIMARY KEY,
-    status TEXT NOT NULL,
-    last_updated BIGINT NOT NULL,
-    window_used_tokens BIGINT DEFAULT 0,
-    window_reset_at BIGINT,
-    error_count BIGINT DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS model_stats (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model TEXT NOT NULL,
-    vendor TEXT NOT NULL,
-    date TEXT NOT NULL,
-    request_count BIGINT DEFAULT 0,
-    success_count BIGINT DEFAULT 0,
-    error_count BIGINT DEFAULT 0,
-    avg_duration_ms DOUBLE PRECISION,
-    UNIQUE(model, vendor, date)
-);
-CREATE INDEX IF NOT EXISTS idx_timestamp ON request_logs(timestamp);
-CREATE INDEX IF NOT EXISTS idx_vendor ON request_logs(actual_vendor);
-CREATE INDEX IF NOT EXISTS idx_model ON request_logs(abstract_model);
-CREATE INDEX IF NOT EXISTS idx_request_id ON request_logs(request_id);
-"#;
+const UP_V1_POSTGRES: &str = include_str!("migrations/core/v1_postgres.up.sql");
 
 /// V1 UP（mysql，FROZEN；只含建表，索引走 `ensure_indexes_mysql`）。
-const UP_MYSQL: &str = r#"
-CREATE TABLE IF NOT EXISTS request_logs (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    request_id VARCHAR(255) UNIQUE NOT NULL,
-    timestamp BIGINT NOT NULL,
-    endpoint TEXT NOT NULL,
-    input_format TEXT NOT NULL,
-    abstract_model TEXT,
-    messages TEXT NOT NULL,
-    actual_vendor VARCHAR(255) NOT NULL,
-    actual_model VARCHAR(255) NOT NULL,
-    routing_strategy TEXT NOT NULL,
-    status_code BIGINT,
-    response TEXT,
-    error_message TEXT,
-    prompt_tokens BIGINT,
-    completion_tokens BIGINT,
-    total_tokens BIGINT,
-    duration_ms BIGINT,
-    cost_usd DOUBLE DEFAULT 0.0
-) ENGINE = InnoDB;
-CREATE TABLE IF NOT EXISTS token_usage (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    vendor VARCHAR(255) NOT NULL,
-    model VARCHAR(255) NOT NULL,
-    date VARCHAR(255) NOT NULL,
-    hour INTEGER NOT NULL,
-    request_count BIGINT DEFAULT 0,
-    total_tokens BIGINT DEFAULT 0,
-    prompt_tokens BIGINT DEFAULT 0,
-    completion_tokens BIGINT DEFAULT 0,
-    cost_usd_sum DOUBLE DEFAULT 0.0,
-    UNIQUE(vendor, model, date, hour)
-) ENGINE = InnoDB;
-CREATE TABLE IF NOT EXISTS vendor_status (
-    vendor VARCHAR(255) PRIMARY KEY,
-    status TEXT NOT NULL,
-    last_updated BIGINT NOT NULL,
-    window_used_tokens BIGINT DEFAULT 0,
-    window_reset_at BIGINT,
-    error_count BIGINT DEFAULT 0
-) ENGINE = InnoDB;
-CREATE TABLE IF NOT EXISTS model_stats (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    model VARCHAR(255) NOT NULL,
-    vendor VARCHAR(255) NOT NULL,
-    date VARCHAR(255) NOT NULL,
-    request_count BIGINT DEFAULT 0,
-    success_count BIGINT DEFAULT 0,
-    error_count BIGINT DEFAULT 0,
-    avg_duration_ms DOUBLE,
-    UNIQUE(model, vendor, date)
-) ENGINE = InnoDB;
-"#;
+const UP_V1_MYSQL: &str = include_str!("migrations/core/v1_mysql.up.sql");
 
 /// V2 UP（sqlite）：UNIQUE 是表 DDL 的一部分，键换绑 + 删列只能重建表
 ///（rename → create → 搬数 → drop）；旧行 api_key_hash=''、cost_usd_sum 整额入 input_cost。
-const UP_V2_SQLITE: &str = r#"
-ALTER TABLE token_usage RENAME TO token_usage_v1;
-CREATE TABLE IF NOT EXISTS token_usage (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    vendor TEXT NOT NULL,
-    model TEXT NOT NULL,
-    api_key_hash TEXT NOT NULL DEFAULT '',
-    date TEXT NOT NULL,
-    hour INTEGER NOT NULL,
-    request_count INTEGER DEFAULT 0,
-    input_tokens INTEGER DEFAULT 0,
-    output_tokens INTEGER DEFAULT 0,
-    cache_read_tokens INTEGER DEFAULT 0,
-    cache_creation_tokens INTEGER DEFAULT 0,
-    input_cost REAL DEFAULT 0.0,
-    output_cost REAL DEFAULT 0.0,
-    cache_read_cost REAL DEFAULT 0.0,
-    cache_creation_cost REAL DEFAULT 0.0,
-    UNIQUE(vendor, model, api_key_hash, date, hour)
-);
-INSERT INTO token_usage (vendor, model, api_key_hash, date, hour, request_count, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, input_cost, output_cost, cache_read_cost, cache_creation_cost)
-SELECT vendor, model, '', date, hour, request_count, prompt_tokens, completion_tokens, 0, 0, cost_usd_sum, 0.0, 0.0, 0.0 FROM token_usage_v1;
-DROP TABLE token_usage_v1;
-CREATE INDEX IF NOT EXISTS idx_token_usage_date ON token_usage(date);
-CREATE INDEX IF NOT EXISTS idx_token_usage_key_date ON token_usage(api_key_hash, date);
-"#;
+const UP_V2_SQLITE: &str = include_str!("migrations/core/v2_sqlite.up.sql");
 
 /// V2 UP（postgres）：UNIQUE 约束按自动命名惯例 `{table}_{cols}_key` 换绑；
 /// 新列带 DEFAULT 使旧行即时取得缺省值，再 UPDATE 回填映射（api_key_hash='' 为规格明文要求）。
-const UP_V2_POSTGRES: &str = r#"
-ALTER TABLE token_usage ADD COLUMN api_key_hash TEXT NOT NULL DEFAULT '', ADD COLUMN input_tokens BIGINT DEFAULT 0, ADD COLUMN output_tokens BIGINT DEFAULT 0, ADD COLUMN cache_read_tokens BIGINT DEFAULT 0, ADD COLUMN cache_creation_tokens BIGINT DEFAULT 0, ADD COLUMN input_cost DOUBLE PRECISION DEFAULT 0.0, ADD COLUMN output_cost DOUBLE PRECISION DEFAULT 0.0, ADD COLUMN cache_read_cost DOUBLE PRECISION DEFAULT 0.0, ADD COLUMN cache_creation_cost DOUBLE PRECISION DEFAULT 0.0;
-UPDATE token_usage SET api_key_hash = '', input_tokens = prompt_tokens, output_tokens = completion_tokens, input_cost = cost_usd_sum;
-ALTER TABLE token_usage DROP COLUMN total_tokens, DROP COLUMN prompt_tokens, DROP COLUMN completion_tokens, DROP COLUMN cost_usd_sum;
-ALTER TABLE token_usage DROP CONSTRAINT token_usage_vendor_model_date_hour_key;
-ALTER TABLE token_usage ADD CONSTRAINT token_usage_vendor_model_api_key_hash_date_hour_key UNIQUE (vendor, model, api_key_hash, date, hour);
-CREATE INDEX IF NOT EXISTS idx_token_usage_date ON token_usage(date);
-CREATE INDEX IF NOT EXISTS idx_token_usage_key_date ON token_usage(api_key_hash, date);
-"#;
+const UP_V2_POSTGRES: &str = include_str!("migrations/core/v2_postgres.up.sql");
 
 /// V2 UP（mysql）：内联 UNIQUE 自动以首列命名（V1 键名 = vendor），换绑 =
 /// DROP INDEX + ADD UNIQUE KEY；普通索引走 `ensure_indexes_mysql`。
@@ -249,277 +56,82 @@ CREATE INDEX IF NOT EXISTS idx_token_usage_key_date ON token_usage(api_key_hash,
 /// 即 4084 → 建键报 1071；故本次一并收窄两列——api_key_hash（SHA256 hex，
 /// 恒 64 字符）与 date（`%Y-%m-%d`，10 字符），得
 /// 255+255+64+16 = 590 字符 = 2360 字节 + INT ✓；vendor/model 维持 V1 宽度。
-const UP_V2_MYSQL: &str = r#"
-ALTER TABLE token_usage ADD COLUMN api_key_hash VARCHAR(64) NOT NULL DEFAULT '', ADD COLUMN input_tokens BIGINT DEFAULT 0, ADD COLUMN output_tokens BIGINT DEFAULT 0, ADD COLUMN cache_read_tokens BIGINT DEFAULT 0, ADD COLUMN cache_creation_tokens BIGINT DEFAULT 0, ADD COLUMN input_cost DOUBLE DEFAULT 0.0, ADD COLUMN output_cost DOUBLE DEFAULT 0.0, ADD COLUMN cache_read_cost DOUBLE DEFAULT 0.0, ADD COLUMN cache_creation_cost DOUBLE DEFAULT 0.0, MODIFY date VARCHAR(16) NOT NULL;
-UPDATE token_usage SET api_key_hash = '', input_tokens = prompt_tokens, output_tokens = completion_tokens, input_cost = cost_usd_sum;
-ALTER TABLE token_usage DROP COLUMN total_tokens, DROP COLUMN prompt_tokens, DROP COLUMN completion_tokens, DROP COLUMN cost_usd_sum, DROP INDEX vendor, ADD UNIQUE KEY uk_token_usage_v2 (vendor, model, api_key_hash, date, hour);
-"#;
+const UP_V2_MYSQL: &str = include_str!("migrations/core/v2_mysql.up.sql");
 
 /// V2 DOWN（三后端）：V2 的逆映射（input→prompt、output→completion、
 /// 四项成本合计回 cost_usd_sum、token 合计回 total_tokens）。sqlite 重建，
 /// pg/mysql 换绑约束后增删列。
-const DOWN_V2_SQLITE: &str = r#"
-ALTER TABLE token_usage RENAME TO token_usage_v2;
-CREATE TABLE IF NOT EXISTS token_usage (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    vendor TEXT NOT NULL,
-    model TEXT NOT NULL,
-    date TEXT NOT NULL,
-    hour INTEGER NOT NULL,
-    request_count INTEGER DEFAULT 0,
-    total_tokens INTEGER DEFAULT 0,
-    prompt_tokens INTEGER DEFAULT 0,
-    completion_tokens INTEGER DEFAULT 0,
-    cost_usd_sum REAL DEFAULT 0.0,
-    UNIQUE(vendor, model, date, hour)
-);
-INSERT INTO token_usage (vendor, model, date, hour, request_count, total_tokens, prompt_tokens, completion_tokens, cost_usd_sum)
-SELECT vendor, model, date, hour, request_count, input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens, input_tokens, output_tokens, input_cost + output_cost + cache_read_cost + cache_creation_cost FROM token_usage_v2;
-DROP TABLE token_usage_v2;
-"#;
+const DOWN_V2_SQLITE: &str = include_str!("migrations/core/v2_sqlite.down.sql");
 
-const DOWN_V2_POSTGRES: &str = r#"
-ALTER TABLE token_usage DROP CONSTRAINT token_usage_vendor_model_api_key_hash_date_hour_key;
-ALTER TABLE token_usage ADD CONSTRAINT token_usage_vendor_model_date_hour_key UNIQUE (vendor, model, date, hour);
-ALTER TABLE token_usage ADD COLUMN total_tokens BIGINT DEFAULT 0, ADD COLUMN prompt_tokens BIGINT DEFAULT 0, ADD COLUMN completion_tokens BIGINT DEFAULT 0, ADD COLUMN cost_usd_sum DOUBLE PRECISION DEFAULT 0.0;
-UPDATE token_usage SET prompt_tokens = input_tokens, completion_tokens = output_tokens, total_tokens = input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens, cost_usd_sum = input_cost + output_cost + cache_read_cost + cache_creation_cost;
-ALTER TABLE token_usage DROP COLUMN api_key_hash, DROP COLUMN input_tokens, DROP COLUMN output_tokens, DROP COLUMN cache_read_tokens, DROP COLUMN cache_creation_tokens, DROP COLUMN input_cost, DROP COLUMN output_cost, DROP COLUMN cache_read_cost, DROP COLUMN cache_creation_cost;
-DROP INDEX IF EXISTS idx_token_usage_date;
-DROP INDEX IF EXISTS idx_token_usage_key_date;
-"#;
+const DOWN_V2_POSTGRES: &str = include_str!("migrations/core/v2_postgres.down.sql");
 
-const DOWN_V2_MYSQL: &str = r#"
-ALTER TABLE token_usage DROP INDEX uk_token_usage_v2, ADD UNIQUE KEY vendor (vendor, model, date, hour), MODIFY date VARCHAR(255) NOT NULL;
-ALTER TABLE token_usage ADD COLUMN total_tokens BIGINT DEFAULT 0, ADD COLUMN prompt_tokens BIGINT DEFAULT 0, ADD COLUMN completion_tokens BIGINT DEFAULT 0, ADD COLUMN cost_usd_sum DOUBLE DEFAULT 0.0;
-UPDATE token_usage SET prompt_tokens = input_tokens, completion_tokens = output_tokens, total_tokens = input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens, cost_usd_sum = input_cost + output_cost + cache_read_cost + cache_creation_cost;
-ALTER TABLE token_usage DROP COLUMN api_key_hash, DROP COLUMN input_tokens, DROP COLUMN output_tokens, DROP COLUMN cache_read_tokens, DROP COLUMN cache_creation_tokens, DROP COLUMN input_cost, DROP COLUMN output_cost, DROP COLUMN cache_read_cost, DROP COLUMN cache_creation_cost;
-"#;
+const DOWN_V2_MYSQL: &str = include_str!("migrations/core/v2_mysql.down.sql");
 
 /// V3 UP（sqlite）：密钥保密柜（key-vault）；payload 为 cocoon self-contained 密文。
-const UP_V3_SQLITE: &str = r#"
-CREATE TABLE IF NOT EXISTS vault_keys (
-    id TEXT PRIMARY KEY,
-    vendor_id TEXT NOT NULL,
-    label TEXT,
-    payload BLOB NOT NULL,
-    mask TEXT NOT NULL,
-    fingerprint TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_vault_keys_vendor_fingerprint ON vault_keys (vendor_id, fingerprint);
-CREATE INDEX IF NOT EXISTS idx_vault_keys_vendor ON vault_keys (vendor_id);
-"#;
+const UP_V3_SQLITE: &str = include_str!("migrations/core/v3_sqlite.up.sql");
 
 /// V3 UP（postgres）：id 用 TEXT 主键（uuid 形态 hex），二进制密文走 BYTEA。
-const UP_V3_POSTGRES: &str = r#"
-CREATE TABLE IF NOT EXISTS vault_keys (
-    id TEXT PRIMARY KEY,
-    vendor_id TEXT NOT NULL,
-    label TEXT,
-    payload BYTEA NOT NULL,
-    mask TEXT NOT NULL,
-    fingerprint TEXT NOT NULL,
-    created_at BIGINT NOT NULL,
-    updated_at BIGINT NOT NULL
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_vault_keys_vendor_fingerprint ON vault_keys (vendor_id, fingerprint);
-CREATE INDEX IF NOT EXISTS idx_vault_keys_vendor ON vault_keys (vendor_id);
-"#;
+const UP_V3_POSTGRES: &str = include_str!("migrations/core/v3_postgres.up.sql");
 
 /// V3 UP（mysql）：TEXT 不能作主键，id/vendor_id 走 VARCHAR；密文 VARBINARY(8192)
 /// 覆盖单条 blob 量级（数百字节，上限远大于实际）。
-const UP_V3_MYSQL: &str = r#"
-CREATE TABLE IF NOT EXISTS vault_keys (
-    id VARCHAR(64) PRIMARY KEY,
-    vendor_id VARCHAR(255) NOT NULL,
-    label VARCHAR(255),
-    payload VARBINARY(8192) NOT NULL,
-    mask VARCHAR(64) NOT NULL,
-    fingerprint VARCHAR(16) NOT NULL,
-    created_at BIGINT NOT NULL,
-    updated_at BIGINT NOT NULL
-);
-CREATE UNIQUE INDEX idx_vault_keys_vendor_fingerprint ON vault_keys (vendor_id, fingerprint);
-CREATE INDEX idx_vault_keys_vendor ON vault_keys (vendor_id);
-"#;
+const UP_V3_MYSQL: &str = include_str!("migrations/core/v3_mysql.up.sql");
 
 /// V3 DOWN（三后端通用：DROP TABLE 隐式带走索引；`IF EXISTS` 使回滚可重入）。
-const DOWN_V3: &str = r#"
-DROP TABLE IF EXISTS vault_keys;
-"#;
+const DOWN_V3: &str = include_str!("migrations/core/v3.down.sql");
 
 /// V4 UP（sqlite）：Responses 有状态表；items/response 以 JSON 文本存
 ///（sqlite 无原生 JSON 列类型，TEXT 即可）。
-const UP_V4_SQLITE: &str = r#"
-CREATE TABLE IF NOT EXISTS response_store (
-    id TEXT PRIMARY KEY,
-    tenant_hash TEXT NOT NULL,
-    conversation_id TEXT,
-    parent_response_id TEXT,
-    model TEXT NOT NULL,
-    status TEXT NOT NULL,
-    store_flag INTEGER NOT NULL DEFAULT 1,
-    background INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL,
-    expires_at INTEGER NOT NULL,
-    input_items TEXT NOT NULL DEFAULT '[]',
-    output_items TEXT NOT NULL DEFAULT '[]',
-    response_json TEXT NOT NULL DEFAULT '{}'
-);
-CREATE INDEX IF NOT EXISTS idx_response_store_tenant ON response_store(tenant_hash, created_at);
-CREATE INDEX IF NOT EXISTS idx_response_store_conversation ON response_store(conversation_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_response_store_expires ON response_store(expires_at);
-"#;
+const UP_V4_SQLITE: &str = include_str!("migrations/core/v4_sqlite.up.sql");
 
 /// V4 UP（postgres）：JSON 文本用 TEXT，时间戳 BIGINT。
-const UP_V4_POSTGRES: &str = r#"
-CREATE TABLE IF NOT EXISTS response_store (
-    id TEXT PRIMARY KEY,
-    tenant_hash TEXT NOT NULL,
-    conversation_id TEXT,
-    parent_response_id TEXT,
-    model TEXT NOT NULL,
-    status TEXT NOT NULL,
-    store_flag BIGINT NOT NULL DEFAULT 1,
-    background BIGINT NOT NULL DEFAULT 0,
-    created_at BIGINT NOT NULL,
-    expires_at BIGINT NOT NULL,
-    input_items TEXT NOT NULL DEFAULT '[]',
-    output_items TEXT NOT NULL DEFAULT '[]',
-    response_json TEXT NOT NULL DEFAULT '{}'
-);
-CREATE INDEX IF NOT EXISTS idx_response_store_tenant ON response_store(tenant_hash, created_at);
-CREATE INDEX IF NOT EXISTS idx_response_store_conversation ON response_store(conversation_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_response_store_expires ON response_store(expires_at);
-"#;
+const UP_V4_POSTGRES: &str = include_str!("migrations/core/v4_postgres.up.sql");
 
 /// V4 UP（mysql）：id/tenant/conversation 走 VARCHAR 控制索引键长，
 /// JSON 文本用 LONGTEXT（单行上限远大于 1 MiB 默认响应体积）。
-const UP_V4_MYSQL: &str = r#"
-CREATE TABLE IF NOT EXISTS response_store (
-    id VARCHAR(64) PRIMARY KEY,
-    tenant_hash VARCHAR(64) NOT NULL,
-    conversation_id VARCHAR(128),
-    parent_response_id VARCHAR(64),
-    model VARCHAR(255) NOT NULL,
-    status VARCHAR(24) NOT NULL,
-    store_flag BIGINT NOT NULL DEFAULT 1,
-    background BIGINT NOT NULL DEFAULT 0,
-    created_at BIGINT NOT NULL,
-    expires_at BIGINT NOT NULL,
-    input_items LONGTEXT NOT NULL,
-    output_items LONGTEXT NOT NULL,
-    response_json LONGTEXT NOT NULL
-) ENGINE = InnoDB;
-CREATE INDEX idx_response_store_tenant ON response_store(tenant_hash, created_at);
-CREATE INDEX idx_response_store_conversation ON response_store(conversation_id, created_at);
-CREATE INDEX idx_response_store_expires ON response_store(expires_at);
-"#;
+const UP_V4_MYSQL: &str = include_str!("migrations/core/v4_mysql.up.sql");
 
 /// V4 DOWN（三后端通用：DROP TABLE 隐式带走索引）。
-const DOWN_V4: &str = r#"
-DROP TABLE IF EXISTS response_store;
-"#;
+const DOWN_V4: &str = include_str!("migrations/core/v4.down.sql");
 
 /// V5 UP（sqlite）：request_logs 会话与上下文观测四列。
 /// 全部可空——未开 `[usage_insights]` 或请求无会话键/目录未登记时写 NULL，
 /// 存量行天然为 NULL 无需回填。
-const UP_V5_SQLITE: &str = r#"
-ALTER TABLE request_logs ADD COLUMN session_key TEXT;
-ALTER TABLE request_logs ADD COLUMN context_window_tokens INTEGER;
-ALTER TABLE request_logs ADD COLUMN cache_read_tokens INTEGER;
-ALTER TABLE request_logs ADD COLUMN cache_write_tokens INTEGER;
-CREATE INDEX IF NOT EXISTS idx_request_logs_session ON request_logs(session_key, timestamp);
-"#;
+const UP_V5_SQLITE: &str = include_str!("migrations/core/v5_sqlite.up.sql");
 
 /// V5 UP（postgres）：同列集，BIGINT 承接 token 计数。
-const UP_V5_POSTGRES: &str = r#"
-ALTER TABLE request_logs ADD COLUMN session_key TEXT;
-ALTER TABLE request_logs ADD COLUMN context_window_tokens BIGINT;
-ALTER TABLE request_logs ADD COLUMN cache_read_tokens BIGINT;
-ALTER TABLE request_logs ADD COLUMN cache_write_tokens BIGINT;
-CREATE INDEX IF NOT EXISTS idx_request_logs_session ON request_logs(session_key, timestamp);
-"#;
+const UP_V5_POSTGRES: &str = include_str!("migrations/core/v5_postgres.up.sql");
 
 /// V5 UP（mysql）：session_key 走 VARCHAR(255) 控索引键长。索引不在此建——
 /// MySQL 不支持 `CREATE INDEX IF NOT EXISTS`，统一由
 /// `repository::ensure_indexes_mysql` 探针幂等创建（与其余索引同路）。
-const UP_V5_MYSQL: &str = r#"
-ALTER TABLE request_logs ADD COLUMN session_key VARCHAR(255);
-ALTER TABLE request_logs ADD COLUMN context_window_tokens BIGINT;
-ALTER TABLE request_logs ADD COLUMN cache_read_tokens BIGINT;
-ALTER TABLE request_logs ADD COLUMN cache_write_tokens BIGINT;
-"#;
+const UP_V5_MYSQL: &str = include_str!("migrations/core/v5_mysql.up.sql");
 
 /// V5 DOWN（sqlite/postgres）：先删索引再删列——SQLite 的 DROP COLUMN 在
 /// 存在引用该列的索引时报 `no such column`，索引不会随列隐式消失。
-const DOWN_V5: &str = r#"
-DROP INDEX IF EXISTS idx_request_logs_session;
-ALTER TABLE request_logs DROP COLUMN session_key;
-ALTER TABLE request_logs DROP COLUMN context_window_tokens;
-ALTER TABLE request_logs DROP COLUMN cache_read_tokens;
-ALTER TABLE request_logs DROP COLUMN cache_write_tokens;
-"#;
+const DOWN_V5: &str = include_str!("migrations/core/v5.down.sql");
 
 /// V5 DOWN（mysql）：MySQL 的 `DROP INDEX` 不支持 `IF EXISTS` 且必须带
 /// `ON tbl`，故走 `ALTER TABLE ... DROP INDEX`（与 DOWN_V2_MYSQL 同形）。
-const DOWN_V5_MYSQL: &str = r#"
-ALTER TABLE request_logs DROP INDEX idx_request_logs_session;
-ALTER TABLE request_logs DROP COLUMN session_key;
-ALTER TABLE request_logs DROP COLUMN context_window_tokens;
-ALTER TABLE request_logs DROP COLUMN cache_read_tokens;
-ALTER TABLE request_logs DROP COLUMN cache_write_tokens;
-"#;
+const DOWN_V5_MYSQL: &str = include_str!("migrations/core/v5_mysql.down.sql");
 
 /// V6 UP（sqlite）：会话粘性落盘表（cache-economy-affinity）。
 /// `session_key` 与 `tenant` 组复合主键——同一会话在不同租户下是两条粘性
 /// （与亲和键的租户隔离同构）；`expires_at` 存 UNIX 秒（与 request_logs 的
 /// timestamp 同口径），恢复侧直接与当前时间比较。
-const UP_V6_SQLITE: &str = r#"
-CREATE TABLE IF NOT EXISTS affinity_sticks (
-    tenant TEXT NOT NULL DEFAULT '',
-    session_key TEXT NOT NULL,
-    vendor_id TEXT NOT NULL,
-    worth_tokens INTEGER NOT NULL DEFAULT 0,
-    expires_at INTEGER NOT NULL,
-    PRIMARY KEY (tenant, session_key)
-);
-CREATE INDEX IF NOT EXISTS idx_affinity_sticks_expires ON affinity_sticks(expires_at);
-"#;
+const UP_V6_SQLITE: &str = include_str!("migrations/core/v6_sqlite.up.sql");
 
 /// V6 UP（postgres）：BIGINT 承接 token 计数与时间戳。
-const UP_V6_POSTGRES: &str = r#"
-CREATE TABLE IF NOT EXISTS affinity_sticks (
-    tenant TEXT NOT NULL DEFAULT '',
-    session_key TEXT NOT NULL,
-    vendor_id TEXT NOT NULL,
-    worth_tokens BIGINT NOT NULL DEFAULT 0,
-    expires_at BIGINT NOT NULL,
-    PRIMARY KEY (tenant, session_key)
-);
-CREATE INDEX IF NOT EXISTS idx_affinity_sticks_expires ON affinity_sticks(expires_at);
-"#;
+const UP_V6_POSTGRES: &str = include_str!("migrations/core/v6_postgres.up.sql");
 
 /// V6 UP（mysql）：两个键列走 VARCHAR 控索引键长（复合主键上限 3072 字节，
 /// 与 response_store 同款）；索引不在此建——MySQL 不支持
 /// `CREATE INDEX IF NOT EXISTS`，统一由 `repository::ensure_indexes_mysql`
 /// 探针幂等创建。
-const UP_V6_MYSQL: &str = r#"
-CREATE TABLE IF NOT EXISTS affinity_sticks (
-    tenant VARCHAR(64) NOT NULL DEFAULT '',
-    session_key VARCHAR(255) NOT NULL,
-    vendor_id VARCHAR(64) NOT NULL,
-    worth_tokens BIGINT NOT NULL DEFAULT 0,
-    expires_at BIGINT NOT NULL,
-    PRIMARY KEY (tenant, session_key)
-) ENGINE = InnoDB;
-"#;
+const UP_V6_MYSQL: &str = include_str!("migrations/core/v6_mysql.up.sql");
 
 /// V6 DOWN（三后端通用：DROP TABLE 隐式带走索引）。
-const DOWN_V6: &str = r#"
-DROP TABLE IF EXISTS affinity_sticks;
-"#;
+const DOWN_V6: &str = include_str!("migrations/core/v6.down.sql");
 
 /// V7 UP（sqlite）：quota_ledger 多窗预算账本（quota-aware-routing）。
 /// 复合主键 (api_key_hash, window_id, window_start) —— window_start 为
@@ -527,105 +139,50 @@ DROP TABLE IF EXISTS affinity_sticks;
 /// window_id 的每个周期实例各占一行；结算 UPSERT 覆盖 + 30s 周期 flush。
 /// api_key_hash 承载三类键：租户摘要 / `__global__`（scope=global 窗）/
 /// `__vendor__:{id}`（vendor 预算）。
-const UP_V7_SQLITE: &str = r#"
-CREATE TABLE IF NOT EXISTS quota_ledger (
-    api_key_hash TEXT NOT NULL,
-    window_id TEXT NOT NULL,
-    window_start INTEGER NOT NULL,
-    tokens_used INTEGER NOT NULL DEFAULT 0,
-    cost_used_millicents INTEGER NOT NULL DEFAULT 0,
-    updated_at INTEGER NOT NULL,
-    PRIMARY KEY (api_key_hash, window_id, window_start)
-);
-"#;
+const UP_V7_SQLITE: &str = include_str!("migrations/core/v7_sqlite.up.sql");
 
 /// V7 UP（postgres）：token/时间计数 BIGINT 承接。
-const UP_V7_POSTGRES: &str = r#"
-CREATE TABLE IF NOT EXISTS quota_ledger (
-    api_key_hash TEXT NOT NULL,
-    window_id TEXT NOT NULL,
-    window_start BIGINT NOT NULL,
-    tokens_used BIGINT NOT NULL DEFAULT 0,
-    cost_used_millicents BIGINT NOT NULL DEFAULT 0,
-    updated_at BIGINT NOT NULL,
-    PRIMARY KEY (api_key_hash, window_id, window_start)
-);
-"#;
+const UP_V7_POSTGRES: &str = include_str!("migrations/core/v7_postgres.up.sql");
 
 /// V7 UP（mysql）：键列 VARCHAR 控复合主键长度（64 + 128 + 8 = 200 字节，
 /// 远低于 3072 上限，与 affinity_sticks/response_store 同款）；索引无需
 /// 运行时探针——主键即覆盖 (api_key_hash, window_id) 前缀查询。
-const UP_V7_MYSQL: &str = r#"
-CREATE TABLE IF NOT EXISTS quota_ledger (
-    api_key_hash VARCHAR(64) NOT NULL,
-    window_id VARCHAR(128) NOT NULL,
-    window_start BIGINT NOT NULL,
-    tokens_used BIGINT NOT NULL DEFAULT 0,
-    cost_used_millicents BIGINT NOT NULL DEFAULT 0,
-    updated_at BIGINT NOT NULL,
-    PRIMARY KEY (api_key_hash, window_id, window_start)
-) ENGINE = InnoDB;
-"#;
+const UP_V7_MYSQL: &str = include_str!("migrations/core/v7_mysql.up.sql");
 
 /// V7 DOWN（三后端通用：DROP TABLE 隐式带走索引）。
-const DOWN_V7: &str = r#"
-DROP TABLE IF EXISTS quota_ledger;
-"#;
+const DOWN_V7: &str = include_str!("migrations/core/v7.down.sql");
 
 /// V8 UP（sqlite）：request_logs 时间窗稳定序索引 `(timestamp, id)`。
 /// 回放装载按 `ORDER BY timestamp ASC, id ASC` 取窗（`src/utils/replay.rs`）；
 /// SQLite 的 rowid 索引天然给出 (timestamp, rowid) 序，此索引与其同构，
 /// 仅为三方言形态对齐（含 `IF NOT EXISTS`，幂等）。
-const UP_V8_SQLITE: &str = r#"
-CREATE INDEX IF NOT EXISTS idx_request_logs_ts_id ON request_logs(timestamp, id);
-"#;
+const UP_V8_SQLITE: &str = include_str!("migrations/core/v8_sqlite.up.sql");
 
 /// V8 UP（postgres）：同 `(timestamp, id)` 复合索引——PG 的 btree(timestamp)
 /// 不携带 id 序，`ORDER BY timestamp, id` 会对整窗额外排序；复合索引消掉该排序。
-const UP_V8_POSTGRES: &str = r#"
-CREATE INDEX IF NOT EXISTS idx_request_logs_ts_id ON request_logs(timestamp, id);
-"#;
+const UP_V8_POSTGRES: &str = include_str!("migrations/core/v8_postgres.up.sql");
 
 /// V8 UP（mysql）：索引不在此建——MySQL 不支持 `CREATE INDEX IF NOT EXISTS`，
 /// 统一由 `repository::ensure_indexes_mysql` 探针幂等创建（与其余索引同路）。
-const UP_V8_MYSQL: &str = r#"
--- idx_request_logs_ts_id 由 repository::ensure_indexes_mysql 运行时探针创建
-"#;
+const UP_V8_MYSQL: &str = include_str!("migrations/core/v8_mysql.up.sql");
 
 /// V8 DOWN（sqlite/postgres）：仅删索引，无列/表变更。
-const DOWN_V8: &str = r#"
-DROP INDEX IF EXISTS idx_request_logs_ts_id;
-"#;
+const DOWN_V8: &str = include_str!("migrations/core/v8.down.sql");
 
 /// V8 DOWN（mysql）：MySQL 的 `DROP INDEX` 不支持 `IF EXISTS` 且必须带
 /// `ON tbl`，故走 `ALTER TABLE ... DROP INDEX`（与 DOWN_V5_MYSQL 同形）。
-const DOWN_V8_MYSQL: &str = r#"
-ALTER TABLE request_logs DROP INDEX idx_request_logs_ts_id;
-"#;
+const DOWN_V8_MYSQL: &str = include_str!("migrations/core/v8_mysql.down.sql");
 
 /// V9 UP（三方言同形）：request_logs 键归因列。TEXT/VARCHAR(64) 可空——
 /// 历史行、订阅账号凭证、env 缺失均为 NULL（magpie-absorb-r1 R-usage-001）。
-const UP_V9_SQLITE: &str = r#"
-ALTER TABLE request_logs ADD COLUMN upstream_key_fingerprint TEXT;
-"#;
-const UP_V9_POSTGRES: &str = r#"
-ALTER TABLE request_logs ADD COLUMN upstream_key_fingerprint TEXT;
-"#;
-const UP_V9_MYSQL: &str = r#"
-ALTER TABLE request_logs ADD COLUMN upstream_key_fingerprint VARCHAR(64) NULL;
-"#;
+const UP_V9_SQLITE: &str = include_str!("migrations/core/v9_sqlite.up.sql");
+const UP_V9_POSTGRES: &str = include_str!("migrations/core/v9_postgres.up.sql");
+const UP_V9_MYSQL: &str = include_str!("migrations/core/v9_mysql.up.sql");
 /// V9 DOWN（三方言同形）：DROP COLUMN（sqlite ≥3.35 / PG / MySQL 均支持）。
-const DOWN_V9: &str = r#"
-ALTER TABLE request_logs DROP COLUMN upstream_key_fingerprint;
-"#;
+const DOWN_V9: &str = include_str!("migrations/core/v9.down.sql");
 
 /// V1 DOWN（三后端通用：DROP TABLE 隐式带走索引；`IF EXISTS` 使回滚可重入）。
-const DOWN_COMMON: &str = r#"
-DROP TABLE IF EXISTS model_stats;
-DROP TABLE IF EXISTS vendor_status;
-DROP TABLE IF EXISTS token_usage;
-DROP TABLE IF EXISTS request_logs;
-"#;
+const DOWN_V1_COMMON: &str = include_str!("migrations/core/v1.down.sql");
 
 /// 按连接后端与版本构造迁移文件（内存嵌入；`-- UP`/`-- DOWN` 标记行供
 /// `MigrationExecutor` 切分）。未知后端/未知版本返回 Err（不静默按 sqlite）。
@@ -646,9 +203,9 @@ pub(crate) fn core_migration_file(
         }
     };
     let up: &str = match (version, backend) {
-        (1, DatabaseBackend::Sqlite) => UP_SQLITE,
-        (1, DatabaseBackend::Postgres) => UP_POSTGRES,
-        (1, DatabaseBackend::MySql) => UP_MYSQL,
+        (1, DatabaseBackend::Sqlite) => UP_V1_SQLITE,
+        (1, DatabaseBackend::Postgres) => UP_V1_POSTGRES,
+        (1, DatabaseBackend::MySql) => UP_V1_MYSQL,
         (2, DatabaseBackend::Sqlite) => UP_V2_SQLITE,
         (2, DatabaseBackend::Postgres) => UP_V2_POSTGRES,
         (2, DatabaseBackend::MySql) => UP_V2_MYSQL,
@@ -680,7 +237,7 @@ pub(crate) fn core_migration_file(
         }
     };
     let down: &str = match version {
-        1 => DOWN_COMMON,
+        1 => DOWN_V1_COMMON,
         3 => DOWN_V3,
         4 => DOWN_V4,
         5 => match backend {
@@ -698,7 +255,7 @@ pub(crate) fn core_migration_file(
             DatabaseBackend::Sqlite => DOWN_V2_SQLITE,
             DatabaseBackend::Postgres => DOWN_V2_POSTGRES,
             DatabaseBackend::MySql => DOWN_V2_MYSQL,
-            _ => DOWN_COMMON,
+            _ => DOWN_V1_COMMON,
         },
         _ => {
             return Err(DbError::Config(format!(

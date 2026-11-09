@@ -1,6 +1,7 @@
 -- 请求日志表
 -- 注（absorb-sibling-libs T005）：本文件现为可读文档。运行源是
--- src/database/migration.rs 的 FROZEN V1（经 MigrationExecutor 执行）；
+-- src/database/migrations/core/ 的 FROZEN 迁移 .sql（由 migration.rs
+-- include_str! 嵌入并经 MigrationExecutor 执行）；
 -- 新表/新列走新迁移版本，禁止改动已冻结的 V1 语义。
 CREATE TABLE IF NOT EXISTS request_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
