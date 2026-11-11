@@ -8,6 +8,18 @@
 //! type-erased capabilities (`CacheBackend`, `ConnectionPool`, `Governor`,
 //! `Database`) that downstream code can retrieve via `kit.require::<M>`.
 //!
+//! # Kit-面范式归属（纯组合豁免申报）
+//!
+//! 本文件是**纯组合根（composition root）**：自有模块为零——`ModuleMeta` /
+//! builder 范式实现全部在各模块提供方仓的 `integrations::kit`（`oxcache`
+//! `dbnexus` `inklog` `limiteron` 四仓，各自承担 kit 面接口统一），此处只做
+//! `register`/`set_config`/`build`/`require` 编排、错误锚点映射与
+//! `verify_kit` 自检。故本仓不设 `kit` feature、不重复实现 `ModuleMeta`
+//! （trait-kit 依赖由 `database`/`infrastructure` feature 承载，rc.13）。
+//! 范式要求的测试三面已由本文件测试承载：build 快乐路径
+//! （`test_build_kit_resolves_all_four_modules`）、`require::<M>()`
+//! （多处）、错误分支（`test_verify_kit_returns_err_for_empty_kit`）。
+//!
 //! # DI Chains
 //!
 //! 1. `oxcache` → `dbnexus` → `inklog` (cache backend → pool → log storage)
