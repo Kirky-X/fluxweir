@@ -22,7 +22,7 @@
 //! | `--no-default-features --features "logging,db-sqlite"` | OK | logging（inklog kit 需任一 db-* 组，单独开不编译） |
 //! | `--features sdk`                 | OK   | sdk（reqwest + eventsource-stream + url）   |
 //! | `--features "web-server logging grpc"` | OK | grpc → sdforge/grpc（需 protoc）      |
-//! | `--no-default-features`          | OK   | 门面 re-export（config/error/i18n/protocol/utils）|
+//! | `--no-default-features`          | OK   | 门面 re-export（config/error/i18n/protocol/utils；i18n 消息层走 sdforge::i18n 宿主注册表，sdforge 转无条件最小面依赖）|
 //! | `--no-default-features --features "db-sqlite,vendor-management,masking"` | OK | masking 不进 full、无 resilience——非流式回程还原分支的编译面（E0061 回归钉） |
 //! | `--no-default-features --features "db-sqlite,vendor-management,subscription-vendor,masking"` | OK | 订阅池 + 掩码全开（vault 联动）|
 //! | `--no-default-features --features "cost-replay,db-sqlite"` | OK | cost-replay 不进 full → database + dbnexus/sea-orm/sdforge-cli，主 CLI 子命令 `fluxweir cost-replay` |

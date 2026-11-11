@@ -65,10 +65,13 @@ semantic-cache = ["dep:vecboost"]
 # marker feature（当前无 cfg 消费点；保留组合位与单开关语义）
 protocol = []
 infrastructure = ["dep:oxcache", "dep:trait-kit"]
-sdforge-integration = ["dep:sdforge"]
+# sdforge-integration：marker feature（i18n 消息层已统一走 sdforge::i18n 宿主注册表，
+# sdforge 转无条件依赖 default-features=false 最小面，dep:sdforge 语法随之废除）；
+# 保留 feature 位以承载 otlp/web-server 的组合语义与文档锚点。
+sdforge-integration = []
 # gRPC 服务器（sdforge grpc 门面）：不进 full——编译 proto/sdforge.v1.proto 需 protoc，默认构建不引入该工具链前置。
 # feature 名兼作 `#[forge]` 的 `cfg(feature = "grpc")` 门控；服务器另受 web-server + logging 门控
-grpc = ["dep:sdforge", "sdforge/grpc", "sdforge/graceful"]
+grpc = ["sdforge/grpc", "sdforge/graceful"]
 logging = ["dep:inklog"]
 # sdk：HTTP 客户端 SDK（src/sdk，调用已部署网关的 Rust 客户端）；reqwest 复用 vendor-management 的 optional 依赖。
 # eventsource-stream 仅做 SSE 事件分帧，url 供 base URL 拼接。
@@ -110,7 +113,7 @@ web-search = ["dep:reqwest", "netguard"]
 # 不进 full：离线分析工具默认产物不含，构建时显式启用并搭配一个 db 后端
 # （子命令双门控 cost-replay + db-sqlite，见 utils::replay::cli）。CLI 承载面
 # 走 sdforge 注册表（CliBuilder + inventory + dispatch），故透传 sdforge/cli。
-cost-replay = ["database", "dep:dbnexus", "dep:sea-orm", "dep:sdforge", "sdforge/cli"]
+cost-replay = ["database", "dep:dbnexus", "dep:sea-orm", "sdforge/cli"]
 # 内置控制台前端（console）：rust-embed 嵌入 web/console/dist（Vite 产物），
 # src/server/console.rs 挂 GET /console 与 /console/* 静态服务 + SPA fallback。
 # 不进 full：嵌入使二进制体积按前端产物体积增长（约 +213KB 原始字节；线上 gzip 传输约 70KB），且
@@ -163,8 +166,10 @@ vecboost = { workspace = true, optional = true }
 # async_logger 的 fail-closed 脱敏面（mask_checked → MaskError）直接消费其类型。
 trait-kit = { workspace = true, features = ["async", "shutdown", "masking"], optional = true }
 
-# 服务框架门面。不声明 streaming：其流式分帧面本仓零引用，SSE 分帧由 src/protocol 自实现。
-sdforge = { workspace = true, features = ["http", "security", "health", "metrics", "context", "graceful", "openapi", "docs", "schemars"], optional = true }
+# 服务框架门面 + i18n 宿主注册表（i18n 消息层统一走 sdforge::i18n，janvi 同款）。
+# 无条件依赖：i18n 门面在 --no-default-features 面也可用，default-features=false 保持最小面。
+# 不声明 streaming：其流式分帧面本仓零引用，SSE 分帧由 src/protocol 自实现。
+sdforge = { workspace = true, features = ["http", "security", "health", "metrics", "context", "graceful", "openapi", "docs", "schemars"] }
 
 # 序列化与核心（全部显式特性 + 关默认）
 serde = { workspace = true, features = ["std", "derive"] }
@@ -192,8 +197,8 @@ async-stream = { workspace = true, optional = true }
 dashmap = { workspace = true, features = ["inline"], optional = true }
 # 配置全量写回（persist_and_swap 的 toml::to_string_pretty）；显式列出 default 面
 toml = { workspace = true, features = ["std", "serde", "parse", "display"] }
-# i18n — Fluent 双束（en/zh）+ 语言检测链基座（i18n 模块常开）
-fluent-bundle = { workspace = true }
+# i18n — 语言检测链基座（i18n 模块常开）；消息目录/查找已委托 sdforge::i18n
+# （宿主注册表 + { $name } 模板替换），fluent-bundle 不再直依赖。
 unic-langid = { workspace = true }
 sys-locale = { workspace = true }
 # API Key SHA256 摘要与常量时间比较（api/middleware 消费）；纯摘要只需 alloc，default 的 oid 零消费。
@@ -227,7 +232,8 @@ jsonwebtoken = { workspace = true, features = ["rust_crypto"], optional = true }
 [dev-dependencies]
 # retry 预算测试用 paused clock（start_paused）；特性与主 entries 联合（test-util 叠加在 rt/sync/time 上）
 tokio = { workspace = true, features = ["test-util"] }
-# i18n 键位守卫：严格解析 .ftl（零 Junk）与占位符抽取（与 fluent-bundle 同源语法树）
+# i18n 键位守卫：严格解析 .ftl（零 Junk）与占位符抽取（与 Fluent 同源语法树；sdforge 经
+# fluent-bundle 传递持有，此处 dev 侧独立声明守卫解析器）
 fluent-syntax = { workspace = true }
 # log 门面桥测试：LogTracer 转发断言需 log 宏与 tracing Layer 捕获面
 # （tracing-subscriber 主依赖为 optional，测试单独声明 registry 面）
@@ -562,7 +568,7 @@ oxcache = { version = "0.5.0-rc.12", default-features = false }
 # 兄弟库 path 依赖：跟随本地 checkout（0.3.0-rc.3 已发布，本地 checkout 领先两个提交）；
 # 本地改动发布后改回 registry 依赖。
 vecboost = { path = "../vecboost", version = "0.3.0-rc.3", default-features = false }
-trait-kit = { version = "0.5.0-rc.12", default-features = false }
+trait-kit = { version = "0.5.0-rc.13", default-features = false }
 sdforge = { version = "0.5.0-rc.10", default-features = false }
 
 serde = { version = "1.0", default-features = false }
@@ -582,7 +588,6 @@ async-channel = { version = "2.5", default-features = false }
 async-stream = { version = "0.3", default-features = false }
 dashmap = { version = "6.2", default-features = false }
 toml = { version = "1.2", default-features = false }
-fluent-bundle = { version = "0.16", default-features = false }
 unic-langid = { version = "0.9", default-features = false }
 sys-locale = { version = "0.3", default-features = false }
 sha2 = { version = "0.11", default-features = false }

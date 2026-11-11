@@ -193,3 +193,40 @@ api-log-responses-store-insert-failed = 响应存储插入失败
 api-log-responses-store-op-failed = 响应存储操作失败
 api-log-responses-history-lookup-failed = 响应历史查询失败
 api-log-responses-conversation-lookup-failed = 响应会话查询失败
+
+# ---- OpenAPI 条目描述（sdforge translate_or_fallback 消费；原 openapi_docs.rs 手工注册迁入，单一真源）----
+api-openapi-chat-completions-description = 跨厂商统一聊天补全（OpenAI wire 形态）
+api-openapi-messages-description = 跨厂商统一 messages API（Anthropic wire 形态）
+api-openapi-embeddings-description = 跨厂商统一 embeddings API
+api-openapi-rerank-description = 跨厂商统一重排 API（Cohere wire 形态）；非流式，单请求 documents 上限 1000 条
+api-openapi-responses-description = OpenAI Responses API（语义化 SSE）。请求转换为统一聊天 IR 并跨全部聊天厂商路由；原生能力（内置工具/后台/prompt 模板/文件与音频输入）路由到 api_style="responses" 厂商。经网关存储支持 previous_response_id/conversation 回放
+api-openapi-responses-input-tokens-description = Responses 请求的近似输入 token 估算（字符/4 + 结构开销，确定性）
+api-openapi-responses-get-description = 按租户隔离检索已存 Responses 对象
+api-openapi-responses-delete-description = 按租户隔离删除已存 Responses 对象
+api-openapi-responses-cancel-description = 取消后台 Responses 任务并返回 cancelled 响应对象
+api-openapi-gemini-generate-description = Gemini 原生 API（generateContent、streamGenerateContent、countTokens、embedContent、batchEmbedContents）。请求转换为统一聊天 IR 并跨厂商路由；safetySettings/cachedContent/内置工具路由到 type_="gemini" 厂商
+api-openapi-gemini-model-description = 从网关目录返回单个 Gemini 模型条目
+api-openapi-gemini-models-list-description = 以 Gemini models[] 形态列出可路由模型（abstract_id 优先、去重）并附 supportedGenerationMethods
+api-openapi-admin-logs-description = 带过滤条件的分页请求日志查询
+api-openapi-admin-logs-search-description = 请求日志关键词搜索
+api-openapi-admin-tokens-stats-description = 聚合 token 用量统计
+api-openapi-admin-sessions-description = 会话级聚合：成本、token、请求数、首末时间戳与首条 user 消息标题。[usage_insights] 关闭时返回 404
+api-openapi-admin-context-stats-description = 逐模型上下文窗口占用率、缓存读取占比与五档分布。[usage_insights] 关闭时返回 404
+api-openapi-admin-metrics-description = 内部运维指标快照（JSON）
+api-openapi-admin-quota-ledger-description = 逐窗口配额用量快照（已用 token/成本、重置时间、作用域：租户/全局/厂商）。可选 key 查询按租户摘要过滤
+api-openapi-admin-vendor-budgets-description = 已声明厂商预算及实时用量、消耗进度比与重置倒计时
+api-openapi-admin-vendors-description = 厂商状态与池概览
+api-openapi-admin-vendor-configs-description = 原始 VendorConfig 列表（配置视图；与 /admin/vendors 状态视图互补）
+api-openapi-admin-vendor-update-description = 按 id 原子替换单个厂商配置（配置写锁下校验读改写）。未知 id 返回 400
+api-openapi-admin-config-get-description = 当前运行时配置快照
+api-openapi-admin-config-update-description = 热更新运行时配置（校验后原子生效）
+api-openapi-admin-models-description = 模型目录列表
+api-openapi-admin-vendor-status-description = 单个厂商的状态明细
+api-openapi-admin-catalog-sync-description = 拉取外部模型目录源（仅新增合并）进 [[model_catalog]]；dry_run 返回差异不落库
+api-openapi-admin-vendor-reset-description = 重置单厂商熔断器与配额
+api-openapi-admin-model-update-description = 旧版全局策略更新路径（兼容保留）
+api-openapi-admin-model-upsert-description = 创建或替换目录条目
+api-openapi-admin-model-delete-description = 删除目录条目
+api-openapi-health-description = forge 注册的存活探针端点
+api-openapi-readyz-description = 聚合组件就绪度（DB、缓存、厂商）
+api-openapi-metrics-description = Prometheus 文本暴露格式的 RED 指标

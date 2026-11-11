@@ -53,7 +53,7 @@ flowchart TB
 
     subgraph Support ["横切支撑"]
         CFG["src/config<br/>加载 / 校验 / 热更新 / 快照回滚"]
-        I18N["src/i18n<br/>Fluent 双束 en/zh"]
+        I18N["src/i18n<br/>sdforge::i18n 注册表 en/zh"]
         DI["src/infrastructure<br/>trait-kit AsyncKit 组装"]
         UTILS["src/utils<br/>metrics / retry / cost_tracker"]
     end
@@ -90,7 +90,7 @@ flowchart TB
 | `src/api/`                               | HTTP 接入层：协议端点、中间件编排、请求处理主循环、运维端点                                                                              |
 | `src/config/`                            | 配置结构体定义、文件加载校验、热更新事务写与快照回滚                                                                                     |
 | `src/database/`                          | SQLite 持久化：异步批量日志、Token 小时预聚合、仓储与增量迁移                                                                            |
-| `src/i18n/`                              | Fluent 国际化：编译期内嵌双束消息目录与语言检测链                                                                                        |
+| `src/i18n/`                              | 国际化：FTL 目录编译期内嵌、注册进 sdforge::i18n 宿主注册表，语言检测链                                                                                        |
 | `src/infrastructure/`                    | 基于 trait-kit `AsyncKit` 的依赖注入组装                                                                                                 |
 | `src/middleware/`                        | 认证、拥塞准入、配额（`quota.rs` / `quota_period.rs` / `quota_persist.rs`）、key 预算（`key_budget.rs`）、OIDC 验签（`oidc.rs`，feature `oidc`）、词法压缩（`lexcompress.rs`） |
 | `src/protocol/`                          | OpenAI/Anthropic/Responses/Gemini 统一中间表示、协议转换器、SSE 分帧编码                                                                 |
@@ -178,7 +178,7 @@ flowchart TB
 | `src/middleware/`     | `auth.rs`：SHA256 摘要 + 常量时间比较认证；`admission.rs`：recId=16 拥塞感知优先级准入；`lexcompress.rs`：词法压缩（N2，`X-Compress: 1` 触发的确定性剪枝）；`mod.rs`：中间件组织                                                                                                                                                                                                                                                                                                                    |
 | `src/protocol/`       | `unified.rs`：统一请求结构与流式 chunk；`openai_converter.rs`/`anthropic_converter.rs`：双向协议转换（含 Anthropic 流式编码器）；`responses/`：Responses wire 类型、入站/出站转换与语义化 SSE 编解码；`gemini/`：Gemini wire 类型、双向转换、JSON Schema 清洗与 SSE 编解码；`embedding_converter.rs`：embedding 请求转换；`rerank_converter.rs`：Cohere rerank 转换；`usage.rs`：usage 换算；`sse_frame.rs`：SSE 编码与上游增量分帧实源（recId=3 ）                                                                                                                    |
 | `src/utils/`          | `metrics.rs`：`GlobalMetrics` 原子指标 + EWMA 平滑（α=0.2）；`retry.rs`：按错误类别分类的重试延迟策略；`cost_tracker.rs`：`CostTracker` 微美元累积器；`blocking.rs`：同步 fs/CPU 片段的异步上下文收口；`otlp.rs`（feature `otlp`）：exposition 文本解析 + `OtlpBridge` 周期推送到 OTLP/HTTP-Proto，单一真源为 `sdforge::metrics::global_registry().render()`（与 `/metrics` 同源），导出失败 fail-open 计数；`otlp_export.rs`（feature `otlp`）：尝试级追踪 trace 面（见「可观测性」节）                                                                                                                                          |
-| `src/i18n/`           | `catalog.rs`：Fluent 双束编译期内嵌（`OnceLock` 静态缓存）；`locale.rs`：语言检测链与全局 locale 上下文；`mod.rs`：`t()`/`t_args()` 查找门面                                                                                                                                                                                                                                                                                                                                                        |
+| `src/i18n/`           | `catalog.rs`：FTL 目录编译期内嵌 + 启动期行解析注册进 `sdforge::i18n` 宿主注册表（janvi 同款，`{ $name }` 模板替换）；`locale.rs`：语言检测链与全局 locale 上下文；`mod.rs`：`t()`/`t_args()` 查找门面（显式传 locale，不依赖 sdforge active locale）                                                                                                                                                                                                                                                                                                                                                        |
 | `src/infrastructure/` | `di.rs`：`AsyncKit` 四模块拓扑序组装与 `verify_kit`                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `src/masking/`        | （feature `masking`，不进 `full`）出站请求掩码：`rule_detector.rs` 组装 inklog 扩展形态表 + 熵扫描 + 自定义词/正则；`placeholder.rs` 确定性占位符注册表（SHA256 掺 pepper 前 8 hex——三态来源 env/0600 文件/进程内随机降级 warn，同 pepper 下跨进程/多副本一致，pepper 各异时不可关联；反向映射仅内存最小堆 LRU 10k + TTL 24h，永不落盘；回程还原凭 `MaskTicket` 请求域放行——伪造/跨请求回显不还原；`ledger.rs` 审计台账按天 JSONL，值不落盘）；`masker.rs` 出站 JSON 递归掩码 + 三档动作；`stream_restore.rs`/`restorer.rs` 流式尾部保持缓冲与整量还原；`gates.rs` fail-closed 门（故障 503 拒发）与 24h 统计窗 |
 
@@ -633,9 +633,9 @@ flowchart LR
 
 | 设计点     | 实现                                                                                                                                  |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| 消息格式   | Fluent（`.ftl`），en/zh 双束共 10 个文件                                                                                              |
+| 消息格式   | Fluent（`.ftl`）单行 `key = value` 形态，en/zh 共 10 个文件（行解析与 Fluent 解析等价由 parity 守卫钉死）                              |
 | 部署形态   | 编译期 `include_str!` 内嵌，产物无需携带磁盘 `locales/` 目录；新增 ftl 必须登记 `EMBEDDED_LOCALES`，守卫测试兜底                      |
-| 运行时结构 | `fluent_bundle::concurrent::FluentBundle` 双束，`OnceLock` 静态缓存，Send+Sync                                                        |
+| 运行时结构 | `sdforge::i18n` 宿主注册表（进程全局 REGISTRY，`register_translation` 启动期注册，`translate_for` 查找 + `{ $name }` 模板替换）      |
 | 语言检测链 | `FLUXWEIR_LANG` → `LC_ALL` → `LC_MESSAGES` → `LANG` → `sys-locale` → `"en"`（强制顺序，显式读取保证 Windows/边缘环境确定性）          |
 | 查找回退   | 当前语言 → en → 键名                                                                                                                  |
 | 语言作用域 | 进程级：检测链启动定一次，`set_locale` 覆盖位仅供 SDK 嵌入式调用（服务端无 HTTP 入口、不进配置热更新，无 Accept-Language 请求级协商） |
@@ -644,7 +644,7 @@ flowchart LR
 
 错误展示走双轨（实现位于 `src/error/app.rs`，`mod.rs` 只留类型与 re-export）：`#[error]` Display 恒英文规范串（供日志与错误链），HTTP 响应体用 `user_message()` 返回随 locale 的 FTL 文案；错误载荷（`message`/`field`/`source`/`vendor`）只存语言中性锚点，本地化单点在 `user_message()`。
 
-与框架层的双栈边界：OpenAPI 文档与 health 端点描述经 `sdforge::i18n::register_translation` 登记，走 sdforge 自己的检测链（`SDFORGE_LANG` 起步；本仓未启用 sdforge `i18n` feature，无 sys-locale 尾段与请求级 locale）。`src/server/http.rs` 的 `assemble_router` 在建站时把框架栈 locale 显式同步为业务栈 `current_locale()`，保证 `FLUXWEIR_LANG` 是两栈一致的单一语言入口。
+与框架层的单注册表形态：业务消息与 OpenAPI/health 框架面描述同用 `sdforge::i18n` 宿主注册表（OpenAPI 键族已并入 `locales/api.ftl` 单一真源，`openapi_docs.rs` 的手工注册块删除）；locale 决策权在本仓检测链（`FLUXWEIR_LANG` 起步），`i18n::init()` 与 `assemble_router` 建站期把业务栈 locale 单向同步为 sdforge active locale，保证 `FLUXWEIR_LANG` 是两栈一致的单一语言入口。业务键查找（`t()`/`t_args()`）显式传 `current_locale`，不依赖该同步。
 
 守卫：`tests/i18n/i18n_parity_test.rs` 四条断言（en/zh 键位对齐、引用键存在性、零 Junk + en/zh 占位符对齐、调用点实参覆盖 FTL 占位符）另含扫描器自检用例；`src/i18n/catalog.rs` 单测钉住内嵌清单与磁盘目录双向一致。
 

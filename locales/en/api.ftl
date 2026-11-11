@@ -193,3 +193,40 @@ api-log-responses-store-insert-failed = responses store insert failed
 api-log-responses-store-op-failed = responses store operation failed
 api-log-responses-history-lookup-failed = responses history lookup failed
 api-log-responses-conversation-lookup-failed = responses conversation lookup failed
+
+# ---- OpenAPI 条目描述（sdforge translate_or_fallback 消费；原 openapi_docs.rs 手工注册迁入，单一真源）----
+api-openapi-chat-completions-description = Unified chat completions (OpenAI wire format) across vendors.
+api-openapi-messages-description = Unified messages API (Anthropic wire format) across vendors.
+api-openapi-embeddings-description = Unified embeddings API across vendors.
+api-openapi-rerank-description = Unified rerank API (Cohere wire format) across vendors; non-streaming, documents capped at 1000 per request.
+api-openapi-responses-description = OpenAI Responses API (semantic SSE). Requests convert to the unified chat IR and route across all chat vendors; native-only capabilities (built-in tools, background, prompt templates, file/audio input) route to api_style="responses" vendors. Supports previous_response_id/conversation replay via the gateway store.
+api-openapi-responses-input-tokens-description = Approximate input token estimation for a Responses request (chars/4 + structure overhead, deterministic).
+api-openapi-responses-get-description = Retrieve a stored Responses object (tenant-scoped).
+api-openapi-responses-delete-description = Delete a stored Responses object (tenant-scoped).
+api-openapi-responses-cancel-description = Cancel a background Responses job and return the cancelled response object.
+api-openapi-gemini-generate-description = Gemini native API (`generateContent`, `streamGenerateContent`, `countTokens`, `embedContent`, `batchEmbedContents`). Requests convert to the unified chat IR and route across vendors; safetySettings/cachedContent/built-in tools route to type_="gemini" vendors.
+api-openapi-gemini-model-description = Return one Gemini model entry from the gateway catalog.
+api-openapi-gemini-models-list-description = List routable models in Gemini `models[]` shape (abstract_id preferred, deduplicated) with supportedGenerationMethods.
+api-openapi-admin-logs-description = Paginated request log query with filters.
+api-openapi-admin-logs-search-description = Keyword search over request logs.
+api-openapi-admin-tokens-stats-description = Aggregated token usage statistics.
+api-openapi-admin-sessions-description = Session-level aggregates: cost, tokens, request count, first/last timestamps and a title from the first user message. Returns 404 when [usage_insights] is disabled.
+api-openapi-admin-context-stats-description = Per-model context-window occupancy, cache-read share and five-bucket distribution. Returns 404 when [usage_insights] is disabled.
+api-openapi-admin-metrics-description = Internal operational metrics snapshot (JSON).
+api-openapi-admin-quota-ledger-description = Per-window quota usage snapshot (tokens/cost used, reset time, scope: tenant/global/vendor). Optional `key` query filters by tenant digest.
+api-openapi-admin-vendor-budgets-description = Declared vendor budgets with live usage, pace consumption ratio and reset countdown.
+api-openapi-admin-vendors-description = Vendor status and pool overview.
+api-openapi-admin-vendor-configs-description = Raw VendorConfig list (config view; complements the status view of /admin/vendors).
+api-openapi-admin-vendor-update-description = Atomically replace one vendor config by id (validated read-modify-write under the config write lock). Unknown id yields 400.
+api-openapi-admin-config-get-description = Current runtime configuration snapshot.
+api-openapi-admin-config-update-description = Hot-update runtime configuration (validated, atomic).
+api-openapi-admin-models-description = Model catalog listing.
+api-openapi-admin-vendor-status-description = Per-vendor status detail.
+api-openapi-admin-catalog-sync-description = Fetch the external model catalog source (add-only merge) into [[model_catalog]]; dry_run returns the diff without persisting.
+api-openapi-admin-vendor-reset-description = Reset per-vendor breakers and quotas.
+api-openapi-admin-model-update-description = Legacy global-strategy update path (kept for compatibility).
+api-openapi-admin-model-upsert-description = Create or replace a catalog entry.
+api-openapi-admin-model-delete-description = Remove a catalog entry.
+api-openapi-health-description = Forge-registered liveness endpoint.
+api-openapi-readyz-description = Aggregated component readiness (DB, cache, vendors).
+api-openapi-metrics-description = RED metrics in Prometheus text exposition format.

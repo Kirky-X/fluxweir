@@ -1,11 +1,15 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! Fluxweir i18n 基座：Fluent 双束（en/zh）+ 语言检测链。
+//! Fluxweir i18n 基座：sdforge::i18n 宿主注册表（en/zh）+ 语言检测链。
 //!
 //! - **检测链**：`FLUXWEIR_LANG` → `LC_ALL` → `LC_MESSAGES` → `LANG`
 //!   → sys-locale → `"en"`；`zh*` 归一 `zh`，`C`/`POSIX`/未知语言继续走链。
-//! - **消息目录**：`locales/{en,zh}/*.ftl` 编译期内嵌，双束静态缓存。
+//! - **消息目录**：`locales/{en,zh}/*.ftl` 编译期内嵌 → 启动期行解析注册
+//!   进 `sdforge::i18n` 宿主注册表（janvi/CodeNexus 同款）；查找走
+//!   `translate_for`（当前 locale → en 回退 → 键名），占位符 `{ $name }`
+//!   由 sdforge 模板替换。locale 决策权留在本仓检测链（显式传参，
+//!   不依赖 sdforge active locale）。
 //! - **结果域**：仅 `{en, zh}`，一切回退终结 en，默认英文。
 //!
 //! # 示例
@@ -13,13 +17,13 @@
 //! ```rust,ignore
 //! use fluxweir::i18n;
 //!
-//! i18n::init();                          // 可选预热
+//! i18n::init();                          // 可选预热（注册 + 单向同步 sdforge active locale）
 //! i18n::t("vendor-upstream-stream-interrupted");
 //! i18n::t_args("admin-vendor-not-found", &[("id", "openai".into())]);
 //! i18n::set_locale("zh-CN").unwrap();    // 覆盖位优先于检测链
 //! ```
 //!
-//! 缺键不 panic：回退链终结于 en 束，仍缺则原样返回键名——因此新增用户可见
+//! 缺键不 panic：回退链终结于 en 注册表，仍缺则原样返回键名——因此新增用户可见
 //! 串必须先登记 en 键（zh 同步补齐），键位对齐与引用存在性由
 //! `tests/i18n/i18n_parity_test.rs` 守卫（按调用点字面形态扫描，键必须是字面量；
 //! `examples/` 不在扫描域，引入 i18n 时须同步扩域）。
@@ -74,4 +78,21 @@ pub enum I18nError {
 }
 
 pub use catalog::{has_key, init, t, t_args, t_dynamic};
-pub use locale::{clear_locale_override, current_locale, detected_locale, set_locale};
+pub use locale::{current_locale, detected_locale};
+
+/// 设置全局 locale 覆盖位，并单向同步 sdforge active locale。
+///
+/// sdforge 的框架自串（HTTP 401/404 等按 active locale 渲染的文案）跟随
+/// 本仓语言决策；本仓 [`t`]/[`t_args`] 的查找不依赖该同步（显式传
+/// `current_locale`），同步失败语义不受影响（覆盖位已生效）。
+pub fn set_locale(locale: &str) -> Result<(), I18nError> {
+    locale::set_locale(locale)?;
+    sdforge::i18n::set_locale(&locale::current_locale().to_string());
+    Ok(())
+}
+
+/// 清除覆盖位，回退到检测 locale（sdforge active locale 同步跟随）。
+pub fn clear_locale_override() {
+    locale::clear_locale_override();
+    sdforge::i18n::set_locale(&locale::current_locale().to_string());
+}
