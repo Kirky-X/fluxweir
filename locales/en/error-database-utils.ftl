@@ -75,11 +75,8 @@ masking-blocked = Request blocked: sensitive data of kind { $kind } is not allow
 masking-pepper-degraded = Mask pepper degraded to in-process random ({ $stage }: { $detail }); placeholder determinism across processes/restarts does not hold
 masking-ledger-io-failed = Masking ledger IO failed ({ $op }: { $detail }); observability side-path degraded without affecting requests
 
-# ---- cost-replay: 离线成本回放 CLI（bin fluxweir-replay）----
-replay-cli-usage = usage: fluxweir-replay --db <sqlite-path|url> --from <unix|RFC3339> --to <unix|RFC3339> [--config <path>] [--scenario affinity|cache_ttl|all] [--max-rows <n>] [--json]
-replay-cli-missing-arg = missing required argument: { $arg }
-replay-cli-missing-value = argument { $arg } requires a value
-replay-cli-unknown-arg = unknown argument: { $arg }
+# ---- cost-replay: 离线成本回放子命令（fluxweir cost-replay；用法/缺参/未知参数错误由 clap 接管，不再登记键）----
+replay-cli-about = offline cost replay over request_logs history (read-only; never starts the server, never writes the database)
 replay-cli-bad-time = invalid time value: { $value } (expected unix seconds or RFC3339)
 replay-cli-bad-scenario = invalid scenario: { $value } (expected affinity|cache_ttl|all)
 replay-cli-bad-max-rows = invalid --max-rows value: { $value } (expected a positive integer)

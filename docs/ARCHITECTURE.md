@@ -100,7 +100,6 @@ flowchart TB
 | `src/vault/`                             | 密钥保密柜：AEAD 加密存储、主钥三态来源（env/0600 文件/派生）                                                                            |
 | `src/server/`                            | 装配与运行面：`bootstrap.rs`（装配链）、`http.rs`（建站与路由合并）、`grpc.rs`（gRPC 门面，feature `grpc`）、`console.rs`（内置控制台，feature `console`）、`hot_reload.rs`（文件热重载与结构门） |
 | `src/sdk/`                               | Rust 客户端：admin / chat / embed / rerank / responses / stream 六模块（feature `sdk`）                                                  |
-| `src/bin/`                               | 独立二进制：`fluxweir-replay`（离线成本回放，feature `cost-replay`）                                                                     |
 | `src/storage.rs`                         | 存储层类型门面：`LogFilter` / `RequestLog` 等跨层共享的存储类型                                                                          |
 | `src/quota_contract.rs`                  | 配额预算读侧契约（独立根级模块，router 消费）                                                                                            |
 | `src/error/mod.rs` / `app.rs` / `gate.rs` | `FluxweirError` / `GateError` 统一错误：`mod.rs` 只留类型，`app.rs` 承载展示轨道（`IntoResponse` / `user_message()` / 来源转换），`gate.rs` 承载路由变体；Display 恒英文规范串（日志/错误链），HTTP 展示走 `user_message()`（FTL，随 locale） |
@@ -470,7 +469,7 @@ stateDiagram-v2
 | ---------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `CostCalculator` | `src/vendor/cost.rs`        | 定价表来自热配置 `[[pricing]]`，按 `(prompt/1000)×in_price + (completion/1000)×out_price` 计算 USD；`(vendor_id, model_id)` 未命中计 0.0；每请求现读热配置，定价修改即时生效（`src/vendor/manager.rs` 的定价热读点）                                                             |
 | `CostTracker`    | `src/utils/cost_tracker.rs` | `total` 用 `AtomicU64` 微美元（USD ×1e6 转 u64，避免浮点累加误差）；`by_vendor` / `by_model` 两张 DashMap 分桶；记账点在 worker 成功路径；`restore_from_db(pool, window_hours)` 启动恢复（按 `(vendor, model)` 聚合 `token_usage` 最近窗口回填内存视图，装配期先恢复再对外服务） |
-| `replay`         | `src/utils/replay.rs`       | 离线成本回放（`cost-replay` feature，独立 bin `fluxweir-replay`）：按时间窗读 `request_logs`，对 affinity / cache_ttl 场景重放 counterfactual 成本（微单位整数累计，`catalog-sync` 的 `unit.rs` 换算单点）；纯显式代码、只读不写库（sqlite `mode=ro` + 目标库须已存在）、装载行数上限 fail-fast，同输入 byte-equal |
+| `replay`         | `src/utils/replay/`         | 离线成本回放（`cost-replay` feature，主 CLI 子命令 `fluxweir cost-replay`）：按时间窗读 `request_logs`，对 affinity / cache_ttl 场景重放 counterfactual 成本（微单位整数累计，`catalog-sync` 的 `unit.rs` 换算单点）；纯显式代码、只读不写库（sqlite `mode=ro` + 目标库须已存在）、装载行数上限 fail-fast，同输入 byte-equal |
 
 **成本落库与内存边界（如实标注）**：成本分账已落库——`token_usage` 表按 `(vendor, model, api_key_hash, date, hour)` UPSERT，写入 `input_cost` / `output_cost` / `cache_read_cost` / `cache_creation_cost` 四档成本列（`src/database/pre_aggregator.rs`，单价取 `[[model_catalog]]` 四档，未登记记 0），并可由 `GET /admin/cost` 按 vendor/model 分组聚合查询。逐请求成本同步落库——`request_logs.cost_usd` 在日志写入路径经 `src/api/request_cost.rs` 的 `request_cost_usd` 计算：响应 usage 四档求和 × 目录单价（chat/embeddings/anthropic/gemini/responses 五入口共用，cache 语义单源 `prompt_cache_semantics`，与分账同口径；rerank 按每千文档价）；五入口无 usage（失败/空响应/流式成功——流式 usage 走预聚合分账，日志无 usage 响应体）记 `None`，未登记单价记 0。rerank 沿用既有口径：请求日志 `cost_usd` 失败路径（能力不匹配/上游失败）同样按公式写计算值，而 `token_usage` 分账失败不入账——两套口径并行，`/admin/cost` 聚合不含失败请求成本。进程内 `CostTracker`（`by_vendor`/`by_model`）启动时自 `token_usage` 按窗口恢复（`[metrics].cost_restore_window_hours`，默认 24，范围 1–8760；DB 未接线或内存库 warn 跳过）——恢复窗口之外的历史用量不进入实时内存视图。
 
@@ -681,7 +680,7 @@ flowchart LR
 
 ### Feature 门控
 
-`default = ["full", "db-sqlite"]`，`full` 预设含 12 个 feature：`web-server` / `database` / `vendor-management` / `router` / `protocol` / `infrastructure` / `sdforge-integration` / `logging` / `resilience` / `cost-tracking` / `sdk` / `vault`；不进 `full` 的独立门控：`grpc`（隐藏宏门控 `http` 之外另设）、`db-postgres` / `db-mysql`（另两个数据库后端，与 `db-sqlite` 互斥）、`otlp`（指标导出与尝试级追踪）、`masking`（出站掩码）、`catalog-sync`（目录同步）、`subscription-vendor`（订阅账号上游）、`oidc`（短时凭据验签中间件）、`netguard`（零依赖 SSRF 判定）、`web-search`（搜索注入与守护抓取）、`console`（内置控制台静态面）、`difficulty-classifier` / `semantic-cache`（两者经 path 依赖 vecboost，需同级 checkout）、`cost-replay`（离线成本回放，独立 bin `fluxweir-replay`，需搭配一个 db 后端）。主要依赖方向：
+`default = ["full", "db-sqlite"]`，`full` 预设含 12 个 feature：`web-server` / `database` / `vendor-management` / `router` / `protocol` / `infrastructure` / `sdforge-integration` / `logging` / `resilience` / `cost-tracking` / `sdk` / `vault`；不进 `full` 的独立门控：`grpc`（隐藏宏门控 `http` 之外另设）、`db-postgres` / `db-mysql`（另两个数据库后端，与 `db-sqlite` 互斥）、`otlp`（指标导出与尝试级追踪）、`masking`（出站掩码）、`catalog-sync`（目录同步）、`subscription-vendor`（订阅账号上游）、`oidc`（短时凭据验签中间件）、`netguard`（零依赖 SSRF 判定）、`web-search`（搜索注入与守护抓取）、`console`（内置控制台静态面）、`difficulty-classifier` / `semantic-cache`（两者经 path 依赖 vecboost，需同级 checkout）、`cost-replay`（离线成本回放，主 CLI 子命令 `fluxweir cost-replay`，需搭配一个 db 后端）。主要依赖方向：
 
 ```text
 web-server → router → vendor-management

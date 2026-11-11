@@ -75,11 +75,8 @@ masking-blocked = 请求被拦截：{ $kind } 类敏感数据禁止出站
 masking-pepper-degraded = 掩码 pepper 加载降级为进程内随机（{ $stage }：{ $detail }），占位符跨进程/重启确定性不成立
 masking-ledger-io-failed = 掩码台账 IO 失败（{ $op }：{ $detail }），观测旁路降级不影响请求
 
-# ---- cost-replay: 离线成本回放 CLI（bin fluxweir-replay）----
-replay-cli-usage = 用法：fluxweir-replay --db <sqlite 路径|URL> --from <unix|RFC3339> --to <unix|RFC3339> [--config <路径>] [--scenario affinity|cache_ttl|all] [--max-rows <n>] [--json]
-replay-cli-missing-arg = 缺少必需参数：{ $arg }
-replay-cli-missing-value = 参数 { $arg } 需要一个取值
-replay-cli-unknown-arg = 未知参数：{ $arg }
+# ---- cost-replay: 离线成本回放子命令（fluxweir cost-replay；用法/缺参/未知参数错误由 clap 接管，不再登记键）----
+replay-cli-about = 离线成本回放：读 request_logs 历史重放反事实成本（只读；不开服务、不写库）
 replay-cli-bad-time = 时间取值非法：{ $value }（需 unix 秒或 RFC3339）
 replay-cli-bad-scenario = 场景取值非法：{ $value }（需 affinity|cache_ttl|all）
 replay-cli-bad-max-rows = --max-rows 取值非法：{ $value }（需正整数）

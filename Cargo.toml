@@ -4,8 +4,9 @@ version = "0.1.1"
 edition = "2021"
 # MSRV 单一事实源：cargo 解析期据此硬拒更低工具链；CI 用此下限，Docker/release 用当前 stable。
 rust-version = "1.97.1"
-# src/bin/ 下的工具二进制必须显式登记 required-features（离线性分析工具默认产物不含），
-# 故关闭 bin 自动发现——否则未声明的 .rs 会被自动建成无门控 target、默认构建即编译失败。
+# 唯一 bin（src/main.rs）需显式登记 required-features（服务面 full 为编译前提），
+# 故关闭 bin 自动发现，防止无门控 target 混入默认构建（src/bin/ 已随 cost-replay
+# 折叠为主 CLI 子命令移除）。
 autobins = false
 # examples/ 是独立 workspace 成员、非本包示例目录：关闭自动发现，否则其顶层 .rs 会被误作 example target 编译失败。
 autoexamples = false
@@ -28,13 +29,6 @@ path = "src/lib.rs"
 name = "fluxweir"
 path = "src/main.rs"
 required-features = ["full"]
-
-# 离线成本回放工具（cost-replay）：读 request_logs 历史回放 counterfactual 成本，
-# 只报告不改配置。默认产物不含（需 cost-replay + 一个 db 后端）。
-[[bin]]
-name = "fluxweir-replay"
-path = "src/bin/fluxweir-replay.rs"
-required-features = ["cost-replay", "db-sqlite"]
 
 [features]
 # default 携带 db-sqlite：`cargo run` 默认仍为 sqlite 文件库；库嵌入方用 default-features = false 自选后端。
@@ -114,8 +108,9 @@ web-search = ["dep:reqwest", "netguard"]
 # 离线成本回放（cost-replay）：读 request_logs 逐请求历史，按场景（affinity/
 # cache_ttl）重放 counterfactual 成本——纯显式代码，不调模型、不开服务、不写库。
 # 不进 full：离线分析工具默认产物不含，构建时显式启用并搭配一个 db 后端
-# （bin fluxweir-replay 的 required-features 另含 db-sqlite）。
-cost-replay = ["database", "dep:dbnexus", "dep:sea-orm"]
+# （子命令双门控 cost-replay + db-sqlite，见 utils::replay::cli）。CLI 承载面
+# 走 sdforge 注册表（CliBuilder + inventory + dispatch），故透传 sdforge/cli。
+cost-replay = ["database", "dep:dbnexus", "dep:sea-orm", "dep:sdforge", "sdforge/cli"]
 # 内置控制台前端（console）：rust-embed 嵌入 web/console/dist（Vite 产物），
 # src/server/console.rs 挂 GET /console 与 /console/* 静态服务 + SPA fallback。
 # 不进 full：嵌入使二进制体积按前端产物体积增长（约 +213KB 原始字节；线上 gzip 传输约 70KB），且

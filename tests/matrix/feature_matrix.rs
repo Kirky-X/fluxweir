@@ -25,7 +25,7 @@
 //! | `--no-default-features`          | OK   | 门面 re-export（config/error/i18n/protocol/utils）|
 //! | `--no-default-features --features "db-sqlite,vendor-management,masking"` | OK | masking 不进 full、无 resilience——非流式回程还原分支的编译面（E0061 回归钉） |
 //! | `--no-default-features --features "db-sqlite,vendor-management,subscription-vendor,masking"` | OK | 订阅池 + 掩码全开（vault 联动）|
-//! | `--no-default-features --features "cost-replay,db-sqlite"` | OK | cost-replay 不进 full → database + dbnexus/sea-orm，独立 bin `fluxweir-replay` |
+//! | `--no-default-features --features "cost-replay,db-sqlite"` | OK | cost-replay 不进 full → database + dbnexus/sea-orm/sdforge-cli，主 CLI 子命令 `fluxweir cost-replay` |
 //!
 //! 【门禁口径】默认特性集（full + db-sqlite）覆盖不到上两行——`masking`
 //! 刻意不进 `full`，`cargo check --benches` 与 clippy 默认面也不含。组合

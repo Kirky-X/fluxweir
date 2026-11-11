@@ -17,6 +17,12 @@ use dbnexus::DbPool;
 use sea_orm::{ConnectionTrait, QueryResult, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+// CLI 承载面（主 bin 的 cost-replay 子命令）：sdforge CLI 注册表 + 只读
+// URL 解析与报告渲染的入口。双门控继承旧独立 bin 的 required-features
+// 语义（cost-replay + db-sqlite），见 cli.rs 模块文档。
+#[cfg(all(feature = "cost-replay", feature = "db-sqlite"))]
+pub mod cli;
+
 /// TTL 扫描档位（秒）——`cache_ttl` 场景的三档对比。
 pub const TTL_SWEEP: [i64; 3] = [300, 900, 3600];
 
@@ -85,8 +91,8 @@ pub fn session_key_of(row: &ReplayRow, ordinal: u64) -> SessionKey {
 /// （`sqlite://…`、`postgres://…`、`mysql://…`）。
 ///
 /// 注意：本函数不校验目标是否存在，也不改写 URL 的 `mode`——控制只读语义
-/// 是调用方的责任（`fluxweir-replay` CLI 对 sqlite 强制 `mode=ro` 且要求
-/// 文件已存在，见其 `resolve_db_url`）。
+/// 是调用方的责任（`cli` 模块对 sqlite 强制 `mode=ro` 且要求文件已存在，
+/// 见 [`cli::resolve_db_url`]）。
 pub async fn open_pool(url: &str) -> Result<DbPool, FluxweirError> {
     let config = dbnexus::DbConfig {
         url: url.to_string(),

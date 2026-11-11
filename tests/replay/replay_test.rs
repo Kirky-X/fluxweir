@@ -4,8 +4,11 @@
 //! cost-replay 集成测试：CLI 子进程跑 fixture 库断言退出码与报告关键字段，
 //! 以及确定性回归（同输入两跑 byte-equal，无随机无时钟）。
 //!
+//! 子命令形态（原独立 bin `fluxweir-replay` 折叠进主 bin）：子进程跑主
+//! bin `fluxweir cost-replay …`（sdforge CliBuilder + inventory + dispatch）。
+//!
 //! 覆盖：
-//! - 退出码：缺参 → 2；正常 / `--help` → 0；运行期失败（库不存在、超限）→ 1。
+//! - 退出码：缺参 → 2（clap 校验）；正常 / `--help` → 0；运行期失败（库不存在、超限）→ 1。
 //! - 报告关键字段：窗口、baseline、场景行、假设披露。
 //! - `--json` 机器可读且与 Markdown 数值一致。
 //! - `--scenario` 过滤（含 affinity 的 legacy 对照）。
@@ -129,15 +132,24 @@ cache_creation_price = 3.75
     (db_path, url, config_path, dir)
 }
 
+/// 主 bin 路径：cost-replay 已折叠为其子命令（双门控编入，required-features
+/// full 由 default 携带，本测试的 required-features 保证两个门控全开）。
 fn bin() -> &'static str {
-    env!("CARGO_BIN_EXE_fluxweir-replay")
+    env!("CARGO_BIN_EXE_fluxweir")
+}
+
+/// 以 `fluxweir cost-replay <args…>` 形态构造子进程命令。
+fn replay_cmd() -> Command {
+    let mut cmd = Command::new(bin());
+    cmd.arg("cost-replay");
+    cmd
 }
 
 /// 正常路径：退出码 0，报告含窗口/基线/场景/假设关键字段。
 #[tokio::test]
 async fn cli_reports_replay_scenarios() {
     let (_path, url, config, _dir) = fixture().await;
-    let out = Command::new(bin())
+    let out = replay_cmd()
         .args([
             "--db",
             &url,
@@ -179,10 +191,10 @@ async fn cli_reports_replay_scenarios() {
     assert!(stdout.contains("| auto-3600s | 6.300000 |"), "{stdout}");
 }
 
-/// 缺参：退出码 2。
+/// 缺参：退出码 2（clap required 校验接管，报错指向缺失 flag）。
 #[tokio::test]
 async fn cli_missing_args_exit_code_2() {
-    let out = Command::new(bin())
+    let out = replay_cmd()
         .env("FLUXWEIR_LANG", "en")
         .arg("--from")
         .arg("0")
@@ -190,20 +202,27 @@ async fn cli_missing_args_exit_code_2() {
         .expect("spawn replay bin");
     assert_eq!(out.status.code(), Some(2), "缺 --db 必须退出码 2");
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("missing required argument"), "{stderr}");
+    assert!(
+        stderr.contains("--db") && stderr.contains("required"),
+        "clap 报错须指向缺失的 --db: {stderr}"
+    );
 }
 
 /// `--help` 不是用法错误：stdout + 退出码 0。
 #[tokio::test]
 async fn cli_help_exits_zero_on_stdout() {
-    let out = Command::new(bin())
+    let out = replay_cmd()
         .env("FLUXWEIR_LANG", "en")
         .arg("--help")
         .output()
         .expect("spawn replay bin");
     assert_eq!(out.status.code(), Some(0), "--help 必须退出码 0");
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("usage:"), "用法须打到 stdout: {stdout}");
+    assert!(stdout.contains("Usage:"), "用法须打到 stdout: {stdout}");
+    assert!(
+        stdout.contains("cost-replay"),
+        "帮助须展示 cost-replay 子命令: {stdout}"
+    );
     assert!(
         String::from_utf8_lossy(&out.stderr).is_empty(),
         "--help 不得写 stderr"
@@ -214,7 +233,7 @@ async fn cli_help_exits_zero_on_stdout() {
 #[tokio::test]
 async fn cli_json_matches_markdown() {
     let (_path, url, config, _dir) = fixture().await;
-    let json_out = Command::new(bin())
+    let json_out = replay_cmd()
         .args([
             "--db",
             &url,
@@ -224,7 +243,9 @@ async fn cli_json_matches_markdown() {
             "99999",
             "--config",
             config.to_str().unwrap(),
+            // sdforge CLI 面无 boolean flag：--json 为带值参数（janvi 同款形态）
             "--json",
+            "true",
         ])
         .output()
         .expect("spawn");
@@ -240,7 +261,7 @@ async fn cli_json_matches_markdown() {
 #[tokio::test]
 async fn cli_scenario_filter() {
     let (_path, url, config, _dir) = fixture().await;
-    let out = Command::new(bin())
+    let out = replay_cmd()
         .args([
             "--db",
             &url,
@@ -265,7 +286,7 @@ async fn cli_scenario_filter() {
 #[tokio::test]
 async fn cli_scenario_affinity_keeps_legacy() {
     let (_path, url, config, _dir) = fixture().await;
-    let out = Command::new(bin())
+    let out = replay_cmd()
         .args([
             "--db",
             &url,
@@ -295,7 +316,7 @@ async fn cli_scenario_affinity_keeps_legacy() {
 #[tokio::test]
 async fn cli_accepts_bare_path_db() {
     let (db_path, _url, config, _dir) = fixture().await;
-    let out = Command::new(bin())
+    let out = replay_cmd()
         .args([
             "--db",
             db_path.to_str().unwrap(),
@@ -328,7 +349,7 @@ async fn cli_missing_db_file_fails_without_creating() {
     let config = dir.path().join("config.toml");
     std::fs::write(&config, "vendors = []\n").expect("write config");
 
-    let out = Command::new(bin())
+    let out = replay_cmd()
         .env("FLUXWEIR_LANG", "en")
         .args([
             "--db",
@@ -359,7 +380,7 @@ async fn cli_missing_db_file_fails_without_creating() {
 #[tokio::test]
 async fn cli_max_rows_fails_fast() {
     let (_path, url, config, _dir) = fixture().await;
-    let out = Command::new(bin())
+    let out = replay_cmd()
         .args([
             "--db",
             &url,
@@ -389,7 +410,7 @@ async fn cli_max_rows_fails_fast() {
 async fn cli_output_is_deterministic() {
     let (_path, url, config, _dir) = fixture().await;
     let run = || {
-        Command::new(bin())
+        replay_cmd()
             .args([
                 "--db",
                 &url,

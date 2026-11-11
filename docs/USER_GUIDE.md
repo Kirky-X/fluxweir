@@ -804,34 +804,34 @@ window = "daily"                    # daily | monthly（UTC 日历）
 
 ## 💹 离线成本回放 cost-replay
 
-`cost-replay` 是**离线只读分析工具**（独立 bin `fluxweir-replay`，不进 `full`）：读既有 `request_logs` 逐请求历史，对"如果当时就开着缓存保 warm / 换个 TTL"这类反事实（counterfactual）算一遍钱——回答"缓存参数调优到底省了多少"。纯显式代码（规则 7）：无随机、无时钟依赖（时间全取日志 `timestamp`），同一输入同一输出；**不开服务、不写库、不调模型**。
+`cost-replay` 是**离线只读分析工具**（主 CLI 子命令 `fluxweir cost-replay`，不进 `full`）：读既有 `request_logs` 逐请求历史，对"如果当时就开着缓存保 warm / 换个 TTL"这类反事实（counterfactual）算一遍钱——回答"缓存参数调优到底省了多少"。纯显式代码（规则 7）：无随机、无时钟依赖（时间全取日志 `timestamp`），同一输入同一输出；**不开服务、不写库、不调模型**。
 
 ### 构建
 
 ```bash
-# feature 不进 full，且 bin 需搭配一个 db 后端（required-features）。
+# feature 不进 full，且子命令需搭配一个 db 后端（双门控）。
 cargo build --release --features "cost-replay,db-sqlite"
-# 产物：target/release/fluxweir-replay
+# 产物：target/release/fluxweir（cost-replay 子命令随主 bin 编入）
 ```
 
 ### 用法
 
 ```bash
-fluxweir-replay \
+fluxweir cost-replay \
   --db ./data/llm_proxy.db \      # sqlite 文件路径或 sqlite:// URL；必须已存在（工具不建库）
   --from 1730000000 \             # 起点（unix 秒或 RFC3339）
   --to   1730086400 \             # 终点（unix 秒或 RFC3339）
   --config config.toml \          # 取 [[model_catalog]] 单价（缺省 config.toml）
   --scenario all \                # affinity | cache_ttl | all（缺省 all）
   --max-rows 1000000 \            # 窗内装载行数上限（缺省 1000000，超出即报错）
-  --json                          # 机器可读（缺省 stdout Markdown）
+  --json true                     # 机器可读（带值参数：true|false，缺省 false → stdout Markdown）
 
-fluxweir-replay --help            # 用法打到 stdout，退出码 0
+fluxweir cost-replay --help        # 用法打到 stdout，退出码 0
 ```
 
-> **后端说明**：独立 bin 以 `db-sqlite` 构建（`required-features = ["cost-replay","db-sqlite"]`），
+> **后端说明**：子命令以 `db-sqlite` 门控编入主 bin（`cost-replay` + `db-sqlite` 双 feature），
 > 因此 `--db` 实际接受 sqlite 路径/URL。回放引擎的 SQL 与列集在 sqlite/postgres/mysql
-> 三方言下通用（见 `src/utils/replay.rs` 的 `load_rows`），库嵌入方可用其它后端打开连接池后
+> 三方言下通用（见 `src/utils/replay/mod.rs` 的 `load_rows`），库嵌入方可用其它后端打开连接池后
 > 自行调用引擎 API。
 
 | 参数              | 必填 | 说明                                                                                                           |
@@ -841,7 +841,7 @@ fluxweir-replay --help            # 用法打到 stdout，退出码 0
 | `--config`        | 否   | 取 `[[model_catalog]]` 四档单价（计价正源）；缺省 `config.toml`；报告头部回显该路径                            |
 | `--scenario`      | 否   | `affinity`（legacy vs 单档 auto）/ `cache_ttl`（{300,900,3600} 三档）/ `all`（缺省）                           |
 | `--max-rows`      | 否   | 窗内装载行数上限（缺省 `1000000`）；超出即报错退出，提示收窄窗口或上调上限                                     |
-| `--json`          | 否   | 输出 JSON（与 Markdown 同源数值）；缺省 Markdown                                                               |
+| `--json`          | 否   | 输出 JSON（与 Markdown 同源数值）；带值参数 `--json true\|false`（sdforge CLI 面无无值开关形态），缺省 `false`（Markdown） |
 
 缺参或参数非法 → stderr 报错 + 退出码 **2**；运行期失败（配置/库/查询/超限）→ 退出码 **1**；`--help` → stdout + 退出码 **0**。
 
