@@ -568,8 +568,8 @@ oxcache = { version = "0.5.0-rc.12", default-features = false }
 # 兄弟库 path 依赖：跟随本地 checkout（0.3.0-rc.3 已发布，本地 checkout 领先两个提交）；
 # 本地改动发布后改回 registry 依赖。
 vecboost = { path = "../vecboost", version = "0.3.0-rc.3", default-features = false }
-trait-kit = { version = "0.5.0-rc.13", default-features = false }
-sdforge = { version = "0.5.0-rc.10", default-features = false }
+trait-kit = { version = "0.5.0-rc.14", default-features = false }
+sdforge = { version = "0.5.0-rc.11", default-features = false }
 
 serde = { version = "1.0", default-features = false }
 serde_json = { version = "1.0", default-features = false }
