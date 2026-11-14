@@ -191,8 +191,14 @@ jobs:
         run: cargo test --features otlp,db-sqlite
       # cost-replay 同样不进 full（独立 bin + 回放引擎），默认口径下
       # `cargo test --workspace` 零编译、零执行；单列一步跑引擎单测 + CLI 集成测试。
+      # 必须联合 full：[[bin]] required-features = ["full"]（main.rs 无条件调用
+      # server::run，bin 无法脱离 full 编译），不带 full 时 cargo 跳过 bin 构建，
+      # 但 CARGO_BIN_EXE_fluxweir 仍指向上一口径的陈旧产物——replay CLI 用例
+      # 全部命中 "cost-replay is not built in" 运行时守卫假失败（v0.1.2 发布
+      # 预检实锤，fluxweir-replay 折叠主 CLI 时引入）。联合 full 后 bin 按本
+      # 口径重编，replay 子命令走 all(cost-replay, db-sqlite) 正面分支。
       - name: Run feature-gated tests (cost-replay)
-        run: cargo test -p fluxweir --no-default-features --features "cost-replay,db-sqlite"
+        run: cargo test -p fluxweir --no-default-features --features "full,cost-replay,db-sqlite"
 
   #-----------------------------------------------------------------------------
   # 全特性回归：不进 full 的合规敏感面（web-search / subscription-vendor / cost-replay）

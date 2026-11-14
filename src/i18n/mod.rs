@@ -96,3 +96,33 @@ pub fn clear_locale_override() {
     locale::clear_locale_override();
     sdforge::i18n::set_locale(&locale::current_locale().to_string());
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 覆盖位包装层：合法值同步 sdforge active locale（仅断言结果域，避免与
+    /// 并行测试的覆盖位互染）；非法值报 InvalidLocale；清理后回落检测 locale。
+    #[test]
+    fn set_locale_wrapper_syncs_and_clears() {
+        assert!(set_locale("zh").is_ok());
+        assert!(set_locale("en").is_ok());
+        let synced = current_locale();
+        let lang = synced.language.as_str();
+        assert!(
+            lang == "en" || lang == "zh",
+            "result domain violated: {lang}"
+        );
+        match set_locale("fr") {
+            Err(I18nError::InvalidLocale { input }) => assert_eq!(input, "fr"),
+            other => panic!("expected InvalidLocale, got {other:?}"),
+        }
+        clear_locale_override();
+        let fallback = current_locale();
+        let lang = fallback.language.as_str();
+        assert!(
+            lang == "en" || lang == "zh",
+            "result domain violated: {lang}"
+        );
+    }
+}

@@ -10,8 +10,8 @@ runs:
   steps:
     - shell: bash
       env:
-        VB_VERSION: 0.3.0-rc.3
-        VB_SHA256: f9a537602119429b687de2f216311a83fce6afa816a1aee08d647aa77f3bf5bf
+        VB_VERSION: 0.3.0
+        VB_SHA256: c60f9464a41a5c82c2322cf04238ce1a6c7730149898e362a81fa91b53fc6963
       run: |
         curl --proto '=https' --tlsv1.2 --silent --show-error --fail --location \
           "https://crates.io/api/v1/crates/vecboost/${VB_VERSION}/download" -o /tmp/vb.crate

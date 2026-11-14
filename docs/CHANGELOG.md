@@ -4,11 +4,24 @@
 
 本格式基于 [Keep a Changelog 1.0.0](https://keepachangelog.com/en/1.0.0/)，版本号遵循语义化版本。
 
-> **注**：以下版本对应 `Cargo.toml` 的版本线（当前 `version = "0.1.1"`）。
+> **注**：以下版本对应 `Cargo.toml` 的版本线（当前 `version = "0.1.2"`）。
 
 ---
 
 ## [Unreleased]
+
+## [0.1.2] - 2026-11-14
+
+### Changed（依赖线稳定化）
+
+- **自研依赖全家桶 rc → 稳定版**：`confers` 0.6.0、`trait-kit` 0.5.0、`oxcache` 0.5.0、`dbnexus` 0.6.0、`inklog` 0.3.0、`sdforge` 0.5.0、`limiteron` 0.3.1、`vecboost` 0.3.0 全部切换 crates.io 稳定线集成；依赖声明自完整 rc 号收敛为 minor 精度（`"0.6"`/`"0.5"`/`"0.3"`，恢复「x.y 兼容范围」格式），`cargo update` 同步传递依赖（三方仅兼容区 patch/minor，无跨 major 变动）。公共 API 无破坏，`cargo check --workspace` 零告警。
+- **CI/Release vecboost 钉定同步**：`.github/actions/fetch-vecboost` 与 release.yml 两个 job 的 VB_VERSION/VB_SHA256 升至 0.3.0（sha256 经本机计算与 crates.io API checksum 双源核验；本地 `../vecboost` checkout 与已发布包 src/ 逐字节一致）。
+- **RUSTSEC-2026-0459 豁免前提复验**：升级后 `libsqlite3-sys` 仍 0.37.0、`sqlx` 仍 0.9.0，`.cargo/audit.toml` 三条豁免继续有效（注释版本引用同步为稳定号）。
+
+### Fixed（CI 门禁）
+
+- **cost-replay 测试腿假失败**：fluxweir-replay 折叠主 CLI 后，该腿（`cost-replay,db-sqlite`）因 `[[bin]] required-features = ["full"]` 不满足而跳过 bin 重编，但 `CARGO_BIN_EXE_fluxweir` 仍指向上一口径陈旧产物，CLI 用例全部命中 "cost-replay is not built in" 运行时守卫（CI Test/Coverage 自 0.1.1 后 push 持红）。修复：腿特性集改 `full,cost-replay,db-sqlite` 联合面，bin 按本口径重编后走正面分支；本机与 CI 双向验证。
+- **行覆盖率回落 95% 门禁**：i18n 宿主注册表切换与 replay 折叠两提交累计新增行把行覆盖率压到 94.95%（门禁 `--fail-under-lines 95` 持红）。补测：`i18n::set_locale`/`clear_locale_override` 包装层、`entries_for` 未知 locale 回落与 `parse_entries` 空键行、`RequestLogSink`/`AffinityStickSink` 直写默认方法体（裸 mock 驱动），恢复 ≥95%。
 
 ## [0.1.1] - 2026-11-10
 

@@ -591,4 +591,53 @@ mod tests {
         assert_eq!(back.request_count, 3);
         assert_eq!(back.api_key_hash, "");
     }
+
+    /// 仅实现必需方法的裸 mock：专门驱动各 trait 的**默认方法体**（直写实现
+    /// 恒 0 / 查询不支持的回落路径），守住默认实现的回归（覆盖率缺口回收）。
+    struct BareLogSink;
+
+    #[async_trait::async_trait]
+    impl RequestLogSink for BareLogSink {
+        async fn log(&self, _log: RequestLog) -> Result<(), GateError> {
+            Ok(())
+        }
+    }
+
+    struct BareAffinitySink;
+
+    #[async_trait::async_trait]
+    impl AffinityStickSink for BareAffinitySink {
+        fn record(&self, _stick: AffinityStick) {}
+    }
+
+    /// 直写默认体：丢弃计数恒 0、关停幂等、流式回填无操作、admin 查询显式拒绝
+    #[tokio::test]
+    async fn bare_log_sink_default_bodies() {
+        assert_eq!(BareLogSink.dropped_logs(), 0);
+        assert_eq!(BareLogSink.secret_scan_dropped(), 0);
+        BareLogSink.shutdown().await.expect("默认关停为 Ok");
+        BareLogSink
+            .update_stream_usage("req", "{}", 1, 2, 3, None, None)
+            .await
+            .expect("默认流式回填为 Ok");
+        let err = BareLogSink.search_logs("kw", 10).await.unwrap_err();
+        assert!(
+            matches!(err, GateError::Config { .. }),
+            "默认搜索实现必须显式拒绝"
+        );
+        let err = BareLogSink.query_sessions(0, 10).await.unwrap_err();
+        assert!(matches!(err, GateError::Config { .. }));
+        let err = BareLogSink.query_context_stats(0).await.unwrap_err();
+        assert!(matches!(err, GateError::Config { .. }));
+    }
+
+    /// 亲和粘性直写默认体：丢弃/失败计数恒 0、读与清理显式拒绝
+    #[tokio::test]
+    async fn bare_affinity_sink_default_bodies() {
+        assert_eq!(BareAffinitySink.flush_failures(), 0);
+        let err = BareAffinitySink.read_unexpired(0, 10).await.unwrap_err();
+        assert!(matches!(err, GateError::Config { .. }));
+        let err = BareAffinitySink.purge_expired(0).await.unwrap_err();
+        assert!(matches!(err, GateError::Config { .. }));
+    }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "fluxweir"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 # MSRV 单一事实源：cargo 解析期据此硬拒更低工具链；CI 用此下限，Docker/release 用当前 stable。
 rust-version = "1.97.1"
@@ -554,22 +554,22 @@ tokio = { version = "1.54", default-features = false }
 tower = { version = "0.5", default-features = false }
 tower-http = { version = "0.7", default-features = false }
 
-dbnexus = { version = "0.6.0-rc.11", default-features = false }
+dbnexus = { version = "0.6", default-features = false }
 sea-orm = { version = "2.0", default-features = false }
 
-inklog = { version = "0.3.0-rc.12", default-features = false }
-confers = { version = "0.6.0-rc.13", default-features = false }
+inklog = { version = "0.3", default-features = false }
+confers = { version = "0.6", default-features = false }
 tracing = { version = "0.1", default-features = false }
 tracing-log = { version = "0.2", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false }
 
-limiteron = { version = "0.3.0-rc.10", default-features = false }
-oxcache = { version = "0.5.0-rc.12", default-features = false }
-# 兄弟库 path 依赖：跟随本地 checkout（0.3.0-rc.3 已发布，本地 checkout 领先两个提交）；
-# 本地改动发布后改回 registry 依赖。
-vecboost = { path = "../vecboost", version = "0.3.0-rc.3", default-features = false }
-trait-kit = { version = "0.5.0-rc.14", default-features = false }
-sdforge = { version = "0.5.0-rc.11", default-features = false }
+limiteron = { version = "0.3", default-features = false }
+oxcache = { version = "0.5", default-features = false }
+# 兄弟库 path 依赖：跟随本地 checkout；0.3.0 稳定版已发 crates.io，registry 面与
+# 本地 checkout 同源同版（CI 由 fetch-vecboost 就位 ../vecboost，release 同口径）。
+vecboost = { path = "../vecboost", version = "0.3", default-features = false }
+trait-kit = { version = "0.5", default-features = false }
+sdforge = { version = "0.5", default-features = false }
 
 serde = { version = "1.0", default-features = false }
 serde_json = { version = "1.0", default-features = false }

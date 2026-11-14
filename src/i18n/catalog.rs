@@ -359,4 +359,23 @@ mod tests {
         assert!(has_key("main-config-loaded"));
         assert!(!has_key("no-such-key"));
     }
+
+    #[test]
+    fn test_entries_for_unknown_locale_falls_back_to_en() {
+        // 未知 locale 直查：entries_for 的 unwrap_or_else 回落 en 目录。
+        // 生产调用方只传 en/zh，该防御面由测试钉住（键集合与 en 完全一致）。
+        let fr_keys: std::collections::BTreeSet<String> = entries_for("fr")
+            .into_iter()
+            .map(|(k, _)| k.to_string())
+            .collect();
+        assert_eq!(fr_keys, keys_for("en"), "未知 locale 必须整目录回落 en");
+    }
+
+    #[test]
+    fn test_parse_entries_skips_empty_key_lines() {
+        // 空键行（"= orphan"）丢弃：键为空的行不能进目录，否则占位一个
+        // 无法查找的空键条目
+        let parsed = parse_entries("# comment\n\nplain line\n= orphan\n valid = v\n");
+        assert_eq!(parsed, vec![("valid", "v")]);
+    }
 }
