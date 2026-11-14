@@ -88,3 +88,6 @@ out/
 web/console/dist/
 web/console/tsconfig.tsbuildinfo
 web/console/.fluxweir-build-stamp
+
+# 一次性发布报告不进仓
+/release-report-*.md
