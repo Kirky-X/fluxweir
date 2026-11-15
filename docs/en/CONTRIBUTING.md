@@ -139,10 +139,10 @@ This project's test baseline (measured with `cargo test --workspace`):
 
 | Type | Count | Location | Style |
 |:-----|:-----|:-----|:-----|
-| Unit tests | **1149** (measured 2026-11-09) | inline in `src/` modules | inline `#[cfg(test)] mod tests { ... }` |
+| Unit tests | **1156** (measured 2026-11-16) | inline in `src/` modules | inline `#[cfg(test)] mod tests { ... }` |
 | Integration tests | **1197 (61 default-caliber integration targets)** | `tests/` (69 `.rs` files = 68 registered `[[test]]` + `common/mod.rs`; grpc_smoke / grpc_coverage compile with the `grpc` feature) | HTTP full-chain / cross-module behavior |
 
-> Caliber: measured with `cargo test --workspace --no-fail-fast` on 2026-11-09 — default and `FLUXWEIR_LANG=en` calibers each run 62 test targets (1 lib + 61 integration), 2346 passed, 0 failed; the hot-reload watcher test is hardened with event replay (rewrites replayed when FSEvents drops events).
+> Caliber: measured with `cargo test --workspace --no-fail-fast` on 2026-11-16 — default and `FLUXWEIR_LANG=en` calibers each run 62 test targets (1 lib + 61 integration), 2353 passed, 4 ignored, 0 failed; the hot-reload watcher test is hardened with event replay (rewrites replayed when FSEvents drops events).
 
 Conventions and tools:
 
@@ -231,10 +231,10 @@ Code changes must update documentation in sync; **when docs and code disagree, t
 
 | Change type | Documents to update |
 |:---------|:-----------------|
-| API / endpoint changes | `docs/API_REFERENCE.md` |
-| Config field changes | `docs/USER_GUIDE.md` (and sync `config.example.toml` plus `tests/config/config_toml_example_test.rs`) |
-| Architecture / module changes | `docs/ARCHITECTURE.md` |
-| User-visible new capability / fix | `docs/CHANGELOG.md` |
+| API / endpoint changes | `docs/cn|en/API_REFERENCE.md` |
+| Config field changes | `docs/cn|en/USER_GUIDE.md` (and sync `config.example.toml` plus `tests/config/config_toml_example_test.rs`) |
+| Architecture / module changes | `docs/cn|en/ARCHITECTURE.md` |
+| User-visible new capability / fix | `docs/cn|en/CHANGELOG.md` |
 
 **Fabricated data in documentation is forbidden**: test counts, performance figures, review conclusions etc. must come from real runs.
 

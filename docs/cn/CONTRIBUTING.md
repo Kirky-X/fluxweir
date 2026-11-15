@@ -139,10 +139,10 @@ cargo build --release
 
 | 类型 | 数量 | 位置 | 写法 |
 |:-----|:-----|:-----|:-----|
-| 单元测试 | **1149 个**（2026-11-09 实测） | `src/` 各模块内 | `#[cfg(test)] mod tests { ... }` 内联 |
+| 单元测试 | **1156 个**（2026-11-16 实测） | `src/` 各模块内 | `#[cfg(test)] mod tests { ... }` 内联 |
 | 集成测试 | **1197 个（61 个 default 口径集成目标）** | `tests/`（69 个 `.rs` 文件 = 68 个 `[[test]]` 登记 + `common/mod.rs`；grpc_smoke / grpc_coverage 随 `grpc` 特性编译） | HTTP 全链路 / 跨模块行为 |
 
-> 口径：`cargo test --workspace --no-fail-fast` 实测于 2026-11-09——default 与 `FLUXWEIR_LANG=en` 双口径各 62 个测试目标（1 个 lib + 61 个集成）、2346 通过、0 失败；hot-reload watcher 用例已做事件重放加固（FSEvents 吞事件时重放改写）。
+> 口径：`cargo test --workspace --no-fail-fast` 实测于 2026-11-16——default 与 `FLUXWEIR_LANG=en` 双口径各 62 个测试目标（1 个 lib + 61 个集成）、2353 通过、4 忽略、0 失败；hot-reload watcher 用例已做事件重放加固（FSEvents 吞事件时重放改写）。
 
 约定与工具：
 
@@ -231,10 +231,10 @@ refactor(database): [T021-T023] 用 dbnexus 替换 sqlx 数据库层
 
 | 变更类型 | 需同步更新的文档 |
 |:---------|:-----------------|
-| API / 端点变更 | `docs/API_REFERENCE.md` |
-| 配置项变更 | `docs/USER_GUIDE.md`（并同步 `config.example.toml` 与 `tests/config/config_toml_example_test.rs`） |
-| 架构 / 模块变更 | `docs/ARCHITECTURE.md` |
-| 用户可感知的新能力 / 修复 | `docs/CHANGELOG.md` |
+| API / 端点变更 | `docs/cn|en/API_REFERENCE.md` |
+| 配置项变更 | `docs/cn|en/USER_GUIDE.md`（并同步 `config.example.toml` 与 `tests/config/config_toml_example_test.rs`） |
+| 架构 / 模块变更 | `docs/cn|en/ARCHITECTURE.md` |
+| 用户可感知的新能力 / 修复 | `docs/cn|en/CHANGELOG.md` |
 
 **文档禁止编造数据**：测试数量、性能数字、审查结论等必须来自真实运行结果。
 

@@ -4,11 +4,11 @@ This page collects common questions and real quirks from using Fluxweir (the Rus
 
 ## 📋 Table of Contents
 
-- [Routing & endpoints](#-routing-endpoints)
-- [Configuration & hot reload](#️-configuration-hot-reload)
-- [Auth & rate limiting](#-auth-rate-limiting)
-- [Cost & statistics](#-cost-statistics)
-- [Resilience & routing behavior](#️-resilience-routing-behavior)
+- [Routing & endpoints](#-routing--endpoints)
+- [Configuration & hot reload](#️-configuration--hot-reload)
+- [Auth & rate limiting](#-auth--rate-limiting)
+- [Cost & statistics](#-cost--statistics)
+- [Resilience & routing behavior](#️-resilience--routing-behavior)
 
 ---
 

@@ -14,12 +14,12 @@ Fluxweir treats security as a core design goal. This document covers Fluxweir's 
 - [Outbound resilience boundary](#-outbound-resilience-boundary)
 - [Information disclosure control](#️-information-disclosure-control)
 - [CORS](#-cors)
-- [Transport & deployment](#-transport-deployment)
-- [Supply chain & CI gates](#-supply-chain-ci-gates)
+- [Transport & deployment](#-transport--deployment)
+- [Supply chain & CI gates](#-supply-chain--ci-gates)
 - [Security review status](#-security-review-status)
 - [Known security boundaries](#️-known-security-boundaries)
 - [Vulnerability reporting process](#-vulnerability-reporting-process)
-- [Subscription upstream compliance notice](#-subscription-upstream-compliance-notice)
+- [Subscription upstream compliance notice](#️-subscription-upstream-compliance-notice-subscription-vendor)
 
 ---
 

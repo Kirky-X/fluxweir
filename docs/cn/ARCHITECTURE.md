@@ -644,7 +644,7 @@ flowchart LR
 
 错误展示走双轨（实现位于 `src/error/app.rs`，`mod.rs` 只留类型与 re-export）：`#[error]` Display 恒英文规范串（供日志与错误链），HTTP 响应体用 `user_message()` 返回随 locale 的 FTL 文案；错误载荷（`message`/`field`/`source`/`vendor`）只存语言中性锚点，本地化单点在 `user_message()`。
 
-与框架层的单注册表形态：业务消息与 OpenAPI/health 框架面描述同用 `sdforge::i18n` 宿主注册表（OpenAPI 键族已并入 `locales/api.ftl` 单一真源，`openapi_docs.rs` 的手工注册块删除）；locale 决策权在本仓检测链（`FLUXWEIR_LANG` 起步），`i18n::init()` 与 `assemble_router` 建站期把业务栈 locale 单向同步为 sdforge active locale，保证 `FLUXWEIR_LANG` 是两栈一致的单一语言入口。业务键查找（`t()`/`t_args()`）显式传 `current_locale`，不依赖该同步。
+与框架层的单注册表形态：业务消息与 OpenAPI/health 框架面描述同用 `sdforge::i18n` 宿主注册表（OpenAPI 键族已并入 `locales/{en,zh}/api.ftl` 单一真源，`openapi_docs.rs` 的手工注册块删除）；locale 决策权在本仓检测链（`FLUXWEIR_LANG` 起步），`i18n::init()` 与 `assemble_router` 建站期把业务栈 locale 单向同步为 sdforge active locale，保证 `FLUXWEIR_LANG` 是两栈一致的单一语言入口。业务键查找（`t()`/`t_args()`）显式传 `current_locale`，不依赖该同步。
 
 守卫：`tests/i18n/i18n_parity_test.rs` 四条断言（en/zh 键位对齐、引用键存在性、零 Junk + en/zh 占位符对齐、调用点实参覆盖 FTL 占位符）另含扫描器自检用例；`src/i18n/catalog.rs` 单测钉住内嵌清单与磁盘目录双向一致。
 
