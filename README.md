@@ -1,10 +1,10 @@
+English | [中文](README_CN.md)
+
 <div align="center">
 
 <img src="docs/assets/fluxweir.png" alt="Fluxweir Logo" width="240">
 
 [![Rust 2021](https://img.shields.io/badge/Rust-2021-edded?logo=rust&style=for-the-badge)](https://www.rust-lang.org/) [![Rustc 1.97.1+](https://img.shields.io/badge/Rustc-1.97.1+-orange.svg?style=for-the-badge)](https://www.rust-lang.org/) [![release](https://img.shields.io/github/v/release/Kirky-X/fluxweir?style=for-the-badge)](https://github.com/Kirky-X/fluxweir/releases) [![CI](https://img.shields.io/github/actions/workflow/status/Kirky-X/fluxweir/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/Kirky-X/fluxweir/actions/workflows/ci.yml) [![coverage](https://img.shields.io/codecov/c/github/Kirky-X/fluxweir?style=for-the-badge)](https://codecov.io/gh/Kirky-X/fluxweir) [![SQLite](https://img.shields.io/badge/SQLite-backend-003B57?logo=sqlite&logoColor=white&style=for-the-badge)](https://sqlite.org/) [![gRPC](https://img.shields.io/badge/gRPC-support-3C8CC9?logo=grpc&style=for-the-badge)](https://grpc.io/) [![Axum](https://img.shields.io/badge/Axum-REST-009688?style=for-the-badge)](https://docs.rs/axum) [![i18n](https://img.shields.io/badge/i18n-zh%20%7C%20en-2CA6E0?style=for-the-badge)](<>) [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white&style=for-the-badge)](https://www.docker.com/) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
-
-[中文](README.md) | **English**
 
 **Intelligent LLM routing gateway — unified multi-provider access · protocol conversion · resilient scheduling**
 
@@ -54,7 +54,6 @@ Clients call the gateway in either OpenAI or Anthropic format; the gateway handl
 - [📄 License](#-license)
 - [🙏 Acknowledgments](#-acknowledgments)
 - [📞 Contact & Support](#-contact--support)
-- [⭐ Star History](#-star-history)
 
 </details>
 
@@ -133,102 +132,17 @@ curl -X POST http://127.0.0.1:8080/v1/chat/completions \
   -H "Authorization: Bearer <your-api-key>" \
   -H "Content-Type: application/json" \
   -d '{"model": "gpt-4", "messages": [{"role": "user", "content": "Hello"}]}'
-
-# Anthropic-compatible messages
-curl -X POST http://127.0.0.1:8080/v1/messages \
-  -H "Authorization: Bearer <your-api-key>" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "claude-3-opus", "max_tokens": 1024, "messages": [{"role": "user", "content": "Hello"}]}'
-
-# Model list (OpenAI list format, catalog ∪ vendors deduplicated live, never cached)
-curl http://127.0.0.1:8080/v1/models \
-  -H "Authorization: Bearer <your-api-key>"
-
-# Token counting (approximate estimation, deterministic)
-curl -X POST http://127.0.0.1:8080/v1/messages/count_tokens \
-  -H "Authorization: Bearer <your-api-key>" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "gpt-4", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
 </details>
 
-> Note: the bare `/health` path is not a registered route (it 404s) but is included in the auth and rate-limit whitelists. See the [📘 API Reference](docs/API_REFERENCE.md) for the full endpoint list.
+> Note: the bare `/health` path is not a registered route (it 404s) but is included in the auth and rate-limit whitelists. For the remaining entry points (Anthropic messages, model list, token counting) and every endpoint's parameters, responses and error codes, see the [📘 API Reference](docs/en/API_REFERENCE.md).
 
 ---
 
 ## ⚙️ Configuration Overview
 
-Runtime configuration is a single `config.toml` (**not committed** — `.gitignore` lists it since it carries deployment-private material such as API key digests and upstream endpoints; start from `cp config.example.toml config.toml`, which carries every section and field with its default value), with 30 top-level fields/sections (per-field details of `model_catalog` are covered in the [📖 User Guide](docs/USER_GUIDE.md)):
-
-<details>
-<summary>📋 Table</summary>
-
-| Section                                  | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Hot reload                                                                                                                         |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `server` / `database`                    | Listen address, SQLite path / pool size                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | ❌ restart required                                                                                                                |
-| `vendors` / `global_model`               | Vendors, models, weights, three rate-limit forms                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | `vendors` ✅ hot-read / `global_model` ⚠️ file hot-reload rejected by the structural gate (restart needed); admin writes apply in memory immediately (`enabled` hot-read per request) but carry a conservative `restart_required` hint |
-| `auth` / `cors`                          | API key digests, CORS                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | auth ✅ / cors ❌                                                                                                                  |
-| `routing` / `retry` / `resilience`       | Routing coefficients & selection algorithm, retry policy, resilience coverage (incl. the `[routing.difficulty]` difficulty-tier sub-section)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | ✅                                                                                                                                 |
-| `cache` / `rate_limit` / `admission`     | Response cache, inbound rate limiting, congestion admission                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | cache/admission ✅ / rate_limit ❌                                                                                                 |
-| `model_catalog` / `pricing`              | Model capability catalog (its four-tier prices are the costing source of truth) / SLA factor and quota fallback tier                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | ✅                                                                                                                                 |
-| `health` / `quota`                       | Active health probes (default off), cost/token quota + `[[quota.windows]]` multi-window budgets + `[[vendor_budgets]]` declarative budgets (all default off)                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | ✅ both hot-read                                                                                                                   |
-| `lexcompress`                            | Lexical compression (applies on `X-Compress: 1` when a message exceeds the threshold, default off)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | ✅ hot-read                                                                                                                        |
-| `grpc` / `docs`                          | gRPC facade, OpenAPI/Swagger UI surface (both opt-in)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | ❌ restart required                                                                                                                |
-| `subscription` / `subscription_accounts` | Subscription-account upstreams (`subscription-vendor` feature, excluded from `full`; dual-gated off by default, see the compliance notice below)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | ✅ hot-read                                                                                                                        |
-| `web_search`                             | Search injection and guarded fetch (`web-search` feature, not in `full`; zero-dependency `netguard` SSRF triage usable standalone). `POST /v1/search` multi-source search (Tavily/Brave/Exa/SearXNG, multi-key rotation), `POST /v1/fetch` guarded fetch, `GET /admin/web-search/stats` observability                                                                                                                                                                                                                                                                                                                                                                             | ✅ hot-read                                                                                                                        |
-| `catalog_sync`                           | Automatic model-catalog sync (`catalog-sync` feature, not in `full`): fetches pricing/context windows from an external source (models.dev by default) into `[[model_catalog]]`, **add-only** (existing entries, including your own pricing, are never overwritten); `POST /admin/catalog/sync` (dry_run diff) plus an optional periodic task; failures are fail-open with counters                                                                                                                                                                                                                                                | ✅ hot-read                                                                                                                        |
-| `masking`                                | Outbound request masking (`masking` feature, not in `full`; `[masking]` dual-gated, default off): sensitive values in outbound JSON (API keys/private keys/JWTs/emails/custom words & regexes) are replaced with deterministic placeholders `{{FLUX_<KIND>_<8HEX>}}` (hashed with a pepper sourced from env / a 0600 file / in-process random; consistent across processes sharing the same pepper); the return path restores only placeholders registered by the **same request** (forged or cross-request echoes pass through) — vendors never store real values; Mask/Warn/Block actions, fail-closed (503 refusal on failure), `/admin/masking/stats` observability plus an optional audit ledger (values never persisted) | ✅ hot-read                                                                                                                      |
-| `responses` / `metrics` / `usage_insights` / `key_budgets` | Responses API surface (storage TTL/limits), metrics export (incl. cost restore window), usage-insights switch, per-key budget tiers | ✅ hot-read                                                                                                                        |
-| `otlp`                                   | OTLP/HTTP-Proto metrics export (`otlp` feature, not in `full`; default off)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | ❌ restart required (endpoint/interval/timeout changes land in `restart_required`)                                                 |
-
-</details>
-
-<details>
-<summary>📄 Code · toml</summary>
-
-```toml
-[[vendors]]
-id = "openai"
-type_ = "openai"
-api_key_env = "OPENAI_API_KEY"     # upstream key read from the environment
-api_base = "https://api.openai.com/v1"
-enabled = true
-
-[[vendors.models]]
-model_id = "gpt-4"
-weight = 1.0                        # participates in routing weights
-
-[[pricing]]
-vendor_id = "openai"
-model_id = "gpt-4"
-input_per_1k_tokens = 0.03
-output_per_1k_tokens = 0.06
-```
-
-</details>
-
-Rerank: the vendor declares `type_ = "rerank"` and must set an explicit `api_base` (there is no official default endpoint); the model entry declares `model_type = "rerank"`:
-
-<details>
-<summary>📄 Code · toml</summary>
-
-```toml
-[[vendors]]
-id = "cohere-prod"
-type_ = "rerank"
-api_key_env = "COHERE_API_KEY"  # pragma: allowlist secret (example env var name, not a credential)
-api_base = "https://api.cohere.com/v1"   # Jina: https://api.jina.ai/v1; TEI: http://host:port
-
-[[vendors.models]]
-model_id = "rerank-v3.5"
-abstract_id = "rerank-v3"
-model_type = "rerank"
-```
-
-</details>
-
-To enable auth, put SHA256 digests of your API keys into the `[auth]` section (`echo -n "your-key" | sha256sum`). Full field reference, rate-limit rules and admission settings: [📖 User Guide](docs/USER_GUIDE.md).
+Runtime configuration is a single `config.toml` (**not committed** — a clean checkout starts with `cp config.example.toml config.toml`; the in-repo example is the fully annotated reference carrying every section and field with its default and hot-reload availability). The 30 top-level sections' overview, per-field details, the hot-reload matrix and vendor/pricing config examples live in the [📖 User Guide](docs/en/USER_GUIDE.md).
 
 ---
 
@@ -237,15 +151,18 @@ To enable auth, put SHA256 digests of your API keys into the `[auth]` section (`
 <details>
 <summary>📋 Table</summary>
 
-| Document                                  | Description                                                                                       |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| [📖 User Guide](docs/USER_GUIDE.md)       | End-to-end tutorial: configuration, deployment, operations                                        |
-| [📘 API Reference](docs/API_REFERENCE.md) | All method endpoints (14 data-plane + 2 search/fetch + 35 admin + 1 health; 52 with all features enabled): parameters, responses, error codes |
-| [🏗️ Architecture](docs/ARCHITECTURE.md)   | Design principles, routing decision system, resilience & hot reload                               |
-| [🔒 Security](docs/SECURITY.md)           | Security design, supply-chain gates, vulnerability handling                                       |
-| [❓ FAQ](docs/FAQ.md)                     | Common questions and known limitations                                                            |
-| [📋 Changelog](docs/CHANGELOG.md)         | Version history (Keep a Changelog format)                                                         |
-| [🤝 Contributing](docs/CONTRIBUTING.md)   | Environment setup, development commands, commit conventions                                       |
+| Document                                 | Description                                                                   |
+| ------------------------------------ | ---------------------------------------------------------------------- |
+| [📖 User Guide](docs/en/USER_GUIDE.md)    | End-to-end tutorial: configuration, deployment, operations                                       |
+| [📘 API Reference](docs/en/API_REFERENCE.md) | All method endpoints (14 data-plane + 2 search/fetch + 35 admin + 1 health; 52 with all features enabled): parameters, responses, error codes |
+| [🏗️ Architecture](docs/en/ARCHITECTURE.md)  | Design principles, routing decision system, resilience & hot reload                               |
+| [🔒 Security](docs/en/SECURITY.md)      | Security design, supply-chain gates, vulnerability handling                                     |
+| [❓ FAQ](docs/en/FAQ.md)                | Common questions and known limitations                                                     |
+| [📋 Changelog](docs/en/CHANGELOG.md)     | Version history (Keep a Changelog format)                                  |
+| [🤝 Contributing](docs/en/CONTRIBUTING.md)  | Environment setup, development commands, commit conventions                                           |
+| [⚡ Performance Baselines](docs/en/PERFORMANCE.md)   | Criterion component-level benchmark figures (conversion / SSE / routing / affinity)                   |
+| [🧭 Prompt Prefix Caching Guide](docs/en/PROMPT_CACHING_GUIDE.md) | The caller-side guide to maximizing vendor-side prefix-cache hits                   |
+| [🤝 Code of Conduct](docs/en/CODE_OF_CONDUCT.md) | Community participation rules (Contributor Covenant 2.1)                |
 
 </details>
 
@@ -253,193 +170,25 @@ To enable auth, put SHA256 digests of your API keys into the `[auth]` section (`
 
 ## 🏗️ Architecture
 
-Fluxweir uses a layered pipeline: inbound requests pass through the middleware chain (auth → rate limit → admission), then the router picks a target from the eligible vendor set (three-level decision: abstract model → `vendor.model` direct → `auto` global pool), and the request is executed by the VendorManager with circuit breaking and retries, after protocol conversion (or zero-copy passthrough). On the response side, SSE framing and protocol back-conversion complete while logs, token aggregation, cost accumulation, affinity binding and LinUCB rewards are recorded asynchronously.
-
-<details>
-<summary>📄 Code · mermaid</summary>
-
-```mermaid
-flowchart TB
-    Client["Client (OpenAI / Anthropic format)"]
-
-    subgraph GW["Fluxweir Gateway (Axum 0.8 + sdforge)"]
-        direction LR
-        MW["Middleware chain<br/>auth (SHA256) · sliding-window limiter (token-bucket fallback) · admission"]
-        Handler["API handlers<br/>routing hints · response cache"]
-        Router["Routing decision<br/>6-factor weighting (optional quota) · affinity · LinUCB"]
-        Conv["Protocol conversion<br/>OpenAI ↔ Anthropic · zero-copy passthrough"]
-        Vendor["VendorManager<br/>circuit · retry · pool · fallback"]
-        MW --> Handler --> Router --> Conv --> Vendor
-    end
-
-    subgraph Store["Persistence (dbnexus · SQLite)"]
-        Logs["request_logs (async batched writes)"]
-        Agg["token_usage (hourly pre-aggregation)"]
-    end
-
-    UP1["OpenAI-compatible upstream"]
-    UP2["Anthropic-compatible upstream"]
-
-    Client --> MW
-    Vendor --> UP1
-    Vendor --> UP2
-    Vendor -. async .-> Logs
-    Vendor -. async .-> Agg
-```
-
-</details>
-
-The full routing decision system, resilience state machines, hot-reload transaction semantics, DI assembly and i18n design are documented in the [🏗️ Architecture guide](docs/ARCHITECTURE.md).
-
-Fluxweir is also a **library-first** component set: the server assembly chain lives in `fluxweir::server` (an independently deployable HTTP server) and the Rust client lives in `fluxweir::sdk` (gated behind the `sdk` feature) — the binary `main.rs` is only a thin bootstrap. The `grpc` feature (independently gated, not part of `full`) additionally provides a gRPC server: the sdforge `sdforge.v1.SdForgeService` facade (GetInfo / Call / CallStream, JSON over gRPC) coexists with HTTP in the same process via `take_grpc_server`, authentication reuses the `[auth]` section SHA256 digests, and graceful shutdown shares the same signal as HTTP.
+The layered pipeline (middleware → API → routing decision → protocol conversion → vendor execution → async persistence), the routing decision system, resilience state machines, hot-reload transaction semantics, DI assembly and i18n design are documented in the [🏗️ Architecture guide](docs/en/ARCHITECTURE.md).
 
 ---
 
 ## 📚 As a Library Dependency
 
-`fluxweir` is both an executable gateway and a Rust library (`src/lib.rs` exports the public API). The default `full` feature includes the server components; the client SDK is provided by the `sdk` feature (included in `full`, also independently enableable).
-
-**Embedded startup** (hosting the gateway inside your own app):
-
-<details>
-<summary>📄 Code · rust</summary>
-
-```rust
-#[tokio::main]
-async fn main() -> Result<(), fluxweir::error::FluxweirError> {
-    // Assembly (config/database/vendors/routing) + serving + graceful-shutdown
-    // flush are all handled by the library
-    fluxweir::server::run(Some("config.toml".into())).await
-}
-```
-
-</details>
-
-**HTTP client SDK** (talking to a deployed gateway, requires the `sdk` feature):
-
-<details>
-<summary>📄 Code · rust</summary>
-
-```rust
-use fluxweir::sdk::{ChatMessage, ChatRequest, ChatTool, ChatToolChoice, ChatToolDefinition, FluxweirClientBuilder};
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = FluxweirClientBuilder::new()
-        .base_url("http://127.0.0.1:8080")
-        .api_key(std::env::var("FLUXWEIR_API_KEY")?)
-        .build()?;
-
-    // Convenience constructor + request-level config
-    // (temperature / max_tokens / hints etc. go through RequestConfig)
-    let request = ChatRequest::new("gpt-4", "Hello")
-        .with_tools(
-            vec![ChatTool {
-                function: ChatToolDefinition {
-                    name: "get_weather".into(),
-                    description: Some("Look up the weather".into()),
-                    parameters: serde_json::json!({"type": "object"}),
-                },
-            }],
-            Some(ChatToolChoice::auto()),
-        )
-        .with_vendor_extension("thinking_mode", serde_json::json!("off"))?; // reserved keys (model/messages etc.) are rejected
-
-    let resp = client.chat(&request).await?;
-    println!("{}", resp.content);
-    for call in &resp.tool_calls {
-        println!("tool_call: {} {}", call.id, call.function.name);
-    }
-    println!(
-        "finish_reason: {} | tokens: {} + {} (cache_read: {})",
-        resp.finish_reason.as_wire(),
-        resp.usage.prompt_tokens,
-        resp.usage.completion_tokens,
-        resp.usage.cache_read_tokens
-    );
-    Ok(())
-}
-```
-
-</details>
-
-> **SDK alignment**: `ChatMessage::content` supports multimodal content parts (`ChatContent::Parts`, image URLs / base64 data URLs); tool-role messages are filled back with `ChatMessage::tool(tool_call_id, content)`; the admin surface uses real routes (catalog `GET/PUT/DELETE /admin/models`, health `GET /api/v1/health`, vendor runtime status).
-
-**Database backend selection (compile-time)**: `full` itself carries no database driver — it must be paired with one `db-*` feature group. `default = ["full", "db-sqlite"]` keeps the standalone default on the sqlite file store.
-
-<details>
-<summary>📋 Table</summary>
-
-| Build target                   | Feature set                                                                   |
-| ------------------------------ | ----------------------------------------------------------------------------- |
-| Standalone (default, sqlite)   | `cargo run`                                                                   |
-| Standalone (PostgreSQL)        | `cargo build --no-default-features --features "full,db-postgres"`             |
-| Standalone (MySQL)             | `cargo build --no-default-features --features "full,db-mysql"`                |
-| Embedded library (own backend) | `fluxweir = { default-features = false, features = ["full", "db-postgres"] }` |
-
-</details>
-
-- The three groups are mutually exclusive, enforced by dbnexus's compile-time guard (embedded and server-side backends cannot mix). `--all-features` therefore fails to compile — this is expected; CI and pre-commit use explicit feature matrices instead.
-- On the config side, `[database] url` (a full connection URL) takes precedence when set; when empty, `path` falls back to the sqlite file store (without the db-sqlite feature the startup fails with `database-backend-missing` and a rebuild hint).
-- Schema and column migrations dispatch on the connected backend (the migration SQL source of truth lives in `src/database/migrations/core/` (`v{n}_{backend}.sql` per dialect, embedded via `include_str!`) — new tables/columns go through a new migration version; `schema.sql` / `schema.postgres.sql` / `schema.mysql.sql` are readable documentation, with the `schema.sql` table set locked to the migration set by a guard test).
-
-> The SDK is an "HTTP client" (calling the gateway REST API, including SSE streaming), not an in-process route-core binding; for embedding use `fluxweir::server` and `fluxweir::api` directly.
+`fluxweir` is both an executable gateway and a Rust library (the default `full` feature includes the server components; the client SDK is provided by the `sdk` feature): embedded startup, Rust SDK usage examples and database-backend selection live in the [📖 User Guide · As a library dependency](docs/en/USER_GUIDE.md#-as-a-library-dependency).
 
 ---
 
 ## 🧪 Testing
 
-### 🎯 Strategy
-
-Unit tests live inline in `src/` (`#[cfg(test)]`); integration tests are organized by functional domain under `tests/` subdirectories (api / routing / resilience / config / database / protocol / vendor / cost / server / i18n / matrix / utils / guard / vault / masking / replay, 69 `.rs` files in total — 68 test binaries plus the `tests/common/mod.rs` helper), each binary explicitly registered via `[[test]]` in the root `Cargo.toml` (one binary per file, process-exclusive semantics preserved; the grpc_smoke / grpc_coverage pair carries `required-features` and compiles only under the `grpc` caliber — default builds no empty binaries). Mocks use mockito (HTTP wire-level stubs) plus hand-written fakes for in-process doubles (e.g. `MockDifficultyClassifier`); time-sensitive tests inject the limiteron MockClock fake clock.
-
-### ▶️ Commands (CI-consistent)
-
-<details>
-<summary>📄 Code · bash</summary>
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-# Non-default backend matrix (must scope to this package with `-p fluxweir`,
-# otherwise the examples member pulls in db-sqlite and the backends collide)
-cargo check -p fluxweir --no-default-features --features "full,db-postgres"
-cargo check -p fluxweir --no-default-features --features "full,db-mysql"
-```
-
-</details>
-
-Caliber note: default already carries `full + db-sqlite`; `--all-features` opens all three mutually exclusive backends and cannot compile (see the section above), so clippy / test / coverage run on the default caliber while non-default backends are checked per package — literally matching `ci.yml`.
-
-### 📊 Scale
-
-As of 2026-11-04 (measured with `cargo test --workspace --no-fail-fast`, local zh-locale caliber): **2085 tests executed, 2081 passed** — 993 unit tests (inline in `src/`) plus 1092 integration tests (61 default-caliber test binaries under `tests/`; grpc_smoke / grpc_coverage build with the `grpc` feature); the 4 failures are all error-message i18n assertions hitting Chinese text under the zh locale (green under English CI), not functional defects; one hot-reload watcher test additionally shows kqueue platform flake (passes on rerun; serialization mitigated in 76bc09f). One `rust,ignore` example doctest is listed but not executed. Overall line coverage is measured with `cargo llvm-cov --workspace`. Main distribution:
-
-<details>
-<summary>📋 Table</summary>
-
-| Test domain                                                                                        | Cases           | Location                          | Coverage                                                                                                                                                        |
-| -------------------------------------------------------------------------------------------------- | --------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| protocol_test                                                                                      | 160             | tests/protocol/                   | OpenAI ↔ Anthropic conversion / streaming variants / SSE framing                                                                                                |
-| api_test                                                                                           | 148             | tests/api/                        | endpoint integration / caching / rerouting / affinity / admin                                                                                                   |
-| vendor_test                                                                                        | 116             | tests/vendor/                     | vendor management / rate limits / stream timeouts / health & metrics                                                                                            |
-| router_test                                                                                        | 122             | tests/routing/                    | weighted selection / affinity / hint routing / edges                                                                                                            |
-| difficulty_tier_test                                                                                  | 6               | tests/routing/                    | difficulty-tier rewriting → integration with the existing routing chain                                                                                         |
-| database / sse                                                                                     | 54 / 40         | tests/database/ · tests/protocol/ | persistence & pre-aggregation / stream framing & SDK                                                                                                            |
-| config / utils_coverage                                                                            | 80 / 19         | tests/config/ · tests/utils/      | config loading / metrics & limiter edges                                                                                                                        |
-| retry / config_coverage                                                                            | 23 / 20         | tests/resilience/ · tests/config/ | retry classes & delay policy / loader·manager branches                                                                                                          |
-| quota / fallback / admission                                                                       | 25 / 10 / 19    | tests/resilience/                 | quota window / fallback chain / admission                                                                                                                       |
-| bandit / model_catalog_admin                                                                       | 13 / 14         | tests/routing/ · tests/api/       | bandit routing / model catalog admin                                                                                                                            |
-| server·grpc serving / assembly smoke / feature matrix / Responses·Gemini endpoints / key pool etc. | remainder (223) | tests/server/ & more              | server·grpc serving / assembly smoke / feature matrix / Responses·Gemini endpoints & vendors / key pool / price factors / model catalog admin / i18n guard / dead-code guard |
-
-</details>
+The testing strategy, CI-consistent commands and the latest test baseline live in [🤝 Contributing · Testing conventions](docs/en/CONTRIBUTING.md#-testing-conventions).
 
 ---
 
 ## ⚡ Performance Design
 
-First-round Criterion component baselines are published (conversion / SSE frame parsing / routing decision paths / cache-economy affinity, with mean and throughput figures): see [⚡ Performance Baselines](docs/PERFORMANCE.md). Verified design points: zero-copy passthrough for same-protocol requests, lock-free O(1) config reads via confers DynamicField, fully asynchronous logging and pre-aggregation (batched transactions; backpressure drops are counted, never blocking), a single pooled reqwest client with a semaphore concurrency cap, and oxcache in-memory backends for session affinity and the response cache (the response cache's concurrent single-flight also rides oxcache `get_or` registry/watch wakeups, with a 30s dispatch-timeout clamp and follower self-healing to origin on leader failure). Design details: [🏗️ Architecture · Performance design](docs/ARCHITECTURE.md).
+The verifiable design points — zero-copy passthrough for same-protocol requests, lock-free hot reads via confers DynamicField, fully asynchronous logging and pre-aggregation — are documented in the [🏗️ Architecture guide](docs/en/ARCHITECTURE.md); Criterion component baselines (conversion / SSE frame parsing / routing decision paths / cache-economy affinity) live in [⚡ Performance Baselines](docs/en/PERFORMANCE.md).
 
 ---
 
@@ -447,139 +196,39 @@ First-round Criterion component baselines are published (conversion / SSE frame 
 
 ### 🛡️ Design
 
-API keys stored as SHA256 digests with constant-time comparison, upstream credentials referenced by env var name only, error responses exposing fixed `error.type` codes only, secrets masked in config snapshots, layered CORS and inbound rate limiting (429), non-root Docker runtime. See the [🔒 Security guide](docs/SECURITY.md) for details.
+API keys stored as SHA256 digests with constant-time comparison, upstream credentials referenced by env var name only, error responses exposing fixed `error.type` codes only, secrets masked in config snapshots, layered CORS and inbound rate limiting (429), non-root Docker runtime. See the [🔒 Security guide](docs/en/SECURITY.md) for details.
 
 ### ⚠️ Subscription upstream compliance notice (subscription-vendor)
 
-The `subscription-vendor` feature allows OAuth subscription accounts (e.g. Claude Pro/Max) to serve as server-side outbound upstreams. **The capability is absent from every default artifact**: the feature is excluded from `full` and `[subscription].enabled` defaults to `false` — both gates must be on. Before enabling:
-
-- Using subscription accounts as server-side upstreams **may violate the vendor's terms of service** (public vendor policies restrict the subscription OAuth surface to their official clients). Evaluate compliance for commercial deployments yourself; the risk is the operator's.
-- This gateway implements only the standard OAuth authorization-code + PKCE flow and contains no circumvention techniques.
-- The callback is bound to a **single instance**: PKCE state lives in process memory and is not shared across replicas; the callback must reach the same instance.
-- `subscription_refresh_fail_total` / `subscription_accounts_degraded` (`/admin/metrics`) expose account health.
+Using OAuth subscription accounts as server-side outbound upstreams may violate the vendor's terms of service; the compliance boundaries, single-instance constraint and observability surface to read before enabling live in [🔒 Security · Subscription upstream compliance notice](docs/en/SECURITY.md#️-subscription-upstream-compliance-notice-subscription-vendor).
 
 ### 🚨 Reporting a vulnerability
 
-Please do not report security vulnerabilities through public issues. Use the GitHub [Security Advisories](https://github.com/Kirky-X/fluxweir/security/policy) private disclosure channel instead. The project commits to acknowledging within 48 hours and providing an initial assessment within 7 days.
+Please do not report security vulnerabilities through public issues. Use the GitHub [Security Advisories](https://github.com/Kirky-X/fluxweir/security/policy) private disclosure channel instead — the project commits to acknowledging within 48 hours and providing an initial assessment within 7 days; the full process is in [🔒 Security · Vulnerability reporting process](docs/en/SECURITY.md#-vulnerability-reporting-process).
 
 ---
 
 ## 🗺️ Roadmap
 
-<details>
-<summary>📋 Table</summary>
-
-<table style="width:100%; border-collapse: collapse">
-<tr><th style="text-align:center">Status</th><th style="text-align:left">Area</th><th style="text-align:left">Items</th></tr>
-<tr><td align="center">✅</td><td>Core gateway</td><td>OpenAI / Anthropic / Responses / Gemini conversion, SSE streaming, zero-copy passthrough, 52 method endpoints (14 data-plane + 2 search/fetch + 35 admin + 1 health, all features enabled)</td></tr>
-<tr><td align="center">✅</td><td>Smart routing</td><td>6-factor weighting (6th quota-budget factor, mode off by default) + temperature smoothing, cache-economy session affinity (auto sticks by cache worth + persist/restore, legacy default), LinUCB, Power-of-Two, optional SLA / LPS layers; difficulty-tiered routing (rule + in-process decision-engine fusion behind the <code>difficulty-classifier</code> feature); cache-cost suite (prefix-affinity PoTC / semantic cache off by default, cache-aware price factor on by default)</td></tr>
-<tr><td align="center">✅</td><td>Resilience</td><td>limiteron circuit / retry / fallback chain, congestion-aware admission, key tiers</td></tr>
-<tr><td align="center">✅</td><td>Observability & cost</td><td>Async logging, hourly token pre-aggregation, global metrics, four-tier `[[model_catalog]]` costing and cost breakdown</td></tr>
-<tr><td align="center">✅</td><td>Hot reload</td><td>confers DynamicField lock-free reads, transactional writes, snapshots with restart_required reporting</td></tr>
-<tr><td align="center">✅</td><td>Internationalization</td><td>Fluent en/zh bundles covering all business messages</td></tr>
-<tr><td align="center">✅</td><td>Cost query API</td><td>Cost breakdown persisted (<code>token_usage</code> four-way cost columns, V2 migration) + <code>/admin/cost</code> aggregation endpoint (pre-aggregated table grouped by vendor/model) + per-request cost persisted (<code>request_logs.cost_usd</code>: four-way sum × catalog price, rerank priced per 1k docs); the in-process <code>CostTracker</code> is restored from <code>token_usage</code> at startup (<code>[metrics].cost_restore_window_hours</code>, default 24h; skipped for in-memory DBs, restore failures are logged and skipped)</td></tr>
-<tr><td align="center">✅</td><td>Usage insights &amp; OTLP</td><td>Session-level cost aggregation (<code>GET /admin/sessions</code>: cost/tokens/requests/first-last timestamps + 80-char title from the first message) and context-utilisation analysis (<code>GET /admin/context-stats</code>: average occupancy, cache share, five-bucket distribution) behind the <code>[usage_insights]</code> runtime switch (on by default; when off the four columns are written as NULL and both endpoints return 404); <code>request_logs</code> gains <code>session_key</code>/<code>context_window_tokens</code>/<code>cache_read_tokens</code>/<code>cache_write_tokens</code> (V5 migration, three dialects); OTLP/HTTP-Proto metrics export (<code>otlp</code> feature, excluded from <code>full</code>, <code>[otlp]</code> off by default, export failures counted fail-open)</td></tr>
-<tr><td align="center">✅</td><td>Rust SDK</td><td>Merged into <code>src/sdk</code> (<code>sdk</code> feature gate; the broken workspace inheritance is gone): chat / stream / embed / rerank / responses / admin</td></tr>
-<tr><td align="center">✅</td><td>Performance baselines</td><td>Criterion component baselines (conversion / SSE frame parsing / routing decision paths / cache-economy affinity) established; first-round figures in <a href="docs/PERFORMANCE.md">PERFORMANCE.md</a></td></tr>
-<tr><td align="center">✅</td><td>Log query completion</td><td><code>/admin/logs</code> end_time filtering pushed into SQL (closed interval <code>[start_time, end_time]</code>, both boundaries inclusive)</td></tr>
-<tr><td align="center">✅</td><td>Subscription upstreams</td><td>OAuth subscription accounts (PKCE authorization-code flow) join the vendor outbound credential pool (<code>subscription-vendor</code> feature, <strong>excluded from <code>full</code></strong>, <code>[subscription]</code> off by default — dual-gated); refresh tokens live only in the vault (AEAD), access tokens stay in memory with a 5-minute-early single-flight refresh; refresh failures degrade the account into a 30-minute cooldown with one retry before removal; four admin endpoints (authorize / callback / accounts / revoke). <strong>See the compliance notice under "Security"</strong></td></tr>
-</table>
-
-</details>
+Completed items per area and their delivery calibers live in [📋 Changelog · Roadmap](docs/en/CHANGELOG.md#️-roadmap).
 
 ---
 
 ## 🐳 Docker Deployment
 
-<details>
-<summary>📄 Code · bash</summary>
-
-```bash
-# Build (multi-stage: rust:1.99-alpine3.24 build → alpine:3.24 runtime, non-root)
-# Keep both base images on the same alpine branch: the artifact is statically
-# linked against musl, and the runtime stage re-verifies with ldd that every
-# dynamic dependency resolves before the image is published
-# Note: -f points at the Dockerfile while the build context stays at the repo
-# root (bind mounts and .dockerignore resolve against the context root)
-docker build -t fluxweir:0.1.0 -f docker/Dockerfile .
-
-# Run (SQLite data persists under /app/data; put the config at data/config.toml)
-# ⚠️ Never use a single-file read-only mount `-v $(pwd)/config.toml:/app/config.toml:ro`:
-# admin write-back uses atomic rename-on-top, which is EBUSY on single-file
-# mounts — POST /admin/config and model-entry write-backs all fail with 500
-# (same note in the compose file). Mount the whole directory or use compose:
-docker run -d -p 8080:8080 \
-  -v $(pwd)/data:/app/data fluxweir:0.1.0 \
-  /bin/server /app/data/config.toml
-
-# Or one-command deployment with resource limits
-# (the compose file lives under docker/)
-docker compose -f docker/docker-compose.yml up -d
-```
-
-</details>
-
-> Health check: provided solely by the **image-level HEALTHCHECK** (compose no
-> longer duplicates it), probing the registered path `/api/v1/health`;
-> docker-compose ships with resource limits (2 CPUs / 512M) and a non-root
-> runtime. The image tag defaults to `fluxweir:0.1.0`, overridable via
-> `FLUXWEIR_IMAGE_TAG` (see [📖 User Guide · Docker](docs/USER_GUIDE.md)).
+Image building (incl. the vecboost additional-context prerequisite), container running (incl. the single-file-mount EBUSY warning) and docker-compose deployment live in [📖 User Guide · Docker Deployment](docs/en/USER_GUIDE.md#-docker-deployment).
 
 ---
 
 ## 🤝 Contributing
 
-See the [🤝 Contributing guide](docs/CONTRIBUTING.md) for the full workflow, commands and commit conventions.
-
-### 🛠️ Development environment
-
-Toolchain baseline: MSRV floor **1.97.1** (declared in `Cargo.toml` via `rust-version`, matching the 7 sibling libraries; ci.yml builds and lints at that floor so the clippy lint set stays reproducible), while `docker/Dockerfile` uses the currently supported stable (1.99). Run `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` before committing; commit messages follow Conventional Commits (`feat(scope): ...` / `fix(scope): ...`).
-
-### 💖 Ways to contribute
-
-<table style="width:100%; border-collapse: collapse">
-<tr>
-<td width="33%" align="center" style="padding: 16px">
-
-### 🐛 Report a bug
-
-Found an issue?<br>
-<a href="https://github.com/Kirky-X/fluxweir/issues/new">Open an issue</a>
-
-</td>
-<td width="33%" align="center" style="padding: 16px">
-
-### 💡 Suggest a feature
-
-Have an idea?<br>
-<a href="https://github.com/Kirky-X/fluxweir/discussions">Start a discussion</a>
-
-</td>
-<td width="33%" align="center" style="padding: 16px">
-
-### 🔧 Submit a PR
-
-Want to contribute code?<br>
-<a href="https://github.com/Kirky-X/fluxweir/pulls">Fork and open a PR</a>
-
-</td>
-</tr>
-</table>
+For the detailed contribution process, development commands and commit conventions, see the [🤝 Contributing guide](docs/en/CONTRIBUTING.md).
 
 ---
 
 ## 📋 Changelog
 
-The full version history lives in the [📋 Changelog](docs/CHANGELOG.md) (following [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), semantic versioning).
-
-<details>
-<summary>📋 Table</summary>
-
-| Version | Date       | Highlights                                                                                                                                                                                                                                                                                       |
-| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 0.1.0   | 2026-11-05 | Initial release (including the 2026-10-12 initial batch), continuously iterated: protocol-converting gateway, 6-factor weighted routing (quota-budget factor included) with optional smart layers, limiteron resilience system, async logging & pre-aggregation, cost tracking, confers hot-reload foundation, i18n |
-
-</details>
+The full version history lives in the [📋 Changelog](docs/en/CHANGELOG.md) (following the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format, semantic versioning).
 
 ---
 
@@ -591,59 +240,13 @@ This project is licensed under the [MIT License](LICENSE).
 
 ## 🙏 Acknowledgments
 
-### 🌟 Core dependencies (sibling libraries)
-
-Fluxweir integrates the following self-developed libraries through the crates.io registry (versions declared in the root `Cargo.toml`, checksums locked in `Cargo.lock`):
-
-<details>
-<summary>📋 Table</summary>
-
-| Library                                           | Purpose                                                                        |
-| ------------------------------------------------- | ------------------------------------------------------------------------------ |
-| [confers](https://github.com/Kirky-X/confers)     | Config loading guards & hot-reload foundation (DynamicField / SnapshotManager) |
-| [dbnexus](https://github.com/Kirky-X/dbnexus)     | SQLite persistence (pooling / batched transactions / kit integration)          |
-| [inklog](https://github.com/Kirky-X/inklog)       | Structured logging (HTTP / CLI / SQLite)                                       |
-| [limiteron](https://github.com/Kirky-X/limiteron) | Rate limiting / circuit breaking / retry primitives                            |
-| [oxcache](https://github.com/Kirky-X/oxcache)     | Unified cache API (session-affinity & response-cache storage layer + single-flight dedup) |
-| [sdforge](https://github.com/Kirky-X/sdforge)     | HTTP service framework (`#[forge]` macro / route registration)                 |
-| [trait-kit](https://github.com/Kirky-X/trait-kit) | DI container (AsyncKit, 4-module topology)                                     |
-
-</details>
-
-### 💝 Special thanks
-
-Thanks to the Rust community and all [contributors](https://github.com/Kirky-X/fluxweir/graphs/contributors).
+The core-dependency list (7 self-developed sibling libraries) lives in the [🤝 Contributing guide](docs/en/CONTRIBUTING.md); thanks to the Rust community and all [contributors](https://github.com/Kirky-X/fluxweir/graphs/contributors).
 
 ---
 
 ## 📞 Contact & Support
 
-<table style="width:100%; max-width: 600px">
-<tr>
-<td align="center" width="33%">
-<a href="https://github.com/Kirky-X/fluxweir/issues"><b style="color:#991B1B">Issues</b></a><br>
-<span style="color:#64748B">Report problems and bugs</span>
-</td>
-<td align="center" width="33%">
-<a href="https://github.com/Kirky-X/fluxweir/discussions"><b style="color:#1E40AF">Discussions</b></a><br>
-<span style="color:#64748B">Ask questions and share ideas</span>
-</td>
-<td align="center" width="33%">
-<a href="https://github.com/Kirky-X/fluxweir"><b style="color:#1E293B">GitHub</b></a><br>
-<span style="color:#64748B">Browse the source</span>
-</td>
-</tr>
-</table>
-
----
-
-## ⭐ Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=Kirky-X/fluxweir&type=Date)](https://star-history.com/#Kirky-X/fluxweir&Date)
-
-If this project helps you, please consider giving it a ⭐️!
-
-**Built by Kirky.X**
+Report issues and bugs on [Issues](https://github.com/Kirky-X/fluxweir/issues), ask questions and share ideas on [Discussions](https://github.com/Kirky-X/fluxweir/discussions), and browse the source on [GitHub](https://github.com/Kirky-X/fluxweir).
 
 ---
 
