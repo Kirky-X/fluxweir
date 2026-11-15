@@ -2,7 +2,8 @@
 # Fluxweir 发布流水线（推 v* tag 触发；workflow_dispatch 供恢复/重发）
 #
 # 产物：GitHub Release 附源码压缩包（自动生成）+ x86_64-linux-musl 静态
-# 二进制 + checksums.txt；CARGO_REGISTRY_TOKEN secret 存在时另发 crates.io。
+# 二进制 + checksums.txt；crates.io 走 OIDC trusted publishing（家族终态），
+# 未登记信任发布者时自动退回 CARGO_REGISTRY_TOKEN secret。
 # docker 镜像构建（docker/Dockerfile）与本机 `cargo build --locked --release`
 # 仍为等价部署路径（镜像构建用本地 ../vecboost，与发布二进制的 registry
 # 面可能存在未发布的本地差异）。
@@ -158,8 +159,10 @@ jobs:
 
   #-----------------------------------------------------------------------------
   # 创建 GitHub Release（自动生成变更说明；rc/beta/alpha 后缀标记预发布）。
-  # 版本校验全部在 verify 完成，本 job 只消费 outputs；无源码检出需求
-  # （gh api / action-gh-release 均不依赖仓库文件）。
+  # 版本校验全部在 verify 完成，本 job 只消费 outputs；无源码检出需求。
+  # 家族终态：gh release 脚本步替代 action-gh-release（zizmor superfluous，
+  # CodeNexus run 43629773752 先例），幂等（已存在仅刷新产物）、prerelease
+  # 按 semver 自动判定、uniqueness 断言仅对 tag 推送路径生效。
   #-----------------------------------------------------------------------------
   create-release:
     needs: [verify, build-binary]
@@ -174,44 +177,67 @@ jobs:
         with:
           name: musl-binary
           path: dist
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
-        with:
-          # 显式给 tag_name：手动触发时 GITHUB_REF 是分支，不显式指定会落在错误 ref
-          tag_name: v${{ needs.verify.outputs.version }}
-          generate_release_notes: true
-          draft: false
-          # 预发布判定跟 semver 语义走：版本含 '-' 即预发布（rc/beta/alpha 等）
-          prerelease: ${{ contains(needs.verify.outputs.version, '-') }}
-          files: |
-            dist/fluxweir-*-x86_64-linux-musl.tar.gz
-            dist/checksums.txt
-
-      - name: Verify release exists (idempotency guard)
-        # O(1) 端点：同 tag 在 GitHub 语义上至多一个 release，200 即存在；
-        # 不做全量翻页数数（release 增长后徒增请求与限流暴露）
+      - name: Create GitHub Release (idempotent)
+        # TAG 经 env 传入、不内插进 run 块（template-injection 向量）；显式 tag
+        # 由 verify 输出决定：手动触发时 GITHUB_REF 是分支，不显式指定会落错 ref
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: v${{ needs.verify.outputs.version }}
         run: |
-          STATUS=$(gh api -i "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" | head -1 | tr -d '\r')
-          echo "release for ${TAG}: ${STATUS}"
-          [[ "$STATUS" == *"200"* ]] || { echo "::error::release for ${TAG} 未按预期存在"; exit 1; }
+          VERSION="${TAG#v}"
+          ARGS=(--generate-notes)
+          # 预发布判定跟 semver 语义走：版本含 '-' 即预发布（rc/beta/alpha 等）
+          if [[ "$VERSION" == *-* ]]; then
+            ARGS+=(--prerelease)
+          fi
+          # find 收集（bash 无 globstar：dist/**/* 会漏一级目录的 checksums.txt）
+          FILES=$(find dist -type f | tr '\n' ' ')
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release ${TAG} already exists; skip creation, refresh artifacts only (idempotent)"
+            # shellcheck disable=SC2086
+            gh release upload "$TAG" $FILES --clobber
+            exit 0
+          fi
+          # shellcheck disable=SC2086
+          gh release create "$TAG" $FILES "${ARGS[@]}"
+
+      # uniqueness 断言（最终一致性窗口轮询 5×3s——家族先例 CodeNexus v0.4.0：
+      # create 后列表端点短暂读到 0 致断言误杀）。仅 tag 推送路径生效；dispatch
+      # 重跑跑在分支上无新 tag 可断言，幂等性由 create 步的 gh release view 守卫承担。
+      - name: Verify release uniqueness
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ needs.verify.outputs.version }}
+        run: |
+          COUNT=0
+          for i in 1 2 3 4 5; do
+            COUNT=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --paginate --jq "[.[] | select(.tag_name == \"${TAG}\")] | length")
+            echo "try${i}: release objects for ${TAG}: ${COUNT}"
+            if [ "${COUNT}" = "1" ]; then
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::expected exactly 1 release for ${TAG}, found ${COUNT} after 5 retries; release state is not idempotent"
+          exit 1
 
   #-----------------------------------------------------------------------------
-  # 条件发布 crates.io：仅当 CARGO_REGISTRY_TOKEN secret 存在时执行（缺 secret
-  # 跳过不报错）。token 经 env 传递（cargo 原生读取 CARGO_REGISTRY_TOKEN），
-  # 不落盘不回显。已发布版本（手动重发场景）幂等跳过。vecboost 就位与校验
-  # 同 build-binary。
+  # crates.io trusted publishing（OIDC，家族终态）：rust-lang/crates-io-auth-action
+  # 以 Actions OIDC 换 30 分钟短时凭证，无需长生命期 secret；crates.io 未登记
+  # 本仓信任发布者时该步失败（continue-on-error）自动退回 CARGO_REGISTRY_TOKEN
+  # secret。已发布版本（手动重发场景）幂等跳过。vecboost 就位与校验同
+  # build-binary。发布后 6×20s 轮询硬校验版本可见（403 未就绪/索引延迟不算成功）。
   #-----------------------------------------------------------------------------
   publish-crate:
-    name: Publish fluxweir to crates.io
+    name: Publish fluxweir to crates.io (OIDC + token fallback)
     needs: [verify, build-binary, create-release]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # OIDC trusted publishing 凭证交换
     env:
-      HAS_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN != '' }}
-      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
       VERSION: ${{ needs.verify.outputs.version }}
       VB_VERSION: ${{ needs.verify.outputs.vb_version }}
       VB_SHA256: c60f9464a41a5c82c2322cf04238ce1a6c7730149898e362a81fa91b53fc6963
@@ -227,18 +253,46 @@ jobs:
           echo "${VB_SHA256}  /tmp/vb.crate" | sha256sum -c --strict -
           mkdir -p ../vbtmp && tar -xzf /tmp/vb.crate -C ../vbtmp
           mv "../vbtmp/vecboost-${VB_VERSION}" ../vecboost
-      - name: Publish (idempotent)
+      # 幂等：已发布版本直接跳过，避免重跑撞 "already exists"；查询异常显式失败
+      - name: Check already published
+        id: published
         run: |
-          if [[ "$HAS_TOKEN" != "true" ]]; then
-            echo "CARGO_REGISTRY_TOKEN 未配置——跳过 crates.io 发布"
-            exit 0
-          fi
-          # 已发布版本幂等跳过：手动重发不因 already exists 标红链尾
-          HTTP=$(curl -s -o /dev/null -w '%{http_code}' \
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' \
             -A "fluxweir-release" "https://crates.io/api/v1/crates/fluxweir/${VERSION}")
-          if [[ "$HTTP" == "200" ]]; then
-            echo "fluxweir ${VERSION} 已在 crates.io——跳过发布"
-            exit 0
+          echo "fluxweir ${VERSION}: HTTP ${CODE}"
+          [[ "$CODE" == "200" || "$CODE" == "404" ]] || { echo "::error::crates.io 查询异常: HTTP ${CODE}"; exit 1; }
+          echo "exists=$([[ "$CODE" == "200" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      # 家族终态：OIDC 优先；未登记信任发布者时失败（continue-on-error），
+      # 后续 publish 自动退回 CARGO_REGISTRY_TOKEN（注册后可删兜底分支）。
+      - name: Authenticate to crates.io (OIDC)
+        id: auth
+        if: steps.published.outputs.exists == 'false'
+        continue-on-error: true
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+      - name: Publish (idempotent)
+        if: steps.published.outputs.exists == 'false'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token || secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [[ -z "${CARGO_REGISTRY_TOKEN}" ]]; then
+            echo "::error::无 crates.io 凭证：OIDC 交换失败且 CARGO_REGISTRY_TOKEN secret 为空"
+            exit 1
           fi
-          [[ "$HTTP" == "404" ]] || { echo "::error::crates.io 查询异常: HTTP ${HTTP}"; exit 1; }
           cargo publish -p fluxweir --locked --registry crates-io
+      # 版本硬校验：防静默漏发（403 未就绪/404 索引未刷新都继续轮询，200 才算成功）
+      - name: Verify on crates.io
+        if: always()
+        run: |
+          ok=""; CODE=""
+          for i in 1 2 3 4 5 6; do
+            sleep 20
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+              -A "fluxweir-release" "https://crates.io/api/v1/crates/fluxweir/${VERSION}")
+            echo "try$i: HTTP ${CODE}"
+            if [[ "$CODE" == "200" ]]; then ok=1; break; fi
+            if [[ "$CODE" != "403" && "$CODE" != "404" ]]; then break; fi
+          done
+          if [[ -z "$ok" ]]; then
+            echo "::error::fluxweir ${VERSION} 未出现在 crates.io（HTTP ${CODE}）"
+            exit 1
+          fi
