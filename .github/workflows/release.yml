@@ -179,9 +179,13 @@ jobs:
           path: dist
       - name: Create GitHub Release (idempotent)
         # TAG 经 env 传入、不内插进 run 块（template-injection 向量）；显式 tag
-        # 由 verify 输出决定：手动触发时 GITHUB_REF 是分支，不显式指定会落错 ref
+        # 由 verify 输出决定：手动触发时 GITHUB_REF 是分支，不显式指定会落错 ref。
+        # GH_REPO 必须显式给：本 job 无 checkout（无 git 仓库上下文），gh release
+        # 子命令靠它解析 repo（dispatch run 43687203194 实录：缺它报
+        # "failed to run git: fatal: not a git repository"）
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           TAG: v${{ needs.verify.outputs.version }}
         run: |
           VERSION="${TAG#v}"
