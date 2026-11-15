@@ -1,6 +1,6 @@
 # Fluxweir FAQ
 
-本页汇总 Fluxweir（Rust LLM 路由网关）使用中的常见问题与真实怪癖，每条答案末尾附代码位置。系统性操作说明见 [用户指南](./USER_GUIDE.md)，项目总览见 [README](../README.md)。
+本页汇总 Fluxweir（Rust LLM 路由网关）使用中的常见问题与真实怪癖，每条答案末尾附代码位置。系统性操作说明见 [用户指南](./USER_GUIDE.md)，项目总览见 [README](../README_CN.md)。
 
 ## 📋 目录
 
@@ -155,4 +155,4 @@ per-vendor 熔断器（limiteron CircuitBreaker）状态机：
 | [用户指南](./USER_GUIDE.md) | 从编译到运维的完整操作路径 |
 | [API 参考](./API_REFERENCE.md) | 端点与请求 / 响应格式 |
 | [架构文档](./ARCHITECTURE.md) | 内部机制与模块设计 |
-| [README](../README.md) | 项目总览 |
+| [README](../README_CN.md) | 项目总览 |

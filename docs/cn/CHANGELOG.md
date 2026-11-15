@@ -384,4 +384,29 @@ Docker。安全面：API Key 仅存摘要常量时间比较、netguard SSRF 防�
 
 ---
 
-[📖 README](../README.md) · [🤝 贡献指南](./CONTRIBUTING.md) · [🔒 安全文档](./SECURITY.md)
+## 🗺️ 开发路线图
+
+<details>
+<summary>📋 表格</summary>
+
+<table style="width:100%; border-collapse: collapse">
+<tr><th style="text-align:center">状态</th><th style="text-align:left">方向</th><th style="text-align:left">条目</th></tr>
+<tr><td align="center">✅</td><td>核心网关</td><td>OpenAI / Anthropic / Responses / Gemini 协议互转、SSE 流式、零拷贝透传、52 个方法端点（数据面 14 + 搜索/抓取 2 + 管理面 35 + 健康 1，feature 全开口径）</td></tr>
+<tr><td align="center">✅</td><td>智能路由</td><td>6 因子加权（第 6 项配额预算因子，mode 默认 off）+ 温度平滑、缓存经济学会话亲和（auto 按缓存价值粘 + 落盘恢复，legacy 默认）、LinUCB、Power-of-Two、SLA / LPS 可选层；难度定档三档路由（规则 + 进程内决策引擎融合，<code>difficulty-classifier</code> feature 门控）；缓存成本套件（前缀亲和 PoTC / 语义缓存默认关，缓存价因子默认开）</td></tr>
+<tr><td align="center">✅</td><td>弹性容错</td><td>limiteron 熔断 / 重试 / Fallback 换路链、拥塞感知准入、key 档位</td></tr>
+<tr><td align="center">✅</td><td>可观测与成本</td><td>异步日志、Token 小时级预聚合、全局指标、`[[model_catalog]]` 四档计价与成本分账</td></tr>
+<tr><td align="center">✅</td><td>配置热更新</td><td>confers DynamicField 无锁热读、事务写路径、快照备份与 restart_required 提示</td></tr>
+<tr><td align="center">✅</td><td>国际化</td><td>Fluent en/zh 双语束覆盖全部业务消息</td></tr>
+<tr><td align="center">✅</td><td>成本查询 API</td><td>成本分账落库（<code>token_usage</code> 四档成本列，V2 迁移）+ <code>/admin/cost</code> 聚合查询端点（预聚合表按 vendor/model 分组）+ 逐请求成本落库（<code>request_logs.cost_usd</code>：四档求和 × 目录单价，rerank 按每千文档价）；进程内 <code>CostTracker</code> 启动自 <code>token_usage</code> 恢复（<code>[metrics].cost_restore_window_hours</code>，默认 24h；内存库启动跳过、恢复失败 warn 继续）</td></tr>
+<tr><td align="center">✅</td><td>用量洞察与 OTLP</td><td>会话级成本聚合（<code>GET /admin/sessions</code>：成本/token/请求数/首末时间 + 首条消息 80 字符标题）与上下文利用率分析（<code>GET /admin/context-stats</code>：平均占用率、缓存份额、五桶分布），<code>[usage_insights]</code> 运行时开关（默认开，关闭时四列写 NULL 且端点 404）；<code>request_logs</code> 新增 <code>session_key</code>/<code>context_window_tokens</code>/<code>cache_read_tokens</code>/<code>cache_write_tokens</code> 四列（V5 迁移，三方言）；OTLP/HTTP-Proto 指标导出（<code>otlp</code> feature，不进 <code>full</code>，<code>[otlp]</code> 默认关，导出失败 fail-open 计数）</td></tr>
+<tr><td align="center">✅</td><td>Rust SDK</td><td>sdk 并入 <code>src/sdk</code>（<code>sdk</code> feature 门控，原 workspace 继承断裂已消除）：chat / stream / embed / rerank / responses / admin</td></tr>
+<tr><td align="center">✅</td><td>性能基准</td><td>Criterion 组件级基线（转换 / SSE 帧解析 / 路由决策路径 / 缓存经济学亲和）已建立，首轮数据见 <a href="./PERFORMANCE.md">PERFORMANCE.md</a></td></tr>
+<tr><td align="center">✅</td><td>日志查询补全</td><td><code>/admin/logs</code> 的 end_time 过滤已落 SQL（闭区间 <code>[start_time, end_time]</code>，两端含边界）</td></tr>
+<tr><td align="center">✅</td><td>订阅账号上游</td><td>OAuth 订阅账号（PKCE 授权码流程）并入 vendor 出站凭证池（<code>subscription-vendor</code> feature，<strong>不进 <code>full</code></strong>，<code>[subscription]</code> 默认关双门控）；refresh token 只存 vault（AEAD）、access token 仅内存 + 到期前 5 分钟单飞刷新；刷新失败降级 30 分钟冷却重试一次仍败摘除；admin 四端点（authorize / callback / accounts / 吊销）。<strong>合规警示见「安全」节</strong></td></tr>
+</table>
+
+</details>
+
+---
+
+[📖 README](../README_CN.md) · [🤝 贡献指南](./CONTRIBUTING.md) · [🔒 安全文档](./SECURITY.md)

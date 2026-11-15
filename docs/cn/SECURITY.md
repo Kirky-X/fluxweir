@@ -1,6 +1,6 @@
 # Fluxweir 安全文档
 
-[🤝 贡献指南](./CONTRIBUTING.md) · [📜 更新日志](./CHANGELOG.md) · [📖 用户指南](./USER_GUIDE.md) · [🏗️ 架构文档](./ARCHITECTURE.md) · [📖 README](../README.md)
+[🤝 贡献指南](./CONTRIBUTING.md) · [📜 更新日志](./CHANGELOG.md) · [📖 用户指南](./USER_GUIDE.md) · [🏗️ 架构文档](./ARCHITECTURE.md) · [📖 README](../README_CN.md)
 
 Fluxweir 将安全性作为核心设计目标。本文档介绍 Fluxweir 的安全策略、漏洞报告流程、内置安全机制与已知安全边界。
 
@@ -305,7 +305,7 @@ key 的摘要跨重启稳定（分账归属与缓存键的正确性依赖这一�
 
 ## ✅ 安全审查状态
 
-以下为项目自审记录（见 [README · 安全](../README.md#-安全)）：
+以下为项目自审记录（见 [README · 安全](../README_CN.md#-安全)）：
 
 | 审查项 | 结果 |
 |:-------|:-----|
@@ -357,6 +357,17 @@ key 的摘要跨重启稳定（分账归属与缓存键的正确性依赖这一�
 | **初步评估** | 7 天内 | 完成严重程度定级 |
 | **修复开发** | 视严重程度而定 | 按优先级实施修复 |
 | **协同披露** | 修复可用之后 | 发布公开公告 |
+
+---
+
+## ⚠️ 订阅上游合规警示（subscription-vendor）
+
+`subscription-vendor` feature 允许把 OAuth 订阅账号（如 Claude Pro/Max）作为服务端出站上游。**该能力默认不存在于任何构建产物**：feature 不进 `full`，`[subscription].enabled` 默认 `false`，双门全开才有行为。启用前必读：
+
+- 以订阅账号作服务端出站上游**可能违反厂商服务条款**（厂商公开政策将订阅 OAuth 面限定于其官方客户端），商用部署请自行评估合规风险，责任由部署者自担；
+- 本网关只实现标准 OAuth 授权码 + PKCE 流程，不含任何绕过限制的技术；
+- 授权回调受**单实例约束**：PKCE state 存进程内存，多副本部署不共享，回调必须打回同一实例；
+- `subscription_refresh_fail_total` / `subscription_accounts_degraded`（`/admin/metrics`）暴露账号健康面。
 
 ---
 
