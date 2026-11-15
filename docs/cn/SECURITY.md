@@ -1,6 +1,6 @@
 # Fluxweir 安全文档
 
-[🤝 贡献指南](./CONTRIBUTING.md) · [📜 更新日志](./CHANGELOG.md) · [📖 用户指南](./USER_GUIDE.md) · [🏗️ 架构文档](./ARCHITECTURE.md) · [📖 README](../README_CN.md)
+[🤝 贡献指南](./CONTRIBUTING.md) · [📜 更新日志](./CHANGELOG.md) · [📖 用户指南](./USER_GUIDE.md) · [🏗️ 架构文档](./ARCHITECTURE.md) · [📖 README](../../README_CN.md)
 
 Fluxweir 将安全性作为核心设计目标。本文档介绍 Fluxweir 的安全策略、漏洞报告流程、内置安全机制与已知安全边界。
 
@@ -305,7 +305,7 @@ key 的摘要跨重启稳定（分账归属与缓存键的正确性依赖这一�
 
 ## ✅ 安全审查状态
 
-以下为项目自审记录（见 [README · 安全](../README_CN.md#-安全)）：
+以下为项目自审记录（见 [README · 安全](../../README_CN.md#-安全)）：
 
 | 审查项 | 结果 |
 |:-------|:-----|

@@ -409,4 +409,4 @@ Docker。安全面：API Key 仅存摘要常量时间比较、netguard SSRF 防�
 
 ---
 
-[📖 README](../README_CN.md) · [🤝 贡献指南](./CONTRIBUTING.md) · [🔒 安全文档](./SECURITY.md)
+[📖 README](../../README_CN.md) · [🤝 贡献指南](./CONTRIBUTING.md) · [🔒 安全文档](./SECURITY.md)

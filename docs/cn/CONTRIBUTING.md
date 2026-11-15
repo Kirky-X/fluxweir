@@ -1,6 +1,6 @@
 # Fluxweir 贡献指南
 
-[🔒 安全文档](./SECURITY.md) · [📜 更新日志](./CHANGELOG.md) · [📖 用户指南](./USER_GUIDE.md) · [🏗️ 架构文档](./ARCHITECTURE.md) · [📖 README](../README_CN.md)
+[🔒 安全文档](./SECURITY.md) · [📜 更新日志](./CHANGELOG.md) · [📖 用户指南](./USER_GUIDE.md) · [🏗️ 架构文档](./ARCHITECTURE.md) · [📖 README](../../README_CN.md)
 
 感谢您关注 **Fluxweir**！无论您是在修复缺陷、添加新特性、改进文档还是帮助他人，您的贡献都弥足珍贵。
 
@@ -268,7 +268,7 @@ flowchart LR
 
 ## 📄 License
 
-Fluxweir 以 **MIT License** 发布（见根目录 [LICENSE](../LICENSE)），版权所有 `Copyright (c) 2026 Kirky.X🌠`。提交贡献即表示您同意以同一许可授权您的贡献。
+Fluxweir 以 **MIT License** 发布（见根目录 [LICENSE](../../LICENSE)），版权所有 `Copyright (c) 2026 Kirky.X🌠`。提交贡献即表示您同意以同一许可授权您的贡献。
 
 ---
 

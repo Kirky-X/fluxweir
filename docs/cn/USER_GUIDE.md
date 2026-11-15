@@ -2,7 +2,7 @@
 
 **Fluxweir** 是一个智能 LLM 路由代理系统：多厂商统一管理、格式转换、智能调度。基于 Rust + Axum 0.8 + sdforge 构建，把多个上游 LLM 供应商抽象为单一接入点，提供加权路由、限流熔断、请求日志、Token 统计等生产级能力。本指南覆盖从编译启动到部署运维的完整操作路径。
 
-> 相关文档：[FAQ](./FAQ.md) · [API 参考](./API_REFERENCE.md) · [README](../README_CN.md)
+> 相关文档：[FAQ](./FAQ.md) · [API 参考](./API_REFERENCE.md) · [README](../../README_CN.md)
 
 ## 📋 目录
 
@@ -1299,7 +1299,7 @@ SDK 已并入主 crate 的 `src/sdk` 模块（`sdk` feature 门控，默认 `ful
 | [API 参考](./API_REFERENCE.md) | 端点与请求/响应格式    |
 | [架构文档](./ARCHITECTURE.md)  | 内部机制与模块设计     |
 | [安全文档](./SECURITY.md)      | 安全策略               |
-| [README](../README_CN.md)         | 项目总览与特性清单     |
+| [README](../../README_CN.md)         | 项目总览与特性清单     |
 
 ## 搜索注入与守护抓取（`web-search` feature）
 
