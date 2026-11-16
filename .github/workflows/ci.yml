@@ -26,12 +26,19 @@ name: CI/CD
 on:
   push:
     branches: [main, develop]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".gitignore"
+      - "LICENSE*"
   pull_request:
     branches: [main, develop]
   workflow_dispatch:
-  # 每日安全扫描：仅 security 作业响应 schedule，其余作业跳过
+  # 每日安全扫描（security 作业响应；full-features 同样响应本 cron）
   schedule:
     - cron: "37 5 * * *"
+    # 每周一 03:00 UTC：全矩阵兜底（build 展开三平台 + beta 腿）
+    - cron: "0 3 * * 1"
 
 permissions:
   contents: read
@@ -327,21 +334,45 @@ jobs:
   # 默认图另含 aws-lc-sys（rustls 后端），其 C 构建需 cmake（Windows 另需
   # NASM）——GH runner 镜像自带，无需额外安装
   #-----------------------------------------------------------------------------
+  # 矩阵计算 job：push/PR 仅 ubuntu 稳定腿（降频），workflow_dispatch /
+  # 每周兜底 cron 补齐 macOS/Windows + beta 工具链腿；每日安全扫描 cron
+  # 不展开编译矩阵（本作业被跳过时 build 作业随 needs.result 链式跳过）。
+  # 矩阵 JSON 供 build 作业动态展开
+  build-matrix:
+    name: Compute build matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name != 'schedule' || github.event.schedule == '0 3 * * 1'
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        # event_name / event.schedule 经 env 传入 step，不在 run: 内 ${{ }} 内插（注入面收敛）
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$EVENT_SCHEDULE" = "0 3 * * 1" ]; then
+            echo "{\"os\":[\"ubuntu-latest\",\"macos-latest\",\"windows-latest\"],\"toolchain\":[\"$RUST_VERSION\",\"beta\"]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "{\"os\":[\"ubuntu-latest\"],\"toolchain\":[\"$RUST_VERSION\"]}" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
-    name: Build (${{ matrix.os }})
+    name: Build (${{ matrix.os }}, ${{ matrix.toolchain }})
+    needs: build-matrix
+    # job 级 if 只引 needs.result：矩阵上下文在 job 级 if 不可用（startup_failure）
+    if: needs.build-matrix.result == 'success'
     runs-on: ${{ matrix.os }}
     # 超时按实测留 5~6 倍余量（冷编约 92s + checkout/工具链/缓存开销；
     # windows 编译与链接更慢），把单腿挂死的尾部成本压住
     timeout-minutes: ${{ matrix.os == 'windows-latest' && 30 || 20 }}
-    if: github.event_name != 'schedule'
     strategy:
       fail-fast: false
-      # macos 腿移至 nightly：私有仓 macOS runner 池排队系统性取消
-      # （runner_id=0，连续两轮 queued 后被 cancel，rerun ×2 同因），push
-      # 门禁保 ubuntu/windows 双腿编译面；macos 编译面由 nightly 兜底 +
-      # 开发机 arm64 全绿覆盖。与 full-features 的 nightly 设计同款。
-      matrix:
-        os: ["ubuntu-latest", "windows-latest"]
+      # macos 腿曾因私有仓 macOS runner 池排队系统性取消而移出 push 门禁；
+      # 转公开后恢复：push 仅 ubuntu 稳定腿，weekly cron + dispatch 展开
+      # 三平台 × {MSRV, beta}（原 nightly 兜底设计由本周一 cron 承接）
+      matrix: ${{ fromJSON(needs.build-matrix.outputs.matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -351,10 +382,12 @@ jobs:
       - uses: ./.github/actions/fetch-vecboost
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
-          toolchain: ${{ env.RUST_VERSION }}
+          toolchain: ${{ matrix.toolchain }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          shared-key: cross-${{ runner.os }}
+          # 键掺入 matrix.toolchain：weekly 全矩阵下同一 OS 有 MSRV/beta 两腿，
+          # 同 key 两腿不可各自存取（后存腿被跳过、互相restore错产物）
+          shared-key: cross-${{ runner.os }}-${{ matrix.toolchain }}
       # --all-features 因 db-* 互斥不可用（同 check 注释），改「默认 + 零特性」
       # 两口径；二者均已本机验证通过
       - name: Build (default features)
