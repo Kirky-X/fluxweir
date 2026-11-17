@@ -8,15 +8,15 @@ rust-version = "1.97.1"
 autobins = false
 
 [features]
-# default 覆盖 rest + embedded + sdk（embedded 拉 fluxweir full+db-sqlite、rest/sdk 各依赖）；
-# grpc 刻意不入 default，保留「普通构建不需 protoc」的隔离（见根 Cargo.toml grpc feature 注释）。
+# default 覆盖 rest + embedded + sdk（embedded 拉 fluxweir full+db-sqlite）
+# grpc 刻意不入 default，保留普通构建不需 protoc 的隔离（见根 Cargo.toml grpc feature 注释）
 default = ["rest", "embedded", "sdk"]
 # rest：裸 HTTP 直连，不依赖 fluxweir 本体
 rest = ["dep:anyhow", "dep:futures-util", "dep:reqwest"]
 # embedded：库形态嵌入，需 fluxweir 完整装配（full）+ 一个后端（fluxweir/db-sqlite）
 embedded = ["dep:fluxweir", "dep:axum", "fluxweir/full", "fluxweir/db-sqlite"]
-# sdk：HTTP 客户端门面，只开 fluxweir sdk feature——default-features=false 保证
-# `--no-default-features --features sdk` 的轻量构建不把网关服务器拖进来
+# sdk：HTTP 客户端门面，只开 fluxweir sdk feature；default-features=false 保证轻量构建
+# --no-default-features --features sdk 不把网关服务器拖进来
 sdk = ["dep:fluxweir", "fluxweir/sdk"]
 # grpc：tonic 客户端，不依赖 fluxweir 本体；仅拉客户端运行时依赖，代码生成见 build.rs
 grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost"]
@@ -30,15 +30,14 @@ futures = { workspace = true, features = ["std"] }
 # 按示例门控：保住「轻 sdk 构建 / rest 不拖网关 / grpc 不引 fluxweir」的既有依赖足迹
 anyhow = { workspace = true, features = ["std"], optional = true }
 futures-util = { workspace = true, features = ["std"], optional = true }
-# default-tls 必留：rest 示例直连部署网关，缺 TLS 特性时 -p 单成员构建（--features rest）
-# 运行期 https 调用必失败；与根包口径一致（0.13 起 default-tls = rustls）
+# default-tls 必留：rest 示例直连部署网关，缺 TLS 特性时 -p 单成员构建（--features rest）运行期 https 调用必失败；与根包口径一致（0.13 起 default-tls = rustls）
 reqwest = { workspace = true, features = ["json", "stream", "default-tls"], optional = true }
 # 最小集：http1（serve）+ json（Json）+ tokio（运行时）
 axum = { workspace = true, features = ["http1", "json", "tokio"], optional = true }
 # default-features=false：由 embedded/sdk 各自精确开启，避免 full 被无条件并入 sdk 构建
 fluxweir = { workspace = true, optional = true }
-# channel（非 transport）：本成员只消费客户端 stub——build.rs 以 build_server(false)
-# 生成，transport = [server, channel] 会白拉 h2/socket2/tokio-stream 服务端栈。
+# channel（非 transport）：本成员只消费客户端 stub，build.rs 以 build_server(false) 生成
+# transport = [server, channel] 会白拉 h2/socket2/tokio-stream 服务端栈
 tonic = { workspace = true, features = ["channel", "codegen"], optional = true }
 tonic-prost = { workspace = true, optional = true }
 prost = { workspace = true, features = ["derive"], optional = true }

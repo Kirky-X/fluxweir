@@ -4,14 +4,13 @@ version = "0.1.2"
 edition = "2021"
 # MSRV 单一事实源：cargo 解析期据此硬拒更低工具链；CI 用此下限，Docker/release 用当前 stable。
 rust-version = "1.97.1"
-# 唯一 bin（src/main.rs）需显式登记 required-features（服务面 full 为编译前提），
-# 故关闭 bin 自动发现，防止无门控 target 混入默认构建（src/bin/ 已随 cost-replay
-# 折叠为主 CLI 子命令移除）。
+# 唯一 bin（src/main.rs）需显式登记 required-features（full 为编译前提），故关闭自动发现
+# 防止无门控 target 混入默认构建；src/bin/ 已随 cost-replay 折叠为主 CLI 子命令移除
 autobins = false
 # examples/ 是独立 workspace 成员、非本包示例目录：关闭自动发现，否则其顶层 .rs 会被误作 example target 编译失败。
 autoexamples = false
-# tests/ 按功能域目录化、Cargo 自动发现不递归，故关闭之、改用下方 [[test]] 显式注册（新增测试必须登记，特性门控留文件顶 `#![cfg(feature = ...)]`）。
-# 非 default 特性专用的测试须加 required-features（与文件顶 cfg 同集），避免 default 口径产出空壳二进制、污染测试与覆盖率报告。
+# tests/ 按功能域目录化且发现不递归，改用 [[test]] 显式注册；门控留文件顶 #![cfg(feature = ...)]
+# 非 default 专用测试加 required-features（同集），避免空壳二进制污染测试与覆盖率
 autotests = false
 # benches/ 同理关闭自动发现、走下方 [[bench]] 显式注册（共享 fixture benches/common 不参与发现，新增基准必须登记）。
 autobenches = false
@@ -31,19 +30,19 @@ path = "src/main.rs"
 required-features = ["full"]
 
 [features]
-# default 携带 db-sqlite：`cargo run` 默认仍为 sqlite 文件库；库嵌入方用 default-features = false 自选后端。
-# `--features full` 单独使用不含任何数据库后端——dbnexus 的「无数据库 feature」守卫会编译报错，full 必须搭配一个 db-*。
+# default 携带 db-sqlite：cargo run 默认用 sqlite 文件库；嵌入方用 default-features=false 自选后端
+# --features full 单独不含数据库后端，dbnexus 守卫报错，full 须搭配一个 db-*
 default = ["full", "db-sqlite"]
 full = ["web-server", "database", "vendor-management", "router", "protocol", "infrastructure", "sdforge-integration", "logging", "resilience", "cost-tracking", "sdk", "vault"]
-# 数据库后端三组互斥由 dbnexus 编译期守卫强制（embedded 与 server-side 不可混），驱动选择交给使用方/部署方。
-# `?` 语法：仅当依赖已被 database/logging 激活时生效；replica-routing 必须随任一后端透传
+# 三组数据库后端互斥由 dbnexus 编译期守卫强制（embedded 与 server-side 不可混），驱动交部署方选
+# `?` 仅当依赖已被 database/logging 激活时生效；replica-routing 须随任一后端透传
 db-sqlite = ["dbnexus?/sqlite", "dbnexus?/runtime-tokio-rustls", "dbnexus?/replica-routing", "inklog?/sqlite"]
 db-postgres = ["dbnexus?/postgres", "dbnexus?/runtime-tokio-rustls", "dbnexus?/replica-routing", "inklog?/postgres"]
 db-mysql = ["dbnexus?/mysql", "dbnexus?/runtime-tokio-rustls", "dbnexus?/replica-routing", "inklog?/mysql"]
 # 显式入链 database/infrastructure；hex/sha2/subtle 等为 api/middleware 直用
 web-server = ["dep:axum", "dep:tower", "dep:tower-http", "dep:async-stream", "router", "sdforge-integration", "http", "database", "infrastructure", "dep:limiteron", "dep:hex", "dep:sha2", "dep:subtle", "dep:once_cell"]
-# 宏门控开关，无实现体：sdforge `#[forge]` 宏按**目标 crate** 的 feature 求值 `cfg(feature = "http")`——
-# 无同名 feature 时 RouteRegistration 整体被 cfg 掉，#[forge] 站点路由（/health）静默丢失。随 web-server 启用。
+# 宏门控开关无实现体：#[forge] 按目标 crate feature 求值 cfg(feature = "http")
+# 无同名 feature 时 RouteRegistration 被 cfg 掉，/health 等路由静默丢失；随 web-server 启用
 http = []
 # 韧性模块（FallbackChain + 错误映射 + metrics）；熔断/重试复用 limiteron
 resilience = []
@@ -57,68 +56,49 @@ vendor-management = ["dep:reqwest", "dep:limiteron", "dep:rand", "dep:async-chan
 vault = ["dep:cocoon", "dep:secrecy", "dep:sha2", "dep:hex", "dep:rand"]
 # router 模块（含 vendor-management 联动）；dep:oxcache 供 response_cache/bootstrap 直用 CacheBackend。
 router = ["vendor-management", "dep:oxcache"]
-# vecboost 进程内分类器；关闭时 difficulty 走纯规则（w_clf>0 被校验拒绝）
-# path dep：vecboost 库面快速演进期、feature 组合未稳，升级跟随上游 tag 并跑全量测试。
+# vecboost 进程内分类器；关闭时 difficulty 走纯规则（w_clf>0 被校验拒绝）；path dep：vecboost 库面快速演进期、feature 组合未稳，升级跟随上游 tag 并跑全量测试。
 difficulty-classifier = ["dep:vecboost"]
 # 语义响应缓存：vecboost BGE 嵌入 + 线性余弦检索（强制租户隔离）
 semantic-cache = ["dep:vecboost"]
 # marker feature（当前无 cfg 消费点；保留组合位与单开关语义）
 protocol = []
 infrastructure = ["dep:oxcache", "dep:trait-kit"]
-# sdforge-integration：marker feature（i18n 消息层已统一走 sdforge::i18n 宿主注册表，
-# sdforge 转无条件依赖 default-features=false 最小面，dep:sdforge 语法随之废除）；
-# 保留 feature 位以承载 otlp/web-server 的组合语义与文档锚点。
+# sdforge-integration：marker feature（i18n 统一走 sdforge::i18n 注册表，sdforge 转无条件依赖，dep: 语法废除）
+# 保留 feature 位承载 otlp/web-server 组合语义与文档锚点
 sdforge-integration = []
-# gRPC 服务器（sdforge grpc 门面）：不进 full——编译 proto/sdforge.v1.proto 需 protoc，默认构建不引入该工具链前置。
-# feature 名兼作 `#[forge]` 的 `cfg(feature = "grpc")` 门控；服务器另受 web-server + logging 门控
+# gRPC 服务器（sdforge grpc 门面）不进 full：proto 编译需 protoc，默认构建不引入该前置
+# feature 名兼作 #[forge] 的 cfg(feature = "grpc") 门控；另受 web-server + logging 门控
 grpc = ["sdforge/grpc", "sdforge/graceful"]
 logging = ["dep:inklog"]
-# sdk：HTTP 客户端 SDK（src/sdk，调用已部署网关的 Rust 客户端）；reqwest 复用 vendor-management 的 optional 依赖。
-# eventsource-stream 仅做 SSE 事件分帧，url 供 base URL 拼接。
+# sdk：HTTP 客户端 SDK（src/sdk，调用已部署网关）；reqwest 复用 vendor-management 的 optional 依赖
+# eventsource-stream 仅做 SSE 分帧，url 供 base URL 拼接
 sdk = ["dep:reqwest", "dep:eventsource-stream", "dep:url"]
-# OTLP 指标导出（usage-observability）：合规敏感面按需启用，不进 full——
-# 对外导出指标/成本流需部署方显式开启（delta spec otlp-export R-otlp-003 双门控的编译半边）。
-# cost-tracking / sdforge-integration 为其编译前提：桥接读 sdforge /metrics 渲染文本
-# （单一真源）+ CostTracker 快照。
+# OTLP 指标导出（usage-observability）合规敏感，不进 full——需部署方显式开启（R-otlp-003 双门控编译半边）
+# 编译前提 cost-tracking / sdforge-integration：桥接读 sdforge /metrics 文本（单一真源）+ CostTracker 快照
 otlp = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "cost-tracking", "sdforge-integration"]
-# 出站请求掩码（outbound-masking）：识别引擎复用 inklog（logging 已带 inklog，
-# masking 显式声明自身直用面）、哈希复用 sha2/hex；不进 full——合规敏感能力
-# 默认不出现在产物中，按需启用。运行时另有 [masking].enabled 热读开关。
+# 出站掩码（outbound-masking）：识别复用 inklog、哈希复用 sha2/hex；不进 full，按需启用
+# 合规敏感默认不进产物；运行时另有 [masking].enabled 热读开关
 masking = ["dep:inklog", "dep:sha2", "dep:hex"]
-# 模型目录自动同步（catalog-sync）：reqwest 出站拉取 models.dev 映射进
-# [[model_catalog]]（只增不改）；不进 full——对外网络请求能力按需启用。
-# 运行时另有 [catalog_sync].enabled 热读开关（双门控）。
+# 模型目录自动同步（catalog-sync）：reqwest 拉取 models.dev 映射进 [[model_catalog]]（只增不改）
+# 不进 full，按需启用；运行时另有 [catalog_sync].enabled 热读双门控
 catalog-sync = ["dep:reqwest"]
-# 订阅账号上游（subscription-upstream）：OAuth 订阅账号（PKCE 授权码流程）
-# 并入 vendor 出站池。合规敏感能力不进 full——订阅上游可能违反厂商服务
-# 条款，默认产物零编译面，部署者自行评估后按需启用。运行时另有
-# [subscription].enabled 热读开关（双门控）；refresh token 只存 vault（AEAD）。
+# 订阅账号上游（OAuth PKCE 并入 vendor 出站池）：合规敏感，不进 full、默认零编译面
+# [subscription].enabled 热读双门控，refresh token 只存 vault(AEAD)
 subscription-vendor = ["vendor-management", "vault", "dep:rand"]
-# OIDC 换短时网关键（oidc）：JWT 验签（RS256/ES256）+ 进程内 TTL 短时键，
-# 短时键继承绑定母键 tier 与全部限制。不进 full——新增出站 JWKS 拉取，
-# opt-in（对外网络新能力按需启用）；无 [auth.oidc_rules] 规则时运行时
-# 整体关闭，行为与今日逐字节一致。sha2/hex 复用既有 optional 条目
-#（短时键派生与摘要）。crypto 后端取 rust_crypto 纯 Rust 集（rsa+p256）。
+# oidc：JWT 验签 RS256/ES256 + 进程内 TTL 短时键（继承母键 tier 与限制），不进 full，需 opt-in
+# 新增出站 JWKS 拉取；无 [auth.oidc_rules] 时运行时整体关闭；sha2/hex 复用，crypto 取 rust_crypto（rsa+p256）
 oidc = ["dep:jsonwebtoken", "dep:reqwest", "dep:sha2", "dep:hex"]
-# 出站 SSRF 防护（netguard）：特殊网段判定（纯 std 零依赖）——网关具备任意
-# URL 抓取能力（/v1/fetch）时防内网/保留地址探测；不进 full——对外网络新
-# 能力按需启用。web-search 依赖其编译（抓取路径先闭合 SSRF 面）。
+# netguard 出站 SSRF 防护：纯 std 特殊网段判定，/v1/fetch 任意 URL 抓取时防内网探测，不进 full
+# web-search 依赖其编译（抓取路径先闭合 SSRF 面）
 netguard = []
-# 搜索能力注入（web-search-inject）：SearchProvider 多源搜索 + netguard 守护
-# 抓取（/v1/search、/v1/fetch）；reqwest 复用 vendor-management 的 optional
-# 依赖。不进 full——对外网络新能力按需启用。[web_search].enabled 运行时默认关。
+# web-search-inject：SearchProvider 多源搜索 + netguard 守护抓取（/v1/search、/v1/fetch），reqwest 复用 vendor-management
+# 不进 full，按需启用；[web_search].enabled 运行时默认关
 web-search = ["dep:reqwest", "netguard"]
-# 离线成本回放（cost-replay）：读 request_logs 逐请求历史，按场景（affinity/
-# cache_ttl）重放 counterfactual 成本——纯显式代码，不调模型、不开服务、不写库。
-# 不进 full：离线分析工具默认产物不含，构建时显式启用并搭配一个 db 后端
-# （子命令双门控 cost-replay + db-sqlite，见 utils::replay::cli）。CLI 承载面
-# 走 sdforge 注册表（CliBuilder + inventory + dispatch），故透传 sdforge/cli。
+# cost-replay：读 request_logs 按场景（affinity/cache_ttl）离线重放 counterfactual 成本，不调模型/服务/库
+# 不进 full，须显式启用 + db 后端（双门控 cost-replay + db-sqlite，见 utils::replay::cli），透传 sdforge/cli
 cost-replay = ["database", "dep:dbnexus", "dep:sea-orm", "sdforge/cli"]
-# 内置控制台前端（console）：rust-embed 嵌入 web/console/dist（Vite 产物），
-# src/server/console.rs 挂 GET /console 与 /console/* 静态服务 + SPA fallback。
-# 不进 full：嵌入使二进制体积按前端产物体积增长（约 +213KB 原始字节；线上 gzip 传输约 70KB），且
-# build.rs 会触发 npm 工具链依赖——默认产物与 CI 不应背上前端构建前提，
-# 演示/部署按需显式 --features console。
+# console：rust-embed 嵌入 web/console/dist（Vite 产物），src/server/console.rs 挂 /console 静态服务 + SPA fallback
+# 不进 full：体积 +213KB（gzip ~70KB）且 build.rs 触发 npm 工具链，按需 --features console
 console = ["web-server", "dep:rust-embed"]
 
 [lints.rust]
@@ -133,13 +113,13 @@ tower = { workspace = true, optional = true }
 tower-http = { workspace = true, features = ["cors", "trace", "request-id", "compression-gzip"], optional = true }
 
 # 数据库层：kit 模块 + pool-warmup + retry（database.rs 直用 RetryPolicy）
-# 后端与 runtime 不在此写死：Cargo feature 只加不减，写死会锁死单后端，由 db-* 三组透传按构建选择。
+# 后端/runtime 不在此写死：feature 只加不减，由 db-* 三组按构建透传选择
 dbnexus = { workspace = true, features = ["permission", "sql-parser", "macros", "config-env", "with-time", "kit", "migration", "auto-migrate", "pool-warmup", "retry"], optional = true }
 # sea-orm 零特性面（ConnectionTrait/Statement/DatabaseBackend/Value 直用，无 entity derive、无 sqlx 驱动）
 sea-orm = { workspace = true, optional = true }
 
 # 日志层：落库后端随 db-* 透传；fast-masking + secret-scan 仅日志面启用
-# rc.11 起 inklog 解除 oxcache 精确 pin，与 vecboost 线（需 oxcache rc.10）解析区间相交
+# rc.11 起 inklog 解除 oxcache 精确 pin，与 vecboost 线（需 oxcache rc.10）区间相交
 inklog = { workspace = true, features = ["kit", "fast-masking", "secret-scan"], optional = true }
 # 配置加载与热重载：dynamic/snapshot/loader + json 投影 + security-rules
 confers = { workspace = true, features = ["toml", "json", "dynamic", "snapshot", "security-rules", "hot-reload-kit"] }
@@ -147,28 +127,24 @@ confers = { workspace = true, features = ["toml", "json", "dynamic", "snapshot",
 tracing = { workspace = true, features = ["std", "attributes"] }
 # log→tracing 事件桥：reqwest/sea-orm 经 log crate 输出而 inklog LogAdapter 不投自定义 sink，装 LogTracer 并入统一总线。
 tracing-log = { workspace = true, features = ["log-tracer", "std"] }
-# 主依赖只用 registry + 自定义 Layer（bootstrap.rs），不接 fmt/json/env-filter/ansi 面；
-# registry 蕴含 std，不再重复声明
+# 主依赖只用 registry + 自定义 Layer（bootstrap.rs），不接 fmt/json/env-filter/ansi 面；registry 蕴含 std，不再重复声明
 tracing-subscriber = { workspace = true, features = ["registry"], optional = true }
 
-# 流控 — "retry" 提供重试原语（delay_for_attempt / RetryPolicy），是网关出站链路唯一的重试延迟实现；
-# src/sdk 另持一份最小对齐实现（sdk feature 不依赖 limiteron，见 absorb-official-sdk-parity D6）。
+# 流控 retry 提供重试原语（delay_for_attempt / RetryPolicy），网关出站唯一重试延迟实现
+# src/sdk 另持最小对齐实现（sdk 不依赖 limiteron，见 absorb-official-sdk-parity D6）
 limiteron = { workspace = true, features = ["tower-middleware", "ban-manager", "circuit-breaker", "gcra", "quota-control", "retry", "kit"], optional = true }
 
-# 缓存
 oxcache = { workspace = true, features = ["minimal", "macros", "kit", "memory"], optional = true }
 
 # 难度分类器 path dep：跟随本地 checkout，关默认特性避开服务端栈
 vecboost = { workspace = true, optional = true }
 
-# DI（async + shutdown 面）
-# masking：inklog rc.12 起 SecretScanGate/DataMasker 下沉 trait-kit，
-# async_logger 的 fail-closed 脱敏面（mask_checked → MaskError）直接消费其类型。
+# DI（async + shutdown 面）；masking：inklog rc.12 起 SecretScanGate/DataMasker 下沉 trait-kit
+# async_logger 的 fail-closed 脱敏面（mask_checked → MaskError）直接消费其类型
 trait-kit = { workspace = true, features = ["async", "shutdown", "masking"], optional = true }
 
-# 服务框架门面 + i18n 宿主注册表（i18n 消息层统一走 sdforge::i18n，janvi 同款）。
-# 无条件依赖：i18n 门面在 --no-default-features 面也可用，default-features=false 保持最小面。
-# 不声明 streaming：其流式分帧面本仓零引用，SSE 分帧由 src/protocol 自实现。
+# sdforge 服务框架门面 + i18n 宿主注册表（消息层统一走 sdforge::i18n，janvi 同款），无条件依赖
+# default-features=false 保持最小面；不声明 streaming：SSE 分帧由 src/protocol 自实现
 sdforge = { workspace = true, features = ["http", "security", "health", "metrics", "context", "graceful", "openapi", "docs", "schemars"] }
 
 # 序列化与核心（全部显式特性 + 关默认）
@@ -186,8 +162,8 @@ once_cell = { workspace = true, features = ["std"], optional = true }
 uuid = { workspace = true, features = ["v4", "serde", "std"] }
 url = { workspace = true, features = ["std"], optional = true }
 bytes = { workspace = true, features = ["std"] }
-# reqwest 0.13 语义下 default-tls = rustls；显式列出 default 面（default-tls/charset/http2/system-proxy），
-# 其余压缩（gzip/brotli/zstd/deflate）、cookies/form/multipart/http3/blocking/hickory-dns 本仓零调用。
+# reqwest 0.13 下 default-tls = rustls；显式列 default 面（default-tls/charset/http2/system-proxy）
+# 压缩（gzip/brotli/zstd/deflate）、cookies/form/multipart/http3/blocking/hickory-dns 本仓零调用
 reqwest = { workspace = true, features = ["json", "stream", "socks", "default-tls", "charset", "http2", "system-proxy"], optional = true }
 # SSE 事件分帧（sdk feature 的流式响应解析）
 eventsource-stream = { workspace = true, features = ["std"], optional = true }
@@ -197,12 +173,10 @@ async-stream = { workspace = true, optional = true }
 dashmap = { workspace = true, features = ["inline"], optional = true }
 # 配置全量写回（persist_and_swap 的 toml::to_string_pretty）；显式列出 default 面
 toml = { workspace = true, features = ["std", "serde", "parse", "display"] }
-# i18n — 语言检测链基座（i18n 模块常开）；消息目录/查找已委托 sdforge::i18n
-# （宿主注册表 + { $name } 模板替换），fluent-bundle 不再直依赖。
+# i18n — 语言检测链基座（i18n 模块常开）；消息目录/查找已委托 sdforge::i18n（宿主注册表 + { $name } 模板替换），fluent-bundle 不再直依赖。
 unic-langid = { workspace = true }
 sys-locale = { workspace = true }
-# API Key SHA256 摘要与常量时间比较（api/middleware 消费）；纯摘要只需 alloc，default 的 oid 零消费。
-# 0.11 对齐兄弟库；sqlx 侧 0.10 锁定属上游，随其升级自然收敛。
+# API Key SHA256 摘要与常量时间比较（api/middleware 消费）；纯摘要只需 alloc，default 的 oid 零消费。0.11 对齐兄弟库；sqlx 侧 0.10 锁定属上游，随其升级自然收敛。
 sha2 = { workspace = true, features = ["alloc"], optional = true }
 hex = { workspace = true, features = ["std"], optional = true }
 subtle = { workspace = true, features = ["std"], optional = true }
@@ -211,11 +185,8 @@ subtle = { workspace = true, features = ["std"], optional = true }
 cocoon = { workspace = true, features = ["std", "getrandom", "thiserror"], optional = true }
 secrecy = { workspace = true, optional = true }
 
-# OTLP 指标导出 + 尝试级追踪（otlp feature，usage-observability）：/metrics 文本
-# + CostTracker 快照桥接为 SdkMeterProvider http-proto 推送；trace 面承载
-# vendor attempt 级 span（magpie-absorb-r1 R-otlp-001/002，grpc-tonic 复用锁内
-# tonic 0.14）。http-proto 自带 otlp 内部 trace/metrics 面（proto 生成不可拆）。
-# reqwest 与主图同 0.13 收敛单构建；rustls TLS 令 otlp 单独组合也具备 https 端点能力。
+# otlp（usage-observability）：/metrics 文本 + CostTracker 快照桥接 SdkMeterProvider http-proto 推送，trace 承载 attempt 级 span
+# R-otlp-001/002（magpie-absorb-r1）；tonic 0.14 复用锁内、reqwest 0.13 收敛；rustls 令 otlp 单独组合支持 https
 opentelemetry = { workspace = true, features = ["metrics", "trace"], optional = true }
 opentelemetry_sdk = { workspace = true, features = ["metrics", "trace"], optional = true }
 opentelemetry-otlp = { workspace = true, features = ["http-proto", "grpc-tonic", "reqwest-blocking-client", "reqwest-rustls"], optional = true }
@@ -223,20 +194,17 @@ opentelemetry-otlp = { workspace = true, features = ["http-proto", "grpc-tonic",
 # 内置控制台嵌入（console feature）：编译期打包 web/console/dist 目录
 rust-embed = { workspace = true, features = ["mime-guess"], optional = true }
 
-# JWT 验签（oidc feature，auth-and-masking R-auth-001/002）：RS256/ES256 走
-# rust_crypto 纯 Rust 集（rsa+p256+sha2+hmac），免 C 工具链；use_pem 不启用
-#（测试与运行时均以 JWK/DER 形态供钥）。
+# JWT 验签（oidc feature，R-auth-001/002）：RS256/ES256 走 rust_crypto 纯 Rust 集（rsa+p256+sha2+hmac），免 C 工具链
+# use_pem 不启用：测试与运行时均以 JWK/DER 供钥
 jsonwebtoken = { workspace = true, features = ["rust_crypto"], optional = true }
 
 
 [dev-dependencies]
 # retry 预算测试用 paused clock（start_paused）；特性与主 entries 联合（test-util 叠加在 rt/sync/time 上）
 tokio = { workspace = true, features = ["test-util"] }
-# i18n 键位守卫：严格解析 .ftl（零 Junk）与占位符抽取（与 Fluent 同源语法树；sdforge 经
-# fluent-bundle 传递持有，此处 dev 侧独立声明守卫解析器）
+# i18n 键位守卫：严格解析 .ftl（零 Junk）与占位符抽取（与 Fluent 同源语法树；sdforge 经 fluent-bundle 传递持有，此处 dev 侧独立声明守卫解析器）
 fluent-syntax = { workspace = true }
-# log 门面桥测试：LogTracer 转发断言需 log 宏与 tracing Layer 捕获面
-# （tracing-subscriber 主依赖为 optional，测试单独声明 registry 面）
+# log 门面桥测试：LogTracer 转发断言需 log 宏与 tracing Layer 捕获面（tracing-subscriber 主依赖为 optional，测试单独声明 registry 面）
 log = { workspace = true, features = ["std"] }
 tracing-subscriber = { workspace = true, features = ["registry"] }
 # admin CRUD 测试的 ConfigManager 写路径：RAII 唯一临时目录（getrandom 供随机文件名）
@@ -246,8 +214,7 @@ http-body = { workspace = true }
 futures-util = { workspace = true, features = ["std", "async-await"] }
 # mockito 关默认：default = color（colored 彩色终端输出）+ parking_lot，均非测试断言所需
 mockito = { workspace = true }
-# OTLP 桥测试用 InMemory recorder：sdk 的 testing 面（resolver v2 下仅并入测试目标，
-# 正常构建不含）；metrics 面与主 optional 条目联合去重
+# OTLP 桥测试用 InMemory recorder：sdk 的 testing 面（resolver v2 下仅并入测试目标，正常构建不含）；metrics 面与主 optional 条目联合去重
 opentelemetry_sdk = { workspace = true, features = ["metrics", "trace", "testing"] }
 # 测试需注入 limiteron MockClock（假时钟驱动熔断超时 / 限流窗口重置）；MockClock 仅在 test-clock feature 下公开。
 limiteron = { workspace = true, features = ["test-clock"] }
@@ -256,7 +223,6 @@ criterion = { workspace = true, features = ["cargo_bench_support"] }
 
 # 集成测试注册表（autotests = false，按域分节）：name = 文件 stem（二进制名不变，`--test` 过滤器与 CI 日志口径零漂移），path = 目录化后的实际位置
 
-# ---- api：端点集成 / 健康与指标 / 模型目录 admin / OpenAPI / 请求追踪 ----
 [[test]]
 name = "api_test"
 path = "tests/api/api_test.rs"
@@ -286,7 +252,6 @@ path = "tests/api/openapi_docs_test.rs"
 name = "request_trace_test"
 path = "tests/api/request_trace_test.rs"
 
-# ---- routing：路由决策 / bandit / 价格因子 / 提示头与会话亲和 ----
 [[test]]
 name = "gate_bandit_test"
 path = "tests/routing/gate_bandit_test.rs"
@@ -300,7 +265,6 @@ path = "tests/routing/gate_router_test.rs"
 name = "routing_hints_affinity_test"
 path = "tests/routing/routing_hints_affinity_test.rs"
 
-# ---- resilience：准入 / 换路 / 熔断 / 重试 / 限流 ----
 [[test]]
 name = "admission_test"
 path = "tests/resilience/admission_test.rs"
@@ -329,7 +293,6 @@ path = "tests/resilience/retry_test.rs"
 name = "streaming_boundary_test"
 path = "tests/resilience/streaming_boundary_test.rs"
 
-# ---- config：配置加载 / 示例锁定 ----
 [[test]]
 name = "config_toml_example_test"
 path = "tests/config/config_toml_example_test.rs"
@@ -340,7 +303,6 @@ path = "tests/config/gate_config_test.rs"
 name = "gate_config_coverage_test"
 path = "tests/config/gate_config_coverage_test.rs"
 
-# ---- database：落库 / 查询 / 迁移 ----
 [[test]]
 name = "database_test"
 path = "tests/database/database_test.rs"
@@ -350,7 +312,6 @@ name = "dialect_probe"
 path = "tests/database/dialect_probe.rs"
 required-features = ["database"]
 
-# ---- protocol：协议转换 / Anthropic 缓存块 / SSE 分帧 ----
 [[test]]
 name = "gate_anthropic_cache_test"
 path = "tests/protocol/gate_anthropic_cache_test.rs"
@@ -367,7 +328,6 @@ path = "tests/protocol/sse_integrity_test.rs"
 name = "protocol_fidelity_test"
 path = "tests/protocol/protocol_fidelity_test.rs"
 
-# ---- vendor：厂商管理 / key 池 / 出站连接池 ----
 [[test]]
 name = "gate_pool_test"
 path = "tests/vendor/gate_pool_test.rs"
@@ -384,13 +344,11 @@ path = "tests/vendor/gate_vendor_test.rs"
 name = "gemini_vendor_test"
 path = "tests/vendor/gemini_vendor_test.rs"
 
-# ---- vault：密钥保密柜管理面（key-vault）----
 [[test]]
 name = "vault_api_test"
 path = "tests/vault/vault_api_test.rs"
 required-features = ["vault", "web-server"]
 
-# ---- cost：定价 / 累积 / 集成 ----
 [[test]]
 name = "gate_cost_test"
 path = "tests/cost/gate_cost_test.rs"
@@ -401,8 +359,7 @@ path = "tests/cost/gate_cost_tracker_test.rs"
 name = "gate_vendor_cost_integration_test"
 path = "tests/cost/gate_vendor_cost_integration_test.rs"
 
-# ---- server：装配冒烟 / DI / gRPC 门面 / 真实起服（server_run_* 与 grpc_smoke 的
-# OnceCell 全局态同进程只能消费一次，需独立二进制）----
+# ---- server：装配冒烟 / DI / gRPC 门面 / 真实起服（server_run_* 与 grpc_smoke 的 OnceCell 全局态同进程只能消费一次，需独立二进制）----
 [[test]]
 name = "assembly_smoke_test"
 path = "tests/server/assembly_smoke_test.rs"
@@ -464,7 +421,6 @@ required-features = ["web-server", "logging"]
 name = "gate_feature_matrix"
 path = "tests/matrix/gate_feature_matrix.rs"
 
-# ---- utils：metrics / rate_limiter 边界覆盖 ----
 [[test]]
 name = "gate_utils_coverage_test"
 path = "tests/utils/gate_utils_coverage_test.rs"
@@ -545,9 +501,8 @@ opt-level = 3
 lto = true
 codegen-units = 1
 
-# 工作区依赖单一事实源：版本只在此声明，成员一律 `workspace = true` 继承；features 留在
-# 成员侧（`--workspace` 统一构建时仍由 Cargo 按目标取并集）。版本格式 x.y（兼容范围，禁止
-# patch 段）；依赖线本身处于预发布期时无法用 x.y 表达，保留完整预发布号。default-features 统一 false。
+# 依赖单一事实源：版本只在此声明，成员 workspace = true 继承；features 留成员侧（Cargo 按目标取并集）
+# 版本格式 x.y（禁 patch 段），预发布期保留完整号；default-features 统一 false
 [workspace.dependencies]
 axum = { version = "0.8", default-features = false }
 tokio = { version = "1.54", default-features = false }
@@ -565,8 +520,8 @@ tracing-subscriber = { version = "0.3", default-features = false }
 
 limiteron = { version = "0.3", default-features = false }
 oxcache = { version = "0.5", default-features = false }
-# 兄弟库 path 依赖：跟随本地 checkout；0.3.0 稳定版已发 crates.io，registry 面与
-# 本地 checkout 同源同版（CI 由 fetch-vecboost 就位 ../vecboost，release 同口径）。
+# 兄弟库 path 依赖跟随本地 checkout；0.3.0 已发 crates.io，registry 与本地同源同版
+# CI 由 fetch-vecboost 就位 ../vecboost，release 同口径
 vecboost = { path = "../vecboost", version = "0.3", default-features = false }
 trait-kit = { version = "0.5", default-features = false }
 sdforge = { version = "0.5", default-features = false }
