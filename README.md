@@ -1,14 +1,14 @@
+English | [中文](README_CN.md)
+
 <div align="center">
 
 <img src="docs/assets/fluxweir.png" alt="Fluxweir Logo" width="240">
 
 [![Rust 2021](https://img.shields.io/badge/Rust-2021-edded?logo=rust&style=for-the-badge)](https://www.rust-lang.org/) [![Rustc 1.97.1+](https://img.shields.io/badge/Rustc-1.97.1+-orange.svg?style=for-the-badge)](https://www.rust-lang.org/) [![release](https://img.shields.io/github/v/release/Kirky-X/fluxweir?style=for-the-badge)](https://github.com/Kirky-X/fluxweir/releases) [![CI](https://img.shields.io/github/actions/workflow/status/Kirky-X/fluxweir/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/Kirky-X/fluxweir/actions/workflows/ci.yml) [![coverage](https://img.shields.io/codecov/c/github/Kirky-X/fluxweir?style=for-the-badge)](https://codecov.io/gh/Kirky-X/fluxweir) [![SQLite](https://img.shields.io/badge/SQLite-backend-003B57?logo=sqlite&logoColor=white&style=for-the-badge)](https://sqlite.org/) [![gRPC](https://img.shields.io/badge/gRPC-support-3C8CC9?logo=grpc&style=for-the-badge)](https://grpc.io/) [![Axum](https://img.shields.io/badge/Axum-REST-009688?style=for-the-badge)](https://docs.rs/axum) [![i18n](https://img.shields.io/badge/i18n-zh%20%7C%20en-2CA6E0?style=for-the-badge)](<>) [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white&style=for-the-badge)](https://www.docker.com/) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 
-**中文** | [English](README_EN.md)
+**Intelligent LLM routing gateway — unified multi-provider access · protocol conversion · resilient scheduling**
 
-**智能 LLM 路由网关 —— 多厂商统一接入 · 协议互转 · 弹性调度**
-
-[✨ 功能特性](#-功能特性) • [🚀 快速开始](#-快速开始) • [📚 文档](#-文档) • [🐳 Docker 部署](#-docker-部署) • [🤝 参与贡献](#-参与贡献)
+[✨ Features](#-features) • [🚀 Quick Start](#-quick-start) • [📚 Documentation](#-documentation) • [🐳 Docker Deployment](#-docker-deployment) • [🤝 Contributing](#-contributing)
 
 </div>
 
@@ -16,16 +16,16 @@
 
 <div align="center">
 
-### 🎯 一个接入点，多家上游
+### 🎯 One endpoint, many providers
 
-客户端用 OpenAI 或 Anthropic 任一格式请求，网关完成认证、限流、路由、协议转换与容错，把多个上游 LLM 供应商抽象为单一端点：
+Clients call the gateway in either OpenAI or Anthropic format; the gateway handles auth, rate limiting, routing, protocol conversion and failover, abstracting multiple upstream LLM providers behind a single endpoint:
 
 <table style="width:100%; border-collapse: collapse">
 <tr>
-<td align="center" width="25%">🔄<br><b>协议互转</b><br><span style="color:#64748B">OpenAI ↔ Anthropic · 零拷贝透传</span></td>
-<td align="center" width="25%">🧭<br><b>智能路由</b><br><span style="color:#64748B">6 因子加权（第 6 项 quota 可选）· 缓存经济学亲和 · LinUCB</span></td>
-<td align="center" width="25%">🛡️<br><b>弹性容错</b><br><span style="color:#64748B">熔断 · 重试 · Fallback 链</span></td>
-<td align="center" width="25%">📊<br><b>可观测与成本</b><br><span style="color:#64748B">请求日志 · Token 预聚合 · 成本追踪</span></td>
+<td align="center" width="25%">🔄<br><b>Protocol conversion</b><br><span style="color:#64748B">OpenAI ↔ Anthropic · zero-copy passthrough</span></td>
+<td align="center" width="25%">🧭<br><b>Smart routing</b><br><span style="color:#64748B">6-factor weighting (optional quota factor) · cache-economy affinity · LinUCB</span></td>
+<td align="center" width="25%">🛡️<br><b>Resilience</b><br><span style="color:#64748B">circuit breaker · retry · fallback chain</span></td>
+<td align="center" width="25%">📊<br><b>Observability & cost</b><br><span style="color:#64748B">request logs · token pre-aggregation · cost tracking</span></td>
 </tr>
 </table>
 
@@ -33,605 +33,221 @@
 
 ---
 
-## 📋 目录
+## 📋 Table of Contents
 
 <details open>
-<summary>📑 目录</summary>
+<summary>📑 Table of Contents</summary>
 
-- [✨ 功能特性](#-功能特性)
-- [🚀 快速开始](#-快速开始)
-- [⚙️ 配置概览](#️-配置概览)
-- [📚 文档](#-文档)
-- [🏗️ 架构](#️-架构)
-- [📚 作为库依赖](#-作为库依赖)
-- [🧪 测试](#-测试)
-- [⚡ 性能设计](#-性能设计)
-- [🔒 安全](#-安全)
-- [🗺️ 开发路线图](#️-开发路线图)
-- [🐳 Docker 部署](#-docker-部署)
-- [🤝 参与贡献](#-参与贡献)
-- [📋 更新日志](#-更新日志)
-- [📄 许可证](#-许可证)
-- [🙏 致谢](#-致谢)
-- [📞 联系与支持](#-联系与支持)
-- [⭐ Star 历史](#-star-历史)
+- [✨ Features](#-features)
+- [🚀 Quick Start](#-quick-start)
+- [⚙️ Configuration Overview](#️-configuration-overview)
+- [📚 Documentation](#-documentation)
+- [🏗️ Architecture](#️-architecture)
+- [📚 As a Library Dependency](#-as-a-library-dependency)
+- [🧪 Testing](#-testing)
+- [⚡ Performance Design](#-performance-design)
+- [🔒 Security](#-security)
+- [🗺️ Roadmap](#️-roadmap)
+- [🐳 Docker Deployment](#-docker-deployment)
+- [🤝 Contributing](#-contributing)
+- [📋 Changelog](#-changelog)
+- [📄 License](#-license)
+- [🙏 Acknowledgments](#-acknowledgments)
+- [📞 Contact & Support](#-contact--support)
 
 </details>
 
 ---
 
-## ✨ 功能特性
+## ✨ Features
 
 <table style="width:100%; border-collapse: collapse">
 <tr>
-<td width="50%" style="vertical-align:top; padding: 12px">🔄 <b>协议互转</b><br><span style="color:#64748B">OpenAI Chat / Embeddings ↔ Anthropic Messages 双向转换，SSE 流式两端同支持；入站协议与目标厂商一致时零拷贝透传</span></td>
-<td width="50%" style="vertical-align:top; padding: 12px">🧭 <b>智能路由</b><br><span style="color:#64748B">模型权重 × 队列 × 时间窗口（× 可选延迟 / 错误率 / 配额预算）6 因子加权随机，温度平滑；可选 Power-of-Two-Choices、LinUCB 上下文老虎机、缓存经济学会话亲和（<code>[routing.affinity]</code>：auto 按缓存价值粘 / turn 会话窗口粘 / 落盘重启恢复，legacy 默认零回归）、SLA 虚拟队列与 LPS 排队论前瞻；难度定档（<code>[routing.difficulty]</code>，默认关）：规则计分 + vecboost laya 决策概率融合，按难度切 low/mid/high 三档改写目标模型——简单问题小模型、困难问题大模型</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🔄 <b>Protocol conversion</b><br><span style="color:#64748B">Bidirectional OpenAI Chat / Embeddings ↔ Anthropic Messages conversion with SSE streaming on both sides; zero-copy passthrough when the inbound protocol matches the target vendor</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🧭 <b>Smart routing</b><br><span style="color:#64748B">6-factor weighted-random selection (model weight × queue × time window, × optional latency / error rate / quota budget) with temperature smoothing; optional Power-of-Two-Choices, LinUCB contextual bandit, cache-economy session affinity (<code>[routing.affinity]</code>: auto sticks by cache worth / turn window / persists across restarts, legacy default = zero regression), SLA virtual queue and LPS queueing lookahead; difficulty tiering (<code>[routing.difficulty]</code>, off by default): rule scoring fused with vecboost laya decision probabilities rewrites the target model into low/mid/high tiers by difficulty — small models for easy questions, large models for hard ones</span></td>
 </tr>
 <tr>
-<td width="50%" style="vertical-align:top; padding: 12px">🛡️ <b>弹性容错</b><br><span style="color:#64748B">limiteron 熔断器（5 次失败开 30s，慢调用 60s 阈值防误判）、按状态码分类重试（429 尊重 Retry-After 展宽、5xx 固定间隔 + 展宽）、priority 驱动的 Fallback 换路链（总尝试预算默认 8）</span></td>
-<td width="50%" style="vertical-align:top; padding: 12px">🚦 <b>入站限流与准入</b><br><span style="color:#64748B">limiteron tower 层入站限流（端点表 + 全局层）+ <code>[[rate_limit.rules]]</code> 路径规则（未配置全局规则时，共享令牌桶兜底）；拥塞感知优先级准入（按 API Key 档位 dedicated/guaranteed/elastic/spot 分级 shed）</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🛡️ <b>Resilience</b><br><span style="color:#64748B">limiteron circuit breaker (opens after 5 failures for 30s, slow-call threshold 60s avoids false trips), status-classified retries (429 honors Retry-After with spread, 5xx fixed-interval delay + spread), priority-driven fallback chain (total attempt budget defaults to 8)</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🚦 <b>Inbound rate limiting & admission</b><br><span style="color:#64748B">limiteron tower-layer inbound rate limiting (endpoint table + global layer), plus <code>[[rate_limit.rules]]</code> path rules (with no global rules configured, a shared token bucket is the fallback); congestion-aware priority admission (per-key tiers dedicated/guaranteed/elastic/spot)</span></td>
 </tr>
 <tr>
-<td width="50%" style="vertical-align:top; padding: 12px">🔐 <b>安全认证与密钥保密柜</b><br><span style="color:#64748B">API Key 仅存 SHA256 摘要、常量时间比较；上游密钥支持保密柜持久化（<code>POST/GET/DELETE /admin/vault/keys</code>，cocoon AEAD 加密入库、响应与日志零明文），首装由 env 引导吸收、之后免二次输入——主钥经 <code>FLUXWEIR_MASTER_KEY</code> 或自动生成文件（<code>~/.fluxweir/vault_master.key</code>，0600）分层提供，<b>主钥丢失不可恢复，请备份</b></span></td>
-<td width="50%" style="vertical-align:top; padding: 12px">⚡ <b>响应缓存</b><br><span style="color:#64748B">精确响应缓存（oxcache 存储），租户 + 厂商 + 请求体指纹键，TTL 分级乘数与负载联动，并发去重（single-flight）由 oxcache <code>get_or</code> 承载，<code>X-No-Cache: 1</code> 强制回源</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🔐 <b>Secure auth &amp; key vault</b><br><span style="color:#64748B">API keys stored only as SHA256 digests with constant-time comparison; upstream credentials can persist in the encrypted vault (<code>POST/GET/DELETE /admin/vault/keys</code>, cocoon AEAD at-rest encryption, zero plaintext in responses/logs), seeded once from env and never re-entered — the master key comes from <code>FLUXWEIR_MASTER_KEY</code> or an auto-generated file (<code>~/.fluxweir/vault_master.key</code>, 0600); <b>losing it is unrecoverable, back it up</b></span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">⚡ <b>Response cache</b><br><span style="color:#64748B">Exact-match response cache (oxcache-backed) keyed by tenant + vendor + body fingerprint, tiered TTL multipliers with load linking, concurrent de-duplication (single-flight) carried by oxcache <code>get_or</code>, <code>X-No-Cache: 1</code> to force origin fetch</span></td>
 </tr>
 <tr>
-<td width="50%" style="vertical-align:top; padding: 12px">📊 <b>请求日志与预聚合</b><br><span style="color:#64748B">异步批量写库（默认 SQLite，db-postgres/db-mysql 构建下写对应后端；满载丢弃计数不阻塞响应），Token 用量按 (厂商, 模型, api_key 摘要, 日期, 小时) 预聚合 UPSERT</span></td>
-<td width="50%" style="vertical-align:top; padding: 12px">💰 <b>成本追踪</b><br><span style="color:#64748B"><code>[[model_catalog]]</code> 的四档单价为计价正源（微美元原子累积按厂商/模型分账，热更新立即生效）；<code>[[pricing]]</code> 仅用于路由 SLA 因子与未登记目录模型的配额回退档。另有离线成本回放子命令 <code>fluxweir cost-replay</code>（<code>cost-replay</code> feature，不进 <code>full</code>）：读 <code>request_logs</code> 历史重放 affinity/cache_ttl 场景的 counterfactual 成本，只读不写库（目标库须已存在，不存在则报错）</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">📊 <b>Request logs & pre-aggregation</b><br><span style="color:#64748B">Asynchronous batched writes to the configured backend (SQLite by default; db-postgres/db-mysql builds write to that backend — drop-counting under backpressure, never blocks responses), token usage UPSERT pre-aggregated by (vendor, model, API-key digest, date, hour)</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">💰 <b>Cost tracking</b><br><span style="color:#64748B">the four-tier unit prices in <code>[[model_catalog]]</code> are the costing source of truth (micro-USD atomic accumulation per vendor/model, hot-reloadable); <code>[[pricing]]</code> feeds only the routing SLA factor and the quota fallback tier for uncataloged models. There is also an offline cost-replay subcommand <code>fluxweir cost-replay</code> (<code>cost-replay</code> feature, not in <code>full</code>): replays <code>request_logs</code> history to price counterfactual affinity / cache_ttl scenarios — read-only, never writes the DB (the target DB must already exist; it errors otherwise)</span></td>
 </tr>
 <tr>
-<td width="50%" style="vertical-align:top; padding: 12px">🔥 <b>配置热更新</b><br><span style="color:#64748B">基于 confers DynamicField 的无锁热读；写路径事务语义（校验 → 原子落盘 → 切换内存态），自动快照备份到 <code>config-backups/</code>（保留 10 份、密钥打码）；<code>server</code>/<code>cors</code>/<code>rate_limit</code>/<code>database</code>/<code>grpc</code>/<code>global_model</code>/<code>cache.semantic</code>/<code>docs.enabled</code>/<code>routing.difficulty.enabled</code> 及 <code>routing.difficulty.classifier</code> 的 <code>model_path</code>/<code>engine</code>/<code>cache_ttl_secs</code> 变更会在响应 <code>restart_required</code> 中显式提示（vendor <code>concurrency</code> 等其余需重启面无此字段，需自行重启）</span></td>
-<td width="50%" style="vertical-align:top; padding: 12px">🌐 <b>管理端点与可观测</b><br><span style="color:#64748B">52 个方法端点（feature 全开口径：数据面 14 + 搜索/抓取 2 + 管理面 35 + 健康 1，其中 11 个随 feature 门控；另有 <code>/readyz</code>、<code>/metrics</code> 运维出口与 <code>/console</code> 控制台）：日志查询/搜索、Token 统计、成本分账查询、全局指标（含亲和命中率、丢弃计数）、厂商状态与密钥池重置、路由解释、配置与模型管理、订阅/掩码/目录同步（feature 门控）、健康检查</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🔥 <b>Hot config reload</b><br><span style="color:#64748B">Lock-free hot reads via confers DynamicField; transactional write path (validate → atomic persist → in-memory swap) with automatic snapshots in <code>config-backups/</code> (10 kept, secrets masked); <code>server</code>/<code>cors</code>/<code>rate_limit</code>/<code>database</code>/<code>grpc</code>/<code>global_model</code>/<code>cache.semantic</code>/<code>docs.enabled</code>/<code>routing.difficulty.enabled</code> and the <code>routing.difficulty.classifier</code> keys <code>model_path</code>/<code>engine</code>/<code>cache_ttl_secs</code> are reported explicitly in the <code>restart_required</code> response field (remaining restart-required surfaces such as vendor <code>concurrency</code> carry no such signal — restart manually)</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🌐 <b>Admin endpoints & observability</b><br><span style="color:#64748B">52 method endpoints with all features enabled (14 data-plane + 2 search/fetch + 35 admin + 1 health, 11 of them feature-gated; plus <code>/readyz</code>, <code>/metrics</code> ops exits and the <code>/console</code> UI): log query/search, token stats, cost breakdown query, global metrics (affinity hit rate, drop counts), vendor status & key-pool reset, route explain, config & model management, subscription/masking/catalog-sync (feature-gated), health check</span></td>
 </tr>
 <tr>
-<td width="50%" style="vertical-align:top; padding: 12px">🗣️ <b>国际化</b><br><span style="color:#64748B">Fluent 双语束（en/zh）覆盖全部业务消息与错误文案，<code>FLUXWEIR_LANG</code> → 系统环境 → 回退 en 检测链</span></td>
-<td width="50%" style="vertical-align:top; padding: 12px">🧰 <b>生产就绪</b><br><span style="color:#64748B">Docker 多阶段构建 + 非 root 运行、镜像层健康检查（<code>HEALTHCHECK</code>）与 docker-compose 资源限制、GitHub Actions CI（fmt/clippy/test/coverage/audit）与自动发布流水线</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🗣️ <b>Internationalization</b><br><span style="color:#64748B">Fluent dual bundles (en/zh) covering all business messages and error copy, with a <code>FLUXWEIR_LANG</code> → system locale → en fallback chain</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🧰 <b>Production ready</b><br><span style="color:#64748B">Multi-stage Docker build with non-root runtime, image-level health check (<code>HEALTHCHECK</code>) plus docker-compose resource limits, GitHub Actions CI (fmt/clippy/test/coverage/audit) and automated release pipeline</span></td>
 </tr>
 </table>
 
 ---
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 📦 环境要求
+### 📦 Requirements
 
-- Rust 1.97.1+（MSRV，由 `Cargo.toml` 的 `rust-version` 声明；edition 2021）
-- SQLite：**全构建静态内嵌**——`libsqlite3-sys` 的 bundled 特性以 C 源现场编译并静态链接（`cargo tree` 显示 bundled、产物 `ldd` 无 sqlite 动态依赖；glibc 与 musl 同口径），无需系统 sqlite 库或 `libsqlite3-dev`；TLS 为纯 rustls，不依赖 OpenSSL
-- 自研 7 库经 crates.io registry 集成（`confers`、`dbnexus`、`inklog`、`limiteron`、`oxcache`、`sdforge`、`trait-kit`），由 cargo 自动拉取，无需置于同级目录。例外是可选 feature `difficulty-classifier` / `semantic-cache`：二者依赖 path 依赖 `vecboost = { path = "../vecboost" }`（`Cargo.toml`，库面快速演进期跟随本地 checkout），启用时需先把 vecboost 检出到仓库同级目录；默认 `full` 不含这两个 feature，按默认口径构建不受影响
+- Rust 1.97.1+ (the MSRV declared by `rust-version` in `Cargo.toml`; edition 2021)
+- SQLite: **statically embedded in every build** — `libsqlite3-sys` compiles the bundled C source and links it statically (`cargo tree` shows bundled; `ldd` on the artifact shows no dynamic sqlite dependency; identical for glibc and musl), so neither a system sqlite library nor `libsqlite3-dev` is required. TLS is pure rustls — no OpenSSL
+- The 7 self-developed libraries (`confers`, `dbnexus`, `inklog`, `limiteron`, `oxcache`, `sdforge`, `trait-kit`) come from crates.io registry — cargo fetches them automatically, no sibling directory needed. The exception is the optional `difficulty-classifier` / `semantic-cache` features: they rely on the path dependency `vecboost = { path = "../vecboost" }` (`Cargo.toml`, following a local checkout while that library's surface is still evolving), so enabling them requires a vecboost checkout next to this repository; the default `full` does not include either feature, so default-caliber builds are unaffected
 
-### 🔨 编译运行
+### 🔨 Build & run
 
 <details>
-<summary>📄 代码 · bash</summary>
+<summary>📄 Code · bash</summary>
 
 ```bash
-# 运行时配置为 config.toml——该文件不入库（.gitignore 已列），先 cp config.example.toml config.toml 起步（示例为随仓全量参考；起服前按需配置厂商与 `api_key_env` 指向的环境变量）
+# Runtime config is config.toml — not committed (.gitignore lists it); start with
+# cp config.example.toml config.toml (the example is the full in-repo reference;
+# configure vendors and the env vars behind `api_key_env` before serving)
 cp config.example.toml config.toml
 
-# 默认读取工作目录 config.toml
+# Reads config.toml from the working directory by default
 cargo run --release
 
-# 指定配置文件
+# Or specify a config file
 cargo run --release -- /path/to/config.toml
 ```
 
 </details>
 
-### 💡 首次请求
+### 💡 First requests
 
 <details>
-<summary>📄 代码 · bash</summary>
+<summary>📄 Code · bash</summary>
 
 ```bash
-# 健康检查（无需认证；实际注册路径带 sdforge 版本前缀）
+# Health check (no auth; the registered path carries the sdforge version prefix)
 curl http://127.0.0.1:8080/api/v1/health
 
-# OpenAI 兼容聊天补全
+# OpenAI-compatible chat completion
 curl -X POST http://127.0.0.1:8080/v1/chat/completions \
   -H "Authorization: Bearer <your-api-key>" \
   -H "Content-Type: application/json" \
   -d '{"model": "gpt-4", "messages": [{"role": "user", "content": "Hello"}]}'
-
-# Anthropic 兼容消息
-curl -X POST http://127.0.0.1:8080/v1/messages \
-  -H "Authorization: Bearer <your-api-key>" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "claude-3-opus", "max_tokens": 1024, "messages": [{"role": "user", "content": "Hello"}]}'
-
-# 模型列表（OpenAI list 格式，目录 ∪ vendor 去重现算、不缓存）
-curl http://127.0.0.1:8080/v1/models \
-  -H "Authorization: Bearer <your-api-key>"
-
-# Token 计数（近似估算，确定性）
-curl -X POST http://127.0.0.1:8080/v1/messages/count_tokens \
-  -H "Authorization: Bearer <your-api-key>" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "gpt-4", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
 </details>
 
-> 提示：裸 `/health` 未注册路由（会 404），但已加入认证与限流白名单；完整端点清单见 [📘 API 参考](docs/API_REFERENCE.md)。
+> Note: the bare `/health` path is not a registered route (it 404s) but is included in the auth and rate-limit whitelists. For the remaining entry points (Anthropic messages, model list, token counting) and every endpoint's parameters, responses and error codes, see the [📘 API Reference](docs/en/API_REFERENCE.md).
 
 ---
 
-## ⚙️ 配置概览
+## ⚙️ Configuration Overview
 
-运行时配置为单个 `config.toml`（**不入库**——`.gitignore` 已列（承载 API Key 摘要与上游地址等部署私有物），干净检出先 `cp config.example.toml config.toml` 起步，每段每字段带默认值），共 30 个顶层字段/段（`model_catalog` 逐条字段见 [📖 用户指南](docs/USER_GUIDE.md)）：
-
-<details>
-<summary>📋 表格</summary>
-
-| 段                                       | 作用                                                                                                                                                                                                                                                                                                                                                                                                                     | 热更新                                                                      |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| `server` / `database`                    | 监听地址与 SQLite 路径/池大小                                                                                                                                                                                                                                                                                                                                                                                            | ❌ 需重启                                                                   |
-| `vendors` / `global_model`               | 厂商、模型、权重、限流三形态                                                                                                                                                                                                                                                                                                                                                                                             | `vendors` ✅ 热读 / `global_model` ⚠️ 文件热重载被结构门拒绝（需重启）；admin 写入内存即时生效（`enabled` 每请求热读）但附 `restart_required` 保守提示 |
-| `auth` / `cors`                          | API Key 摘要与 CORS                                                                                                                                                                                                                                                                                                                                                                                                      | auth ✅ / cors ❌                                                           |
-| `routing` / `retry` / `resilience`       | 路由系数与选择算法、重试策略、韧性覆盖面（含 `[routing.difficulty]` 难度定档子段）                                                                                                                                                                                                                                                                                                                                       | ✅                                                                          |
-| `cache` / `rate_limit` / `admission`     | 响应缓存、入站限流、拥塞准入                                                                                                                                                                                                                                                                                                                                                                                             | cache/admission ✅ / rate_limit ❌                                          |
-| `model_catalog` / `pricing`              | 模型能力目录（四档单价为计价正源）/ SLA 因子与未登记模型的配额回退档                                                                                                                                                                                                                                                                                                                                                     | ✅                                                                          |
-| `health` / `quota`                       | 主动健康探针（默认 off）、成本/token 配额 + `[[quota.windows]]` 多窗预算 + `[[vendor_budgets]]` 声明式预算（均默认关）                                                                                                                                                                                                                                                                                                   | ✅ 均热读                                                                   |
-| `lexcompress`                            | 词法压缩（`X-Compress: 1` 且单条消息超阈值时生效，默认关）                                                                                                                                                                                                                                                                                                                                                               | ✅ 热读                                                                     |
-| `grpc` / `docs`                          | gRPC 门面、OpenAPI/Swagger UI 出口（均需显式启用）                                                                                                                                                                                                                                                                                                                                                                       | ❌ 需重启                                                                   |
-| `subscription` / `subscription_accounts` | 订阅账号上游（`subscription-vendor` feature，不进 `full`；双门控默认关，合规警示见下）                                                                                                                                                                                                                                                                                                                                   | ✅ 热读                                                                     |
-| `web_search`                             | 搜索注入与守护抓取（`web-search` feature，不进 `full`；`netguard` 零依赖 SSRF 判定单开可用）。`POST /v1/search` 多源搜索（Tavily/Brave/Exa/SearXNG，多 key 轮换）、`POST /v1/fetch` 守护抓取、`GET /admin/web-search/stats` 观测                                                                                                                                                                                                       | ✅ 热读                                                                     |
-| `catalog_sync`                           | 模型目录自动同步（`catalog-sync` feature，不进 `full`）：从外部目录源（默认 models.dev）拉取定价/上下文窗口映射进 `[[model_catalog]]`，**只增不改**（既有条目含用户定价永不覆盖）；`POST /admin/catalog/sync`（dry_run 出 diff）+ 可选周期任务，失败 fail-open 计数                                                                                                                                                      | ✅ 热读                                                                     |
-| `masking`                                | 出站请求掩码（`masking` feature，不进 `full`；`[masking]` 双门控默认关）：发送上游前把出站 JSON 中的敏感值（API key/私钥/JWT/邮箱/自定义词与正则）替换为确定性占位符 `{{FLUX_<KIND>_<8HEX>}}`（掺 pepper——env/0600 文件/进程内随机三态来源，同 pepper 下跨进程一致），回程只还原**本请求登记过**的占位符（伪造/跨请求回显原样透传）——厂商永不落真值；Mask/Warn/Block 三档动作、fail-closed（故障 503 拒绝不原文出站）、`/admin/masking/stats` 观测与可选审计台账（值不落盘） | ✅ 热读                                                                     |
-| `responses` / `metrics` / `usage_insights` / `key_budgets` | Responses API 面（存储 TTL/上限等）、指标导出（含成本恢复窗）、会话用量洞察开关、API key 预算档位 | ✅ 热读                                                                     |
-| `otlp`                                   | OTLP/HTTP-Proto 指标导出（`otlp` feature，不进 `full`；默认关）                                                                                                                                                                                                                                                                                                                                                          | ❌ 需重启（endpoint/interval/timeout 变更入 `restart_required`）             |
-
-</details>
-
-<details>
-<summary>📄 代码 · toml</summary>
-
-```toml
-[[vendors]]
-id = "openai"
-type_ = "openai"
-api_key_env = "OPENAI_API_KEY"     # 上游密钥从环境变量读取
-api_base = "https://api.openai.com/v1"
-enabled = true
-
-[[vendors.models]]
-model_id = "gpt-4"
-weight = 1.0                        # 参与路由加权
-
-[[pricing]]
-vendor_id = "openai"
-model_id = "gpt-4"
-input_per_1k_tokens = 0.03
-output_per_1k_tokens = 0.06
-```
-
-</details>
-
-重排（Rerank）：厂商声明 `type_ = "rerank"` 且必须显式 `api_base`（无官方默认端点），条目声明 `model_type = "rerank"`：
-
-<details>
-<summary>📄 代码 · toml</summary>
-
-```toml
-[[vendors]]
-id = "cohere-prod"
-type_ = "rerank"
-api_key_env = "COHERE_API_KEY"  # pragma: allowlist secret（示例环境变量名，非凭证）
-api_base = "https://api.cohere.com/v1"   # Jina: https://api.jina.ai/v1；TEI: http://host:port
-
-[[vendors.models]]
-model_id = "rerank-v3.5"
-abstract_id = "rerank-v3"
-model_type = "rerank"
-```
-
-</details>
-
-认证开启：将 API Key 的 SHA256 摘要填入 `[auth]` 段（`echo -n "your-key" | sha256sum`），完整字段说明、限流规则与准入配置见 [📖 用户指南](docs/USER_GUIDE.md)。
+Runtime configuration is a single `config.toml` (**not committed** — a clean checkout starts with `cp config.example.toml config.toml`; the in-repo example is the fully annotated reference carrying every section and field with its default and hot-reload availability). The 30 top-level sections' overview, per-field details, the hot-reload matrix and vendor/pricing config examples live in the [📖 User Guide](docs/en/USER_GUIDE.md).
 
 ---
 
-## 📚 文档
+## 📚 Documentation
 
 <details>
-<summary>📋 表格</summary>
+<summary>📋 Table</summary>
 
-| 文档                                 | 说明                                                                   |
+| Document                                 | Description                                                                   |
 | ------------------------------------ | ---------------------------------------------------------------------- |
-| [📖 用户指南](docs/USER_GUIDE.md)    | 从配置、部署到运维的完整使用教程                                       |
-| [📘 API 参考](docs/API_REFERENCE.md) | 全部方法端点（数据面 14 + 搜索/抓取 2 + 管理面 35 + 健康 1，feature 全开口径共 52 个）的参数、响应与错误码 |
-| [🏗️ 架构文档](docs/ARCHITECTURE.md)  | 设计原则、路由决策体系、弹性与热更新机制                               |
-| [🔒 安全文档](docs/SECURITY.md)      | 安全设计、供应链门禁与漏洞处理流程                                     |
-| [❓ FAQ](docs/FAQ.md)                | 常见问题与已知边界                                                     |
-| [📋 更新日志](docs/CHANGELOG.md)     | 版本变更记录（Keep a Changelog 格式）                                  |
-| [🤝 贡献指南](docs/CONTRIBUTING.md)  | 环境搭建、开发命令与提交规范                                           |
+| [📖 User Guide](docs/en/USER_GUIDE.md)    | End-to-end tutorial: configuration, deployment, operations                                       |
+| [📘 API Reference](docs/en/API_REFERENCE.md) | All method endpoints (14 data-plane + 2 search/fetch + 35 admin + 1 health; 52 with all features enabled): parameters, responses, error codes |
+| [🏗️ Architecture](docs/en/ARCHITECTURE.md)  | Design principles, routing decision system, resilience & hot reload                               |
+| [🔒 Security](docs/en/SECURITY.md)      | Security design, supply-chain gates, vulnerability handling                                     |
+| [❓ FAQ](docs/en/FAQ.md)                | Common questions and known limitations                                                     |
+| [📋 Changelog](docs/en/CHANGELOG.md)     | Version history (Keep a Changelog format)                                  |
+| [🤝 Contributing](docs/en/CONTRIBUTING.md)  | Environment setup, development commands, commit conventions                                           |
+| [⚡ Performance Baselines](docs/en/PERFORMANCE.md)   | Criterion component-level benchmark figures (conversion / SSE / routing / affinity)                   |
+| [🧭 Prompt Prefix Caching Guide](docs/en/PROMPT_CACHING_GUIDE.md) | The caller-side guide to maximizing vendor-side prefix-cache hits                   |
+| [🤝 Code of Conduct](docs/en/CODE_OF_CONDUCT.md) | Community participation rules (Contributor Covenant 2.1)                |
 
 </details>
 
 ---
 
-## 🏗️ 架构
+## 🏗️ Architecture
 
-Fluxweir 采用分层管线设计：入站请求经中间件管线（认证 → 限流 → 准入）进入 API 层，由路由决策器在合格厂商集合中选择目标（抽象模型 → `vendor.model` 直连 → `auto` 全局池三级决策），再经协议转换（或零拷贝透传）交由 VendorManager 携带熔断/重试执行出站调用；响应侧完成 SSE 分帧与协议回转，同时异步落日志、预聚合 Token、累积成本并回写亲和与 LinUCB 奖励。
-
-<details>
-<summary>📄 代码 · mermaid</summary>
-
-```mermaid
-flowchart TB
-    Client["客户端（OpenAI / Anthropic 任一格式）"]
-
-    subgraph GW["Fluxweir 网关（Axum 0.8 + sdforge）"]
-        direction LR
-        MW["中间件管线<br/>auth（SHA256）· 滑动窗口限流（缺省令牌桶兜底）· 拥塞准入"]
-        Handler["API 处理器<br/>路由提示提取 · 响应缓存"]
-        Router["路由决策<br/>6 因子加权（quota 可选）· 亲和 · LinUCB"]
-        Conv["协议转换<br/>OpenAI ↔ Anthropic · 零拷贝透传"]
-        Vendor["VendorManager<br/>熔断 · 重试 · 连接池 · Fallback"]
-        MW --> Handler --> Router --> Conv --> Vendor
-    end
-
-    subgraph Store["持久化（dbnexus · SQLite）"]
-        Logs["request_logs（异步批量写）"]
-        Agg["token_usage（小时级预聚合）"]
-    end
-
-    UP1["OpenAI 兼容上游"]
-    UP2["Anthropic 兼容上游"]
-
-    Client --> MW
-    Vendor --> UP1
-    Vendor --> UP2
-    Vendor -.异步.-> Logs
-    Vendor -.异步.-> Agg
-```
-
-</details>
-
-路由决策体系、弹性层状态机、配置热更新事务语义、DI 组装与 i18n 架构的完整说明见 [🏗️ 架构文档](docs/ARCHITECTURE.md)。
-
-Fluxweir 同时是**库优先**组件：服务器装配链承载于 `fluxweir::server`（可独立部署的 HTTP 服务器），Rust 客户端承载于 `fluxweir::sdk`（`sdk` feature 门控）——二进制 `main.rs` 只是薄启动入口。`grpc` feature（独立门控，不进 `full`）另提供 gRPC 服务器：sdforge `sdforge.v1.SdForgeService` 门面（GetInfo / Call / CallStream，JSON over gRPC）经 `take_grpc_server` 与 HTTP 同进程共存，认证复用 `[auth]` 段 SHA256 摘要，优雅停机与 HTTP 共享同一信号。
+The layered pipeline (middleware → API → routing decision → protocol conversion → vendor execution → async persistence), the routing decision system, resilience state machines, hot-reload transaction semantics, DI assembly and i18n design are documented in the [🏗️ Architecture guide](docs/en/ARCHITECTURE.md).
 
 ---
 
-## 📚 作为库依赖
+## 📚 As a Library Dependency
 
-`fluxweir` 既是可执行网关，也是 Rust 库（`src/lib.rs` 导出公共 API）。默认 `full` feature 已含服务器组件；客户端 SDK 由 `sdk` feature 提供（已含于 `full`，亦可单独启用）。
-
-**嵌入式起服**（在自己的应用中托管网关）：
-
-<details>
-<summary>📄 代码 · rust</summary>
-
-```rust
-#[tokio::main]
-async fn main() -> Result<(), fluxweir::error::FluxweirError> {
-    // 装配链（配置/数据库/厂商/路由）+ 起服 + 优雅停机 flush 全部由库承担
-    fluxweir::server::run(Some("config.toml".into())).await
-}
-```
-
-</details>
-
-**HTTP 客户端 SDK**（调用已部署网关，需 `sdk` feature）：
-
-<details>
-<summary>📄 代码 · rust</summary>
-
-```rust
-use fluxweir::sdk::{ChatMessage, ChatRequest, ChatTool, ChatToolChoice, ChatToolDefinition, FluxweirClientBuilder};
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = FluxweirClientBuilder::new()
-        .base_url("http://127.0.0.1:8080")
-        .api_key(std::env::var("FLUXWEIR_API_KEY")?)
-        .build()?;
-
-    // 便捷构造 + 请求级配置（temperature / max_tokens / hints 等经 RequestConfig）
-    let request = ChatRequest::new("gpt-4", "你好")
-        .with_tools(
-            vec![ChatTool {
-                function: ChatToolDefinition {
-                    name: "get_weather".into(),
-                    description: Some("查询天气".into()),
-                    parameters: serde_json::json!({"type": "object"}),
-                },
-            }],
-            Some(ChatToolChoice::auto()),
-        )
-        .with_vendor_extension("thinking_mode", serde_json::json!("off"))?; // 保留键（model/messages 等）会被拒绝
-
-    let resp = client.chat(&request).await?;
-    println!("{}", resp.content);
-    for call in &resp.tool_calls {
-        println!("tool_call: {} {}", call.id, call.function.name);
-    }
-    println!(
-        "finish_reason: {} | tokens: {} + {} (cache_read: {})",
-        resp.finish_reason.as_wire(),
-        resp.usage.prompt_tokens,
-        resp.usage.completion_tokens,
-        resp.usage.cache_read_tokens
-    );
-    Ok(())
-}
-```
-
-</details>
-
-> **SDK 对齐**：`ChatMessage::content` 支持多模态内容件（`ChatContent::Parts`，图片 URL / base64 data URL）；tool 角色消息用 `ChatMessage::tool(tool_call_id, content)` 回填；admin 面走真实路由（目录 `GET/PUT/DELETE /admin/models`、健康 `GET /api/v1/health`、vendor 运行面状态）。
-
-**数据库后端选择（编译期）**：`full` 本身不含数据库驱动，必须搭配一组 `db-*` feature；`default = ["full", "db-sqlite"]` 保持独立运行默认为 sqlite 文件库。
-
-<details>
-<summary>📋 表格</summary>
-
-| 构建目标                 | feature 组合                                                                  |
-| ------------------------ | ----------------------------------------------------------------------------- |
-| 独立运行（默认，sqlite） | `cargo run`                                                                   |
-| 独立运行（PostgreSQL）   | `cargo build --no-default-features --features "full,db-postgres"`             |
-| 独立运行（MySQL）        | `cargo build --no-default-features --features "full,db-mysql"`                |
-| 库嵌入（自选后端）       | `fluxweir = { default-features = false, features = ["full", "db-postgres"] }` |
-
-</details>
-
-- 三组互斥由 dbnexus 编译期守卫强制（embedded 与 server-side 不可混），`--all-features` 会编译失败——这是预期行为，CI 与 pre-commit 均以显式特性矩阵替代
-- 配置侧 `[database] url`（完整连接 URL）非空时优先；留空则 `path` 按 sqlite 文件库回退（未编译 db-sqlite 时启动报 `database-backend-missing` 并附重建指引）
-- schema 与列迁移按连接后端自动分派（迁移 SQL 真源外置于 `src/database/migrations/core/`（`v{n}_{backend}.sql` 三方言，经 `include_str!` 嵌入），新表/新列走新迁移版本；`schema.sql` / `schema.postgres.sql` / `schema.mysql.sql` 为可读文档，`schema.sql` 表集合与迁移全集的一致性由守卫测试锁定）
-
-> SDK 是「HTTP 客户端」（调用网关 REST API，含 SSE 流式），不是进程内直连路由核心；嵌入式直用 `fluxweir::server` 与 `fluxweir::api` 即可。
+`fluxweir` is both an executable gateway and a Rust library (the default `full` feature includes the server components; the client SDK is provided by the `sdk` feature): embedded startup, Rust SDK usage examples and database-backend selection live in the [📖 User Guide · As a library dependency](docs/en/USER_GUIDE.md#-as-a-library-dependency).
 
 ---
 
-## 🧪 测试
+## 🧪 Testing
 
-### 🎯 测试策略
-
-单元测试内联于 `src/`（`#[cfg(test)]`），集成测试按功能域组织在 `tests/` 子目录（api / routing / resilience / config / database / protocol / vendor / cost / server / i18n / matrix / utils / guard / vault / masking / replay，共 69 个 `.rs` 文件——68 个测试二进制 + `tests/common/mod.rs` helper，由根 `Cargo.toml` 的 `[[test]]` 逐二进制显式注册；一文件一二进制，进程独占语义不变；grpc_smoke / grpc_coverage 两个按 `required-features` 随 `grpc` 特性编译，default 口径不产出空壳二进制），Mock 使用 mockito（HTTP 上游线级桩）+ 手写 fake（进程内替身，如 `MockDifficultyClassifier`），时间敏感测试注入 limiteron MockClock 假时钟。
-
-### ▶️ 运行命令（与 CI 一致）
-
-<details>
-<summary>📄 代码 · bash</summary>
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-# 非默认后端矩阵（必须 `-p fluxweir` 限定到本包，避开示例成员拉入 db-sqlite 后特性互斥）
-cargo check -p fluxweir --no-default-features --features "full,db-postgres"
-cargo check -p fluxweir --no-default-features --features "full,db-mysql"
-```
-
-</details>
-
-口径说明：default 已携带 `full + db-sqlite`；`--all-features` 会同时打开三组互斥后端而必然编译失败（见上节），因此 clippy / test / 覆盖率均按 default 口径跑，非默认后端单独按包检查——与 `ci.yml` 逐字一致。
-
-### 📊 测试规模
-
-截至 2026-11-04（`cargo test --workspace --no-fail-fast` 实测，本机 zh locale 口径）：**执行 2085 个用例、通过 2081**——单元测试 993 个（`src/` 内联）+ 集成测试 1092 个（`tests/` 61 个 default 口径测试二进制，grpc_smoke / grpc_coverage 随 `grpc` 特性编译）；4 个失败均为错误文案 i18n 断言在 zh locale 回中文所致（英文环境为绿），非功能缺陷；另有 1 个 hot-reload watcher 用例存在 kqueue 平台抖动（复跑通过，76bc09f 已串行化缓解）。1 个 `rust,ignore` 示例 doctest 列出但不执行。整体行覆盖率以 `cargo llvm-cov --workspace` 实测为准。主要分布：
-
-<details>
-<summary>📋 表格</summary>
-
-| 测试域                                                                        | 用例数       | 位置                              | 覆盖范围                                                                                                                               |
-| ----------------------------------------------------------------------------- | ------------ | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| protocol_test                                                                 | 160          | tests/protocol/                   | OpenAI ↔ Anthropic 转换 / 流式全变体 / SSE 分帧                                                                                        |
-| api_test                                                                      | 148          | tests/api/                        | 端点集成 / 缓存 / 换路 / 亲和 / admin                                                                                                  |
-| vendor_test                                                                   | 116          | tests/vendor/                     | 厂商管理 / 限流 / 流式超时 / 健康与指标                                                                                                |
-| router_test                                                                   | 122          | tests/routing/                    | 加权选择 / 亲和 / 提示路由 / 边界                                                                                                      |
-| difficulty_tier_test                                                          | 6            | tests/routing/                    | 难度定档改写 → 既有路由链集成                                                                                                          |
-| database / sse                                                                | 54 / 40      | tests/database/ · tests/protocol/ | 落库查询与预聚合 / 流分帧与 SDK                                                                                                        |
-| config / utils_coverage                                                       | 80 / 19      | tests/config/ · tests/utils/      | 配置加载 / 指标与限流边界                                                                                                              |
-| retry / config_coverage                                                       | 23 / 20      | tests/resilience/ · tests/config/ | 重试分类与延迟策略 / loader·manager 分支                                                                                               |
-| quota / fallback / admission                                                  | 25 / 10 / 19 | tests/resilience/                 | 配额窗 / 换路链 / 准入                                                                                                                 |
-| bandit / model_catalog_admin                                                  | 13 / 14      | tests/routing/ · tests/api/       | bandit 路由 / 模型目录 admin                                                                                                           |
-| server·grpc 起服 / 装配冒烟 / feature 矩阵 / Responses·Gemini 端点 / key 池等 | 其余 223     | tests/server/ 等                  | server·grpc 起服 / 装配冒烟 / feature 矩阵 / Responses·Gemini 端点与厂商 / key 池 / 价格因子 / 模型目录 admin / i18n 守卫 / 死代码守卫 |
-
-</details>
+The testing strategy, CI-consistent commands and the latest test baseline live in [🤝 Contributing · Testing conventions](docs/en/CONTRIBUTING.md#-testing-conventions).
 
 ---
 
-## ⚡ 性能设计
+## ⚡ Performance Design
 
-首轮 Criterion 组件级基线已发布（转换 / SSE 帧解析 / 路由决策路径 / 缓存经济学亲和，含 mean 与吞吐数据）：见 [⚡ 性能基线](docs/PERFORMANCE.md)。以下为可复核的设计要点：同协议请求零拷贝透传（跳过转换开销）、配置经 confers DynamicField 无锁热读（读路径 O(1)）、日志与预聚合全异步（批量事务落库，满载丢弃计数不阻塞响应）、出站连接复用单 reqwest 客户端 + 信号量并发上限、会话亲和与响应缓存由 oxcache 内存后端承载（响应缓存的并发 single-flight 亦由 oxcache `get_or` 注册表/watch 唤醒承载，派发经 30s 超时钳制、leader 失败 follower 自愈回源）。设计细节见 [🏗️ 架构文档 · 性能设计](docs/ARCHITECTURE.md)。
-
----
-
-## 🔒 安全
-
-### 🛡️ 安全设计
-
-API Key 仅以 SHA256 摘要存储并常量时间比较、上游密钥只存环境变量名、错误响应仅暴露固定 `error.type` 代码、配置快照自动打码密钥、CORS 与入站限流（429）分层防护、Docker 非 root 运行。逐项机制见 [🔒 安全文档](docs/SECURITY.md)。
-
-### ⚠️ 订阅上游合规警示（subscription-vendor）
-
-`subscription-vendor` feature 允许把 OAuth 订阅账号（如 Claude Pro/Max）作为服务端出站上游。**该能力默认不存在于任何构建产物**：feature 不进 `full`，`[subscription].enabled` 默认 `false`，双门全开才有行为。启用前必读：
-
-- 以订阅账号作服务端出站上游**可能违反厂商服务条款**（厂商公开政策将订阅 OAuth 面限定于其官方客户端），商用部署请自行评估合规风险，责任由部署者自担；
-- 本网关只实现标准 OAuth 授权码 + PKCE 流程，不含任何绕过限制的技术；
-- 授权回调受**单实例约束**：PKCE state 存进程内存，多副本部署不共享，回调必须打回同一实例；
-- `subscription_refresh_fail_total` / `subscription_accounts_degraded`（`/admin/metrics`）暴露账号健康面。
-
-### 🚨 报告安全漏洞
-
-请勿通过公开 issue 报告安全漏洞。请使用 GitHub [Security Advisories](https://github.com/Kirky-X/fluxweir/security/policy) 私密披露通道提交报告。项目承诺 48 小时内确认、7 天内给出初步评估。
+The verifiable design points — zero-copy passthrough for same-protocol requests, lock-free hot reads via confers DynamicField, fully asynchronous logging and pre-aggregation — are documented in the [🏗️ Architecture guide](docs/en/ARCHITECTURE.md); Criterion component baselines (conversion / SSE frame parsing / routing decision paths / cache-economy affinity) live in [⚡ Performance Baselines](docs/en/PERFORMANCE.md).
 
 ---
 
-## 🗺️ 开发路线图
+## 🔒 Security
 
-<details>
-<summary>📋 表格</summary>
+### 🛡️ Design
 
-<table style="width:100%; border-collapse: collapse">
-<tr><th style="text-align:center">状态</th><th style="text-align:left">方向</th><th style="text-align:left">条目</th></tr>
-<tr><td align="center">✅</td><td>核心网关</td><td>OpenAI / Anthropic / Responses / Gemini 协议互转、SSE 流式、零拷贝透传、52 个方法端点（数据面 14 + 搜索/抓取 2 + 管理面 35 + 健康 1，feature 全开口径）</td></tr>
-<tr><td align="center">✅</td><td>智能路由</td><td>6 因子加权（第 6 项配额预算因子，mode 默认 off）+ 温度平滑、缓存经济学会话亲和（auto 按缓存价值粘 + 落盘恢复，legacy 默认）、LinUCB、Power-of-Two、SLA / LPS 可选层；难度定档三档路由（规则 + 进程内决策引擎融合，<code>difficulty-classifier</code> feature 门控）；缓存成本套件（前缀亲和 PoTC / 语义缓存默认关，缓存价因子默认开）</td></tr>
-<tr><td align="center">✅</td><td>弹性容错</td><td>limiteron 熔断 / 重试 / Fallback 换路链、拥塞感知准入、key 档位</td></tr>
-<tr><td align="center">✅</td><td>可观测与成本</td><td>异步日志、Token 小时级预聚合、全局指标、`[[model_catalog]]` 四档计价与成本分账</td></tr>
-<tr><td align="center">✅</td><td>配置热更新</td><td>confers DynamicField 无锁热读、事务写路径、快照备份与 restart_required 提示</td></tr>
-<tr><td align="center">✅</td><td>国际化</td><td>Fluent en/zh 双语束覆盖全部业务消息</td></tr>
-<tr><td align="center">✅</td><td>成本查询 API</td><td>成本分账落库（<code>token_usage</code> 四档成本列，V2 迁移）+ <code>/admin/cost</code> 聚合查询端点（预聚合表按 vendor/model 分组）+ 逐请求成本落库（<code>request_logs.cost_usd</code>：四档求和 × 目录单价，rerank 按每千文档价）；进程内 <code>CostTracker</code> 启动自 <code>token_usage</code> 恢复（<code>[metrics].cost_restore_window_hours</code>，默认 24h；内存库启动跳过、恢复失败 warn 继续）</td></tr>
-<tr><td align="center">✅</td><td>用量洞察与 OTLP</td><td>会话级成本聚合（<code>GET /admin/sessions</code>：成本/token/请求数/首末时间 + 首条消息 80 字符标题）与上下文利用率分析（<code>GET /admin/context-stats</code>：平均占用率、缓存份额、五桶分布），<code>[usage_insights]</code> 运行时开关（默认开，关闭时四列写 NULL 且端点 404）；<code>request_logs</code> 新增 <code>session_key</code>/<code>context_window_tokens</code>/<code>cache_read_tokens</code>/<code>cache_write_tokens</code> 四列（V5 迁移，三方言）；OTLP/HTTP-Proto 指标导出（<code>otlp</code> feature，不进 <code>full</code>，<code>[otlp]</code> 默认关，导出失败 fail-open 计数）</td></tr>
-<tr><td align="center">✅</td><td>Rust SDK</td><td>sdk 并入 <code>src/sdk</code>（<code>sdk</code> feature 门控，原 workspace 继承断裂已消除）：chat / stream / embed / rerank / responses / admin</td></tr>
-<tr><td align="center">✅</td><td>性能基准</td><td>Criterion 组件级基线（转换 / SSE 帧解析 / 路由决策路径 / 缓存经济学亲和）已建立，首轮数据见 <a href="docs/PERFORMANCE.md">PERFORMANCE.md</a></td></tr>
-<tr><td align="center">✅</td><td>日志查询补全</td><td><code>/admin/logs</code> 的 end_time 过滤已落 SQL（闭区间 <code>[start_time, end_time]</code>，两端含边界）</td></tr>
-<tr><td align="center">✅</td><td>订阅账号上游</td><td>OAuth 订阅账号（PKCE 授权码流程）并入 vendor 出站凭证池（<code>subscription-vendor</code> feature，<strong>不进 <code>full</code></strong>，<code>[subscription]</code> 默认关双门控）；refresh token 只存 vault（AEAD）、access token 仅内存 + 到期前 5 分钟单飞刷新；刷新失败降级 30 分钟冷却重试一次仍败摘除；admin 四端点（authorize / callback / accounts / 吊销）。<strong>合规警示见「安全」节</strong></td></tr>
-</table>
+API keys stored as SHA256 digests with constant-time comparison, upstream credentials referenced by env var name only, error responses exposing fixed `error.type` codes only, secrets masked in config snapshots, layered CORS and inbound rate limiting (429), non-root Docker runtime. See the [🔒 Security guide](docs/en/SECURITY.md) for details.
 
-</details>
+### ⚠️ Subscription upstream compliance notice (subscription-vendor)
+
+Using OAuth subscription accounts as server-side outbound upstreams may violate the vendor's terms of service; the compliance boundaries, single-instance constraint and observability surface to read before enabling live in [🔒 Security · Subscription upstream compliance notice](docs/en/SECURITY.md#️-subscription-upstream-compliance-notice-subscription-vendor).
+
+### 🚨 Reporting a vulnerability
+
+Please do not report security vulnerabilities through public issues. Use the GitHub [Security Advisories](https://github.com/Kirky-X/fluxweir/security/policy) private disclosure channel instead — the project commits to acknowledging within 48 hours and providing an initial assessment within 7 days; the full process is in [🔒 Security · Vulnerability reporting process](docs/en/SECURITY.md#-vulnerability-reporting-process).
 
 ---
 
-## 🐳 Docker 部署
+## 🗺️ Roadmap
 
-<details>
-<summary>📄 代码 · bash</summary>
-
-```bash
-# 构建镜像（多阶段：rust:1.99-alpine3.24 构建 → alpine:3.24 运行，非 root）
-# 两个基础镜像的 alpine 后缀保持同一分支（产物 musl 静态链接，运行阶段另有
-# ldd 门禁在构建期回验依赖全部可解）
-# 注意：-f 指定 Dockerfile，构建上下文仍为仓库根（bind mount 与 .dockerignore 按根解析）
-docker build -t fluxweir:0.1.0 -f docker/Dockerfile .
-
-# 运行容器（SQLite 数据持久化于 /app/data；配置放 data/config.toml）
-# ⚠️ 不要用 `-v $(pwd)/config.toml:/app/config.toml:ro` 单文件只读挂载——
-# 管理面写回经 rename 原子覆盖，单文件挂载会 EBUSY，POST /admin/config 与
-# 模型条目写回全部 500（compose 文件同款注释）；要么整目录挂载，要么用 compose
-docker run -d -p 8080:8080 \
-  -v $(pwd)/data:/app/data fluxweir:0.1.0 \
-  /bin/server /app/data/config.toml
-
-# 或使用 docker-compose 一键部署（含资源限制；compose 文件位于 docker/ 下）
-docker compose -f docker/docker-compose.yml up -d
-```
-
-</details>
-
-> 健康检查：由**镜像层 HEALTHCHECK** 单一提供（compose 不再重复声明），探测实际注册路径 `/api/v1/health`；docker-compose 自带资源限制（cpus 2 / 内存 512M）与非 root 运行时，镜像 tag 默认 `fluxweir:0.1.0`，可用 `FLUXWEIR_IMAGE_TAG` 覆盖（详见 [📖 用户指南 · Docker 部署](docs/USER_GUIDE.md)）。
+Completed items per area and their delivery calibers live in [📋 Changelog · Roadmap](docs/en/CHANGELOG.md#️-roadmap).
 
 ---
 
-## 🤝 参与贡献
+## 🐳 Docker Deployment
 
-详细的贡献流程、开发命令与提交规范请参阅 [🤝 贡献指南](docs/CONTRIBUTING.md)。
-
-### 🛠️ 开发环境
-
-工具链基线：MSRV 下限 **1.97.1**（写在 `Cargo.toml` 的 `rust-version`，与 7 个兄弟库声明对齐；ci.yml 按此下限跑 build/clippy 并保证 clippy lint 集合可复现），`docker/Dockerfile` 用当前受支持 stable（1.99）。提交前运行 `cargo fmt --all -- --check` 与 `cargo clippy --workspace --all-targets -- -D warnings`；提交信息遵循 Conventional Commits（`feat(scope): ...` / `fix(scope): ...`）。
-
-### 💖 贡献方式
-
-<table style="width:100%; border-collapse: collapse">
-<tr>
-<td width="33%" align="center" style="padding: 16px">
-
-### 🐛 报告 Bug
-
-发现问题？<br>
-<a href="https://github.com/Kirky-X/fluxweir/issues/new">创建 Issue</a>
-
-</td>
-<td width="33%" align="center" style="padding: 16px">
-
-### 💡 功能建议
-
-有好想法？<br>
-<a href="https://github.com/Kirky-X/fluxweir/discussions">开始讨论</a>
-
-</td>
-<td width="33%" align="center" style="padding: 16px">
-
-### 🔧 提交 PR
-
-想贡献代码？<br>
-<a href="https://github.com/Kirky-X/fluxweir/pulls">Fork 并提交 PR</a>
-
-</td>
-</tr>
-</table>
+Image building (incl. the vecboost additional-context prerequisite), container running (incl. the single-file-mount EBUSY warning) and docker-compose deployment live in [📖 User Guide · Docker Deployment](docs/en/USER_GUIDE.md#-docker-deployment).
 
 ---
 
-## 📋 更新日志
+## 🤝 Contributing
 
-完整版本历史见 [📋 更新日志](docs/CHANGELOG.md)（遵循 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 格式，语义化版本）。
-
-<details>
-<summary>📋 表格</summary>
-
-| 版本  | 日期       | 要点                                                                                                                                                                |
-| ----- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0.1.0 | 2026-11-05 | 初始发布（含 2026-10-12 初始批次）并持续迭代：协议互转网关、6 因子加权路由（含配额预算因子）与可选智能层、limiteron 弹性体系、异步日志与预聚合、成本追踪、confers 热更新底座、i18n |
-
-</details>
+For the detailed contribution process, development commands and commit conventions, see the [🤝 Contributing guide](docs/en/CONTRIBUTING.md).
 
 ---
 
-## 📄 许可证
+## 📋 Changelog
 
-本项目采用 [MIT License](LICENSE)。
-
----
-
-## 🙏 致谢
-
-### 🌟 核心依赖（兄弟库）
-
-Fluxweir 经 crates.io registry 集成以下自研库（版本声明在根 `Cargo.toml`，校验和锁定在 `Cargo.lock`）：
-
-<details>
-<summary>📋 表格</summary>
-
-| 库                                                | 用途                                                          |
-| ------------------------------------------------- | ------------------------------------------------------------- |
-| [confers](https://github.com/Kirky-X/confers)     | 配置加载防护与热更新底座（DynamicField / SnapshotManager）    |
-| [dbnexus](https://github.com/Kirky-X/dbnexus)     | SQLite 持久化（连接池 / 批量事务 / kit 集成）                 |
-| [inklog](https://github.com/Kirky-X/inklog)       | 结构化日志（HTTP / CLI / SQLite）                             |
-| [limiteron](https://github.com/Kirky-X/limiteron) | 限流 / 熔断 / 重试原语                                        |
-| [oxcache](https://github.com/Kirky-X/oxcache)     | 统一缓存 API（会话亲和与响应缓存存储层 + single-flight 去重） |
-| [sdforge](https://github.com/Kirky-X/sdforge)     | HTTP 服务框架（`#[forge]` 宏 / 路由注册）                     |
-| [trait-kit](https://github.com/Kirky-X/trait-kit) | DI 容器（AsyncKit，4 module 拓扑组装）                        |
-
-</details>
-
-### 💝 特别感谢
-
-感谢 Rust 社区与所有[贡献者](https://github.com/Kirky-X/fluxweir/graphs/contributors)。
+The full version history lives in the [📋 Changelog](docs/en/CHANGELOG.md) (following the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format, semantic versioning).
 
 ---
 
-## 📞 联系与支持
+## 📄 License
 
-<table style="width:100%; max-width: 600px">
-<tr>
-<td align="center" width="33%">
-<a href="https://github.com/Kirky-X/fluxweir/issues"><b style="color:#991B1B">Issues</b></a><br>
-<span style="color:#64748B">报告问题和 Bug</span>
-</td>
-<td align="center" width="33%">
-<a href="https://github.com/Kirky-X/fluxweir/discussions"><b style="color:#1E40AF">讨论区</b></a><br>
-<span style="color:#64748B">提问和分享想法</span>
-</td>
-<td align="center" width="33%">
-<a href="https://github.com/Kirky-X/fluxweir"><b style="color:#1E293B">GitHub</b></a><br>
-<span style="color:#64748B">查看源代码</span>
-</td>
-</tr>
-</table>
+This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-## ⭐ Star 历史
+## 🙏 Acknowledgments
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Kirky-X/fluxweir&type=Date)](https://star-history.com/#Kirky-X/fluxweir&Date)
-
-如果这个项目对您有帮助，请考虑给它一个 ⭐️！
-
-**由 Kirky.X 构建**
+The core-dependency list (7 self-developed sibling libraries) lives in the [🤝 Contributing guide](docs/en/CONTRIBUTING.md); thanks to the Rust community and all [contributors](https://github.com/Kirky-X/fluxweir/graphs/contributors).
 
 ---
 
-<sub>© 2026 Kirky.X. 保留所有权利。</sub>
+## 📞 Contact & Support
+
+Report issues and bugs on [Issues](https://github.com/Kirky-X/fluxweir/issues), ask questions and share ideas on [Discussions](https://github.com/Kirky-X/fluxweir/discussions), and browse the source on [GitHub](https://github.com/Kirky-X/fluxweir).
+
+---
+
+<sub>© 2026 Kirky.X. All rights reserved.</sub>

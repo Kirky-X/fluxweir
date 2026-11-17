@@ -2,7 +2,7 @@
 
 **Fluxweir** 是一个智能 LLM 路由代理系统：多厂商统一管理、格式转换、智能调度。基于 Rust + Axum 0.8 + sdforge 构建，把多个上游 LLM 供应商抽象为单一接入点，提供加权路由、限流熔断、请求日志、Token 统计等生产级能力。本指南覆盖从编译启动到部署运维的完整操作路径。
 
-> 相关文档：[FAQ](./FAQ.md) · [API 参考](./API_REFERENCE.md) · [README](../README.md)
+> 相关文档：[FAQ](./FAQ.md) · [API 参考](./API_REFERENCE.md) · [README](../../README_CN.md)
 
 ## 📋 目录
 
@@ -1110,7 +1110,32 @@ flowchart TB
 
 ### 镜像构建
 
-Docker 相关文件位于 `docker/` 目录：`docker/Dockerfile`（构建定义）与 `docker/docker-compose.yml`（部署编排）；`.dockerignore` 留在仓库根——构建上下文是仓库根，忽略规则按上下文根解析。构建命令见 [README](../README.md#-docker-部署)。
+Docker 相关文件位于 `docker/` 目录：`docker/Dockerfile`（构建定义）与 `docker/docker-compose.yml`（部署编排）；`.dockerignore` 留在仓库根——构建上下文是仓库根，忽略规则按上下文根解析。构建与运行命令：
+
+<details>
+<summary>📄 代码 · bash</summary>
+
+```bash
+# 构建镜像（多阶段：rust:1.99-alpine3.24 构建 → alpine:3.24 运行，非 root）
+# 两个基础镜像的 alpine 后缀保持同一分支（产物 musl 静态链接，运行阶段另有
+# ldd 门禁在构建期回验依赖全部可解）
+# 注意：-f 指定 Dockerfile，构建上下文仍为仓库根（bind mount 与 .dockerignore 按根解析）
+# vecboost 附加上下文为构建前置（见下方警示）
+docker build -t fluxweir:0.1.0 --build-context vecboost=../vecboost -f docker/Dockerfile .
+
+# 运行容器（SQLite 数据持久化于 /app/data；配置放 data/config.toml）
+# ⚠️ 不要用 `-v $(pwd)/config.toml:/app/config.toml:ro` 单文件只读挂载——
+# 管理面写回经 rename 原子覆盖，单文件挂载会 EBUSY，POST /admin/config 与
+# 模型条目写回全部 500（compose 文件同款注释）；要么整目录挂载，要么用 compose
+docker run -d -p 8080:8080 \
+  -v $(pwd)/data:/app/data fluxweir:0.1.0 \
+  /bin/server /app/data/config.toml
+
+# 或使用 docker-compose 一键部署（含资源限制；compose 文件位于 docker/ 下）
+docker compose -f docker/docker-compose.yml up -d
+```
+
+</details>
 
 > ⚠️ **vecboost 附加上下文是构建前置**：根 manifest 的 optional path 依赖 `../vecboost`（`--locked` 即使 default 口径不编译它也要读其 manifest），构建命令必须带 `--build-context vecboost=../vecboost`（compose 侧对应 `build.additional_contexts`），漏挂即 `failed to read /vecboost/Cargo.toml`。同理 `locales/`（i18n 编译期内嵌）与 `examples/`（workspace 成员）也必须在 bind mount 清单内，缺一即编译失败。
 
@@ -1251,7 +1276,7 @@ SDK 已并入主 crate 的 `src/sdk` 模块（`sdk` feature 门控，默认 `ful
 | 启用方式 | `fluxweir = { features = ["sdk"] }`（`reqwest` + `eventsource-stream` + `url` 随该 feature 引入）                                                                                                                                                                                                                                                            |
 | 模块     | `chat` / `embed` / `stream` / `client`（`FluxweirClient` 及 Builder）/ `config`（`RequestConfig`）/ `admin` / `error`                                                                                                                                                                                                                                        |
 | 类型导出 | `ChatMessage`（多模态 `ChatContent::Parts` / tool_calls）/ `ChatRequest`（tools / tool_choice / vendor_extensions / penalties）/ `ChatResponse`（结构化 finish_reason + 含 cache_read 的 usage + tool_calls）/ `EmbedRequest` / `EmbedResponse` / `ChatStream`（tool_calls 增量片段 + usage 尾帧）/ 目录 CRUD（`ModelCatalogInfo` / `ModelCatalogUpsert`）等 |
-| 示例     | 见 [README「作为库依赖」](../README.md#-作为库依赖)                                                                                                                                                                                                                                                                                                          |
+| 示例     | 见 [作为库依赖](#-作为库依赖)                                                                                                                                                                                                                                                                                                          |
 
 > **SDK 对齐说明**（SDK ↔ 网关零失配，路径/形状以路由表为准）：admin 面
 > `models()` 走 `GET /admin/models`（模型能力目录）、`health()` 走
@@ -1274,7 +1299,7 @@ SDK 已并入主 crate 的 `src/sdk` 模块（`sdk` feature 门控，默认 `ful
 | [API 参考](./API_REFERENCE.md) | 端点与请求/响应格式    |
 | [架构文档](./ARCHITECTURE.md)  | 内部机制与模块设计     |
 | [安全文档](./SECURITY.md)      | 安全策略               |
-| [README](../README.md)         | 项目总览与特性清单     |
+| [README](../../README_CN.md)         | 项目总览与特性清单     |
 
 ## 搜索注入与守护抓取（`web-search` feature）
 
@@ -1312,3 +1337,78 @@ base_url = "https://searx.example/search"
 ```
 
 观测：`GET /admin/web-search/stats` 按 (provider, key_idx) 出成败计数（零 key 材料回显）；`GET /admin/metrics` 带 `web_search_requests_total{provider,result}` 与 `netguard_denied_total{tag}` 计数。
+
+---
+
+## 📚 作为库依赖
+
+`fluxweir` 既是可执行网关，也是 Rust 库（`src/lib.rs` 导出公共 API）。默认 `full` feature 已含服务器组件；客户端 SDK 由 `sdk` feature 提供（已含于 `full`，亦可单独启用）。
+
+**嵌入式起服**（在自己的应用中托管网关）：
+
+```rust
+#[tokio::main]
+async fn main() -> Result<(), fluxweir::error::FluxweirError> {
+    // 装配链（配置/数据库/厂商/路由）+ 起服 + 优雅停机 flush 全部由库承担
+    fluxweir::server::run(Some("config.toml".into())).await
+}
+```
+
+**HTTP 客户端 SDK**（调用已部署网关，需 `sdk` feature）：
+
+```rust
+use fluxweir::sdk::{ChatMessage, ChatRequest, ChatTool, ChatToolChoice, ChatToolDefinition, FluxweirClientBuilder};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = FluxweirClientBuilder::new()
+        .base_url("http://127.0.0.1:8080")
+        .api_key(std::env::var("FLUXWEIR_API_KEY")?)
+        .build()?;
+
+    // 便捷构造 + 请求级配置（temperature / max_tokens / hints 等经 RequestConfig）
+    let request = ChatRequest::new("gpt-4", "你好")
+        .with_tools(
+            vec![ChatTool {
+                function: ChatToolDefinition {
+                    name: "get_weather".into(),
+                    description: Some("查询天气".into()),
+                    parameters: serde_json::json!({"type": "object"}),
+                },
+            }],
+            Some(ChatToolChoice::auto()),
+        )
+        .with_vendor_extension("thinking_mode", serde_json::json!("off"))?; // 保留键（model/messages 等）会被拒绝
+
+    let resp = client.chat(&request).await?;
+    println!("{}", resp.content);
+    for call in &resp.tool_calls {
+        println!("tool_call: {} {}", call.id, call.function.name);
+    }
+    println!(
+        "finish_reason: {} | tokens: {} + {} (cache_read: {})",
+        resp.finish_reason.as_wire(),
+        resp.usage.prompt_tokens,
+        resp.usage.completion_tokens,
+        resp.usage.cache_read_tokens
+    );
+    Ok(())
+}
+```
+
+> **SDK 对齐**：`ChatMessage::content` 支持多模态内容件（`ChatContent::Parts`，图片 URL / base64 data URL）；tool 角色消息用 `ChatMessage::tool(tool_call_id, content)` 回填；admin 面走真实路由（目录 `GET/PUT/DELETE /admin/models`、健康 `GET /api/v1/health`、vendor 运行面状态）。
+
+**数据库后端选择（编译期）**：`full` 本身不含数据库驱动，必须搭配一组 `db-*` feature；`default = ["full", "db-sqlite"]` 保持独立运行默认为 sqlite 文件库。
+
+| 构建目标                 | feature 组合                                                                  |
+| ------------------------ | ----------------------------------------------------------------------------- |
+| 独立运行（默认，sqlite） | `cargo run`                                                                   |
+| 独立运行（PostgreSQL）   | `cargo build --no-default-features --features "full,db-postgres"`             |
+| 独立运行（MySQL）        | `cargo build --no-default-features --features "full,db-mysql"`                |
+| 库嵌入（自选后端）       | `fluxweir = { default-features = false, features = ["full", "db-postgres"] }` |
+
+- 三组互斥由 dbnexus 编译期守卫强制（embedded 与 server-side 不可混），`--all-features` 会编译失败——这是预期行为，CI 与 pre-commit 均以显式特性矩阵替代
+- 配置侧 `[database] url`（完整连接 URL）非空时优先；留空则 `path` 按 sqlite 文件库回退（未编译 db-sqlite 时启动报 `database-backend-missing` 并附重建指引）
+- schema 与列迁移按连接后端自动分派（迁移 SQL 真源外置于 `src/database/migrations/core/`（`v{n}_{backend}.sql` 三方言，经 `include_str!` 嵌入），新表/新列走新迁移版本；`schema.sql` / `schema.postgres.sql` / `schema.mysql.sql` 为可读文档，`schema.sql` 表集合与迁移全集的一致性由守卫测试锁定）
+
+> SDK 是「HTTP 客户端」（调用网关 REST API，含 SSE 流式），不是进程内直连路由核心；嵌入式直用 `fluxweir::server` 与 `fluxweir::api` 即可。

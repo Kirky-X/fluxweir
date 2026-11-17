@@ -2501,4 +2501,4 @@ LLM 推理端点（`/v1/chat/completions` 与 `/v1/messages`）均解析路由�
 
 ## 相关文档
 
-[用户指南](./USER_GUIDE.md) · [架构文档](./ARCHITECTURE.md) · [FAQ](./FAQ.md) · [README](../README.md)
+[用户指南](./USER_GUIDE.md) · [架构文档](./ARCHITECTURE.md) · [FAQ](./FAQ.md) · [README](../../README_CN.md)
