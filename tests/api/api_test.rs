@@ -2518,7 +2518,7 @@ mod embeddings_governance {
 
     /// ② 限流生效：Token 配额=1 且首个请求消费完 → 后续并发请求不再触达
     /// 上游（配额外零出站），且状态非 200 —— 路由层把 Throttled vendor 排除
-    ///（Validation 400：无可用候选）或 manager 层 RateLimited 429，两者都是
+    /// （Validation 400：无可用候选）或 manager 层 RateLimited 429，两者都是
     /// 治理生效的表现；旧实现绕过治理永远 200。
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn embeddings_rate_limiting_kicks_in_after_quota() {
@@ -2886,7 +2886,7 @@ mod embeddings_governance {
     }
 
     /// ⑦ F1 级联：维度漂移 502 后按错误文案指引调 reset 端点必须能恢复
-    ///（级联清除维度基准）——单厂商形态下 502 → reset → 同漂移维度放行为
+    /// （级联清除维度基准）——单厂商形态下 502 → reset → 同漂移维度放行为
     /// 新基准
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn admin_reset_recovers_dimension_drift_single_vendor() {
@@ -4587,7 +4587,7 @@ mod api_handler_coverage {
     }
 
     /// linucb 档 + /v1/messages：请求特征参与选择、奖励落归一臂键
-    ///（body.model 小写），成功请求后臂 (claude-x, vendor) 必然存在。
+    /// （body.model 小写），成功请求后臂 (claude-x, vendor) 必然存在。
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn anthropic_messages_linucb_features_recorded_on_reward_arm() {
         let mut server = mockito::Server::new_async().await;
@@ -4851,7 +4851,7 @@ mod api_handler_coverage {
     }
 
     /// 转换流式失败（cover_all_paths 开）：上游 429 → 客户端 429
-    ///（RateLimited 固定映射，可退避重试）。
+    /// （RateLimited 固定映射，可退避重试）。
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn openai_conversion_stream_cover_all_paths_upstream_429_yields_429() {
         let mut server = mockito::Server::new_async().await;
@@ -5311,7 +5311,7 @@ mod api_handler_coverage {
     }
 
     /// embeddings 仅支持 openai vendor：anthropic 型候选 → Protocol 错误
-    ///（502 protocol_error），不发上游请求。
+    /// （502 protocol_error），不发上游请求。
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn embeddings_non_openai_vendor_yields_502_protocol_error() {
         let state = build_state(
@@ -5730,7 +5730,7 @@ mod api_handler_coverage {
 
     // ── 缓存经济学亲和（[routing.affinity] mode = "auto"）────────────
 
-    /// auto 模式阈值门（R-affinity-002 集成面）：
+    /// auto 模式阈值门（集成面）：
     /// - 高 worth（usage cache_read=5000 ≥ 1024）→ 粘住 v-a；第二请求在
     ///   v-b 也合格时仍命中 v-a（hard 亲和优先于加权选择）
     /// - 低 worth（cache_read=200 < 1024）→ 不粘；v-a 退出合格集后
@@ -5974,7 +5974,7 @@ mod api_handler_coverage {
     // 大 payload 截断 / ApiState Debug / LinUCB 奖励守卫 / 全局状态
 
     /// >64KB 的 messages 落库截断：按 UTF-8 字符边界截断并附截断标记
-    ///（CJK 内容使 64KB 边界落在多字节字符内部，覆盖回退循环）。
+    /// （CJK 内容使 64KB 边界落在多字节字符内部，覆盖回退循环）。
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn oversized_messages_truncated_at_char_boundary_in_request_log() {
         let mut server = mockito::Server::new_async().await;
@@ -6662,7 +6662,7 @@ mod data_plane_endpoints {
         (status, value)
     }
 
-    ///：模型集合 = 目录 ∪ vendor 配置去重；同模型多
+    /// ：模型集合 = 目录 ∪ vendor 配置去重；同模型多
     /// vendor 只出现一次；禁用 vendor 的模型不出现。
     #[tokio::test]
     async fn models_lists_catalog_union_vendor_models_deduped() {
@@ -6735,7 +6735,7 @@ mod data_plane_endpoints {
         );
     }
 
-    ///：未鉴权返回 401（与其它 /v1 端点一致）。
+    /// ：未鉴权返回 401（与其它 /v1 端点一致）。
     #[tokio::test]
     async fn models_requires_auth() {
         let state = make_state(
@@ -6752,7 +6752,7 @@ mod data_plane_endpoints {
         assert_eq!(body["object"], "list");
     }
 
-    ///：模型列表始终现算——缓存开启且接线时二次请求
+    /// ：模型列表始终现算——缓存开启且接线时二次请求
     /// 仍无 X-Cache 头（不命中响应缓存）。
     #[tokio::test]
     async fn models_responses_are_never_cached() {
@@ -6779,7 +6779,7 @@ mod data_plane_endpoints {
         }
     }
 
-    ///：合法请求返回正整数 input_tokens；相同输入两次
+    /// ：合法请求返回正整数 input_tokens；相同输入两次
     /// 结果一致（确定性）；更长输入更大。
     #[tokio::test]
     async fn count_tokens_estimates_deterministically() {
@@ -6839,7 +6839,7 @@ mod data_plane_endpoints {
         );
     }
 
-    ///：未鉴权返回与其它 /v1 端点一致的 401。
+    /// ：未鉴权返回与其它 /v1 端点一致的 401。
     #[tokio::test]
     async fn count_tokens_requires_auth() {
         let state = make_state(
@@ -6875,7 +6875,7 @@ mod data_plane_endpoints {
         assert!(ok["input_tokens"].as_u64().unwrap() > 0);
     }
 
-    ///：缺 messages / 非法 body 返回 Validation 错误结构。
+    /// ：缺 messages / 非法 body 返回 Validation 错误结构。
     #[tokio::test]
     async fn count_tokens_rejects_bad_params() {
         let state = make_state(
@@ -7494,7 +7494,7 @@ mod route_explain {
             (item["weight"].as_f64().unwrap() - item["base_weight"].as_f64().unwrap()).abs() < 1e-9,
             "默认配置下生产权重 == 合成基准: {item}"
         );
-        // quota views 块（R-budget-002）：explain 透出平局打破生效者与降档
+        // quota views 块：explain 透出平局打破生效者与降档
         // 档位；未接线配额视图时 tie_break=false、degrade_tier=null
         assert!(
             item["quota"].is_object(),
@@ -7877,7 +7877,7 @@ mod route_explain {
         );
     }
 
-    // ── 亲和决策块（R-affinity-004：hit / miss / no_session / disabled）────
+    // ── 亲和决策块（hit / miss / no_session / disabled）────
 
     /// hit：绑定存在 → decision=hit + vendor；miss：无绑定；disabled：
     /// 亲和未接线。worth_tokens/ttl_secs 无 sticky 记账时为 null。
@@ -8780,7 +8780,7 @@ mod catalog_sync_admin {
         assert_eq!(catalog_after, catalog, "二次同步目录逐位不变");
     }
 
-    /// 管理面 413 映射钉（R-catalog-001 超限验收的管理面半边）：上游响应
+    /// 管理面 413 映射钉（超限验收的管理面半边）：上游响应
     /// 超 8MB 体积上限时 admin 端点返回 413（Payload Too Large），目录零改动。
     #[tokio::test]
     async fn oversized_source_maps_to_413_without_persist() {

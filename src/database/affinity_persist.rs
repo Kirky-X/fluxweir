@@ -34,7 +34,7 @@ enum StickCommand {
 }
 
 /// 粘性落盘器（write-behind 前沿 + 存储读侧）。Clone 廉价
-///（sender + Arc 仓库 + 原子计数）。
+/// （sender + Arc 仓库 + 原子计数）。
 #[derive(Clone)]
 pub struct AffinityPersister {
     repository: Arc<Repository>,

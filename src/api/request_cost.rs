@@ -6,13 +6,12 @@
 //! 计价单源与分账/配额一致：`[[model_catalog]]` 四档单价经
 //! `estimate_cost_from_catalog`（cache 语义单源 `prompt_cache_semantics`）。
 //! 无 usage（失败/空响应）→ `None`（不写成本）；未登记单价 → `Some(0.0)`
-//!（与 token_usage 分账、rerank 既有口径一致：写 0 而非 None）。
-
+//! （与 token_usage 分账、rerank 既有口径一致：写 0 而非 None）。
 use crate::config::ModelCatalogEntry;
 
 /// 逐请求成本（USD 道语义，币种随目录条目，与 `/admin/cost` 同口径）：
 /// `response.usage` 四档 token 求和 × 目录单价。未登记单价 → `Some(0.0)`
-///（登记性检查单源 `lookup_pricing_entry`）。
+/// （登记性检查单源 `lookup_pricing_entry`）。
 pub(crate) fn request_cost_usd(
     catalog: &[ModelCatalogEntry],
     vendor_type: &str,
@@ -40,7 +39,7 @@ pub(crate) fn request_cost_usd(
 /// 会话/上下文观测列（`session_key` + usage 派生的三列）。
 ///
 /// 与 [`request_cost_usd`] 同源取 usage（`parse_usage_detailed`）与目录条目
-///（`lookup_pricing_entry`），保证「成本列非空」与「缓存列非空」口径一致。
+/// （`lookup_pricing_entry`），保证「成本列非空」与「缓存列非空」口径一致。
 /// 一次解析、一次查找，避免热路径重复遍历与整目录克隆。
 ///
 /// `enabled=false`（`[usage_insights]` 关）时全部返回 `None`——采集门与
@@ -73,7 +72,7 @@ pub(crate) fn request_context_columns(
 }
 
 /// 缓存经济学亲和结算（`[routing.affinity]`）：响应 usage 结算时按模式
-/// 决定值不值得粘（R-affinity-002）。
+/// 决定值不值得粘。
 ///
 /// 与 [`request_cost_usd`] 同源取 usage（同一 `parse_usage_detailed` 调用，
 /// 一次解析复用四档），保证「成本口径」与「粘性与否」看到同一份 usage。

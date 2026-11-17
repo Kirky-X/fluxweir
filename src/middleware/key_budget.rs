@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 网关键成本预算账本（`[key_budgets]`，R-budget-001）：在飞预留-结算回冲。
+//! 网关键成本预算账本（`[key_budgets]`）：在飞预留-结算回冲。
 //!
 //! 入口（auth 识别 key 后、路由前）按估成本 `reserve` 预扣，响应后按实际
 //! 用量 `settle` 回冲差额——与租户配额（`middleware::quota`）同一「预扣-
@@ -25,7 +25,7 @@ use crate::quota_contract::{KeyBudgetReservation, KeyBudgetSource, KeyBudgetView
 
 /// 在飞预留总量上限（高基数约束，与 [`crate::middleware::quota`] 的账本
 /// 上限同级）：超限先清扫陈旧预留（窗已翻转者），仍超 → `Unavailable`
-///（调用方按 fail_open 语义处置——fail-closed 方向不放松约束）。
+/// （调用方按 fail_open 语义处置——fail-closed 方向不放松约束）。
 const MAX_IN_FLIGHT_RESERVATIONS: usize = 10_000;
 
 /// 单 (key, window) 账本格：窗起点（Unix 秒，UTC 日历对齐）+ 占用。
@@ -147,7 +147,7 @@ impl KeyBudgetLedger {
 
     /// 预留（入口判定+落账单临界区原子）：任一规则窗余量不足即拒（拒绝
     /// 路径零落账）；全部通过才逐窗落预留并入飞。容量超限先清扫陈旧
-    ///（窗已翻转）预留，仍超 → Unavailable。
+    /// （窗已翻转）预留，仍超 → Unavailable。
     pub fn reserve(&self, config: &Config, key_hash: &str, est_millicents: u64) -> ReserveOutcome {
         let rules = key_budget_windows(config, key_hash);
         if rules.is_empty() {
@@ -217,7 +217,7 @@ impl KeyBudgetLedger {
     }
 
     /// 结算核心（回冲差额）：`reservation` 为 Some 时先按句柄回冲在飞
-    ///（窗翻转的预留不回冲旧窗——随窗消亡），实际用量记入该 key 的当前
+    /// （窗翻转的预留不回冲旧窗——随窗消亡），实际用量记入该 key 的当前
     /// 各窗；None 时按 FIFO 弹最旧在飞（中间件结算路径），队空仍记实际
     /// 用量（无预留不丢账）。完成 token 滑动均值同步更新（EMA α=1/4，
     /// 冷启动首结算锚定）。

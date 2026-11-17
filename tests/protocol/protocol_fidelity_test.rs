@@ -30,7 +30,7 @@ fn base_anthropic_request() -> Value {
 }
 
 /// tool_choice {"type":"any"} / {"type":"tool",name} 不得降级为 "auto"
-///（跨协议客户端常带 Anthropic 形态；降级会静默改变工具调度语义）。
+/// （跨协议客户端常带 Anthropic 形态；降级会静默改变工具调度语义）。
 #[test]
 fn tool_choice_any_and_tool_never_downgrade_to_auto() {
     for (name, body) in [
@@ -265,7 +265,7 @@ fn image_blocks_map_both_directions() {
 }
 
 /// effort 七值双向：OpenAI `reasoning_effort` ↔ Anthropic `output_config.effort`
-///（Minimal→low 降级、None 省略字段；R-004/R-010）。
+/// （Minimal→low 降级、None 省略字段；R-004/R-010）。
 #[test]
 fn effort_cross_protocol_roundtrip() {
     // OpenAI high → IR → Anthropic output_config.effort=high
@@ -564,7 +564,7 @@ fn tool_result_and_tool_calls_text_outbound_blocks() {
 }
 
 /// Anthropic 入站 thinking 块（带 signature）→ IR → 同协议出站：
-/// thinking 原生块 + signature 原样回写（D3）。
+/// thinking 原生块 + signature 原样回写。
 #[test]
 fn assistant_thinking_block_roundtrip_keeps_signature() {
     let mut request = base_anthropic_request();
@@ -1045,7 +1045,7 @@ fn responses_convert_in_wire_shape_edges() {
 }
 
 /// Responses input 条数上限：当前回合超限与合并历史超限都显性拒绝
-///（上限 10000，不静默截断）。
+/// （上限 10000，不静默截断）。
 #[test]
 fn responses_input_item_limit_and_merged_history_overflow() {
     use fluxweir::protocol::responses::{parse_request, to_unified_request};

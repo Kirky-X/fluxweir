@@ -352,7 +352,8 @@ fn config_toml_example_parses() {
         content.contains("extra_headers"),
         "config.example.toml 缺 extra_headers 注释示例"
     );
-    // D8 厂商三新键：anthropic_version 缺省 None（出站注入 2023-06-01）、
+    // 厂商三新键：anthropic_version 缺省 None（出站注入 2023-06-01）、
+
     // beta 转发与非标参数发送默认 false；示例注释带出键名与默认值
     //（anthropic_version 为 skip_serializing_if 字段，全量键面扫描不可见，
     // 须显式锚点）

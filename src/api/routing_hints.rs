@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! 路由提示提取器：从请求头提取 X-Vendor / X-Model / X-Session-Id
-//!（会话键缺失时兜底 messages 前缀哈希）
-
+//! （会话键缺失时兜底 messages 前缀哈希）
 use axum::http::HeaderMap;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -62,7 +61,7 @@ impl RoutingHints {
         Self::from_headers_with_session_headers(headers, &DEFAULT_SESSION_HEADERS)
     }
 
-    /// 带会话头别名的提取（magpie-absorb-r1 R-affinity-001）：按序探测，
+    /// 带会话头别名的提取（magpie-absorb-r1）：按序探测，
     /// 首个存在且非空者截断为亲和键源；全部缺失走既有兜底。
     pub fn from_headers_with_session_headers(
         headers: &HeaderMap,
@@ -113,7 +112,7 @@ impl RoutingHints {
 
     /// 会话亲和键 — `X-Session-Id` 优先；缺失时兜底
     /// `sha256(messages[0] 序列化前 2KB)` 截断 hex。两者皆不可得
-    ///（无 header 且 body 无 messages）返回 None，该请求不参与亲和。
+    /// （无 header 且 body 无 messages）返回 None，该请求不参与亲和。
     pub fn effective_session_key(&self, body: &Value) -> Option<String> {
         if let Some(sk) = &self.session_key {
             return Some(sk.clone());
@@ -165,7 +164,7 @@ fn truncate_session_key(raw: &str) -> String {
 }
 
 /// 亲和决策解释块（`POST /admin/route/explain` 的 `affinity` 字段；
-/// R-affinity-004）。纯只读：`peek` 不续期、stick 记账只读，不改任何状态。
+/// ）。纯只读：`peek` 不续期、stick 记账只读，不改任何状态。
 ///
 /// `decision` 四态机器码（由调用方区分「没接线」与「这次请求没带会话」）：
 /// - `hit`：绑定存在（带 `vendor`）
@@ -417,7 +416,7 @@ mod tests {
 
 #[cfg(test)]
 mod session_header_alias_tests {
-    //! 会话头别名（magpie-absorb-r1 R-affinity-001）：配置列表整体替换
+    //! 会话头别名（magpie-absorb-r1）：配置列表整体替换
     //! 头来源——按序取首个存在且非空者；零配置（缺省列表）行为与历史一致。
     use super::*;
 

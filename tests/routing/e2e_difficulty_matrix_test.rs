@@ -255,7 +255,6 @@ async fn difficulty_matrix_routes_easy_low_hard_high_with_fallback_degrade() {
     // 场景 3（high 档 5xx 档内降级）：**未竟项**——mockito 同路径多 mock
     // 的匹配序与 fallback 重试的交互纠缠超本轮预算，降级语义另由
     // fallback_test/gate_circuit_breaker_test 覆盖；矩阵腿留待二轮补
-    //（见 tasks.md T001 注记）。
     // mockito 未匹配请求会断连——两轮全 200 即证明流量全部落在 mock 上
     //（零真实出站）；档位正确性已由上方响应头断言承载。
 }

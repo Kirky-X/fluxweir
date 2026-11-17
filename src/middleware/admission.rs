@@ -250,7 +250,7 @@ impl AdmissionState {
     }
 
     /// 到达样本 — burst EWMA += α(rate − burst)，rate = 1000/Δms req/s
-    ///（瞬时到达速率）；首样本只记时间锚（无间隔可测）。
+    /// （瞬时到达速率）；首样本只记时间锚（无间隔可测）。
     fn record_arrival(&self, stats: &KeyStats, now_ms: u64) {
         let last = stats.last_seen_ms.swap(now_ms, Ordering::Relaxed);
         if last == 0 || now_ms <= last {

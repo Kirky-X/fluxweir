@@ -80,7 +80,7 @@ pub async fn token_stats(
 
 /// 成本分账查询参数：`group_by` 必填（vendor|model），`from`/`to`
 /// 为 `YYYY-MM-DD` 日期闭区间（可选）；key 过滤经请求头传递
-///（明文 key 进 URL 会落入反代/访问日志，查询串不承载敏感参数）
+/// （明文 key 进 URL 会落入反代/访问日志，查询串不承载敏感参数）
 #[derive(serde::Deserialize)]
 pub struct CostQuery {
     pub from: Option<String>,
@@ -1091,7 +1091,7 @@ pub mod subscription_admin {
 
 /// GET /admin/masking/stats — 出站掩码观测（feature `masking`）：24h 滚动窗
 /// 的 per-kind 命中次数与值长度直方图**元数据**；不含任何值本身。门未装配
-///（feature 关闭或 bootstrap 未接线）返回空窗与 enabled=false。
+/// （feature 关闭或 bootstrap 未接线）返回空窗与 enabled=false。
 #[cfg(feature = "masking")]
 pub async fn masking_stats(
     State(state): State<Arc<ApiState>>,
@@ -1140,10 +1140,10 @@ pub struct MaskingLedgerQuery {
 
 /// GET /admin/masking/ledger — 掩码审计台账查询（feature `masking`）：
 /// 指定日（缺省今日）的 per-kind 聚合 + 明细分页。台账是明细事实源
-///（记录 ts/kind/finder/placeholder/首字符 hint，值不落盘）；
+/// （记录 ts/kind/finder/placeholder/首字符 hint，值不落盘）；
 /// `[masking].ledger.enabled=false` 或门未装配 → 404（明确关闭语义，
 /// 与 web_search 端点开关同口径）。handler 位于 tests 模块之前
-///（items_after_test_module 教训）。
+/// （items_after_test_module 教训）。
 #[cfg(feature = "masking")]
 #[axum::debug_handler]
 pub async fn masking_ledger(

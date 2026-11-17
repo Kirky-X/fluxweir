@@ -6,7 +6,7 @@
 //! 信任边界：本模块只守「用户可控 URL」的抓取路径（/v1/fetch）；vendor
 //! api_base 是管理员配置的可信面，不挂本判定（design Alternatives）。
 //! 判定在 DNS 解析后、TCP 建连前完成，并把判过的 IP pin 进连接
-//!（防 DNS rebinding 二跳）；重定向禁自动跟随。
+//! （防 DNS rebinding 二跳）；重定向禁自动跟随。
 //!
 //! 段表取 magpie netguard 同源集合（RFC 6890 特殊用途段），纯 std 零依赖。
 
@@ -21,7 +21,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// 单地址判定结论。`Deny` 只携带静态段名 tag——任何渲染路径都不含原地址
-/// 字符串（脱敏契约，R-net-002）。
+/// 字符串（脱敏契约）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verdict {
     /// 公网地址，放行
@@ -41,7 +41,7 @@ impl Verdict {
 }
 
 /// IPv4 特殊网段表：`(网络地址, 前缀, 段名 tag)`——magpie netguard 同源集合
-///（RFC 6890 特殊用途段）。
+/// （RFC 6890 特殊用途段）。
 const V4_RANGES: &[(Ipv4Addr, u8, &str)] = &[
     (Ipv4Addr::new(0, 0, 0, 0), 8, "this_network"),
     (Ipv4Addr::new(10, 0, 0, 0), 8, "private"),
@@ -60,7 +60,7 @@ const V4_RANGES: &[(Ipv4Addr, u8, &str)] = &[
     (Ipv4Addr::new(240, 0, 0, 0), 4, "reserved"),
 ];
 
-/// IPv6 特殊网段表（IPv4 组播维度由 ff00::/8 承接——R-net-001 组播拒绝的
+/// IPv6 特殊网段表（IPv4 组播维度由 ff00::/8 承接——组播拒绝的
 /// v6 半边；设计清单外的唯一补集，规格组播要求同源）。`::/128`（未指定）、
 /// `64:ff9b::/96`（NAT64 合成——有 NAT64 网关的环境可借此触达内网 v4）、
 /// `100::/64`（discard-only）为同源清单的 v6 缺口补齐。
@@ -147,7 +147,7 @@ pub struct FetchedPage {
 }
 
 /// 守护抓取错误——映射面在 api 层（Blocked → 400 netguard-blocked 等）。
-/// `Blocked` 只携带段名 tag（R-net-002 脱敏）；`Transport` 的 message 可能
+/// `Blocked` 只携带段名 tag（脱敏）；`Transport` 的 message 可能
 /// 含目标 URL（公网判定通过后才产生，无内网地址外泄面）。
 #[cfg(feature = "web-search")]
 #[derive(Debug)]
@@ -182,7 +182,7 @@ fn classify_reqwest_error(e: &reqwest::Error) -> String {
 }
 
 /// DNS 解析缝：生产实现走 `tokio::net::lookup_host`；测试注入固定地址表
-///（mock DNS 场景，R-net-003 的判定时点可观测性由此保证）。
+/// （mock DNS 场景，判定时点可观测性由此保证）。
 #[cfg(feature = "web-search")]
 #[async_trait::async_trait]
 pub trait Resolver: Send + Sync {
@@ -203,7 +203,7 @@ impl Resolver for TokioResolver {
 }
 
 /// 地址判定缝：默认即 [`guard`]；测试注入恒 Allow 以便经 mockito 观测
-/// pin/Host 语义（判定本体由 T001/T002 单测钉住）。
+/// pin/Host 语义（判定本体由单测钉住）。
 #[cfg(feature = "web-search")]
 type Judge = Arc<dyn Fn(IpAddr) -> Verdict + Send + Sync>;
 
@@ -234,7 +234,7 @@ pub struct GuardedFetcher {
     max_bytes: usize,
     clients: std::sync::Mutex<HashMap<String, Arc<reqwest::Client>>>,
     /// 插入序（front = 最旧）：容量到限逐出旧一半，保留近期 host 的连接池
-    ///（整体清空会让 >1024 独立 host 时连接池反复重建抖动）。
+    /// （整体清空会让 >1024 独立 host 时连接池反复重建抖动）。
     client_order: std::sync::Mutex<std::collections::VecDeque<String>>,
 }
 
@@ -363,7 +363,7 @@ impl GuardedFetcher {
     }
 
     /// 取（或惰性建）pin 到 `(host, ip)` 的一次性 Client：resolve 覆盖 DNS
-    ///（Host 保持域名、URL 显式端口优先，端口 0 = scheme 常规端口——reqwest
+    /// （Host 保持域名、URL 显式端口优先，端口 0 = scheme 常规端口——reqwest
     /// 0.13 实测语义；per-request resolve 该版本不存在），重定向禁自动跟随。
     /// 键含 ip：解析结果变化即新条目，pin 快照永不复用（rebinding 防线）。
     /// 容量守卫：host 基数由用户输入决定，达上限整体清空（有界内存；
@@ -431,7 +431,7 @@ fn map_transport_err(e: reqwest::Error) -> FetchError {
 }
 
 /// 流式读正文并钉上限：读满 `max` 字节仍有剩余 → [`FetchError::TooLarge`]
-///（全量缓冲前截停，不被超大响应拖垮内存）。
+/// （全量缓冲前截停，不被超大响应拖垮内存）。
 #[cfg(feature = "web-search")]
 async fn read_capped(resp: reqwest::Response, max: usize) -> Result<String, FetchError> {
     use futures::Stream as _;
@@ -455,9 +455,9 @@ async fn read_capped(resp: reqwest::Response, max: usize) -> Result<String, Fetc
 }
 
 /// 正文提取首版：HTML 标签剥离（`<…>` 跨度删除）+ 三常用实体解码
-///（&amp; &lt; &gt;）——单遍扫描零中间串（顺带修正旧链式 replace 的二次
+/// （&amp; &lt; &gt;）——单遍扫描零中间串（顺带修正旧链式 replace 的二次
 /// 解码：`&amp;lt;` 现解码一次为 `&lt;` 而非 `<`）；结构化提取
-///（readability 级）为 Deferred 性质，复杂页面正文质量一般（design
+/// （readability 级）为 Deferred 性质，复杂页面正文质量一般（design
 /// Consequences 披露项）。
 #[cfg(feature = "web-search")]
 fn strip_html(input: &str) -> String {
@@ -516,7 +516,7 @@ mod tests {
         IpAddr::V6(s.parse().expect("valid ipv6"))
     }
 
-    /// R-net-002：Deny 携段名 tag（10.x → private、127.x → loopback），
+    /// Deny 携段名 tag（10.x → private、127.x → loopback），
     /// 且任何渲染形态都不回显原地址字符串。
     #[test]
     fn deny_returns_range_tag_without_address_echo() {
@@ -545,7 +545,7 @@ mod tests {
         assert_eq!(guard(v4("8.8.8.8")).deny_tag(), None, "Allow 无 tag");
     }
 
-    /// R-net-001：段表内代表地址拒、公网 v4/v6 放行。
+    /// 段表内代表地址拒、公网 v4/v6 放行。
     #[test]
     fn special_ranges_denied_public_allowed() {
         let denied = [
@@ -556,7 +556,7 @@ mod tests {
             v4("100.64.1.1"),
             v6("::1"),
             v6("fc00::1"),
-            // 逐段代表地址（R-net-001 验收：清单内每段至少一条）
+            // 逐段代表地址（清单内每段至少一条）
             v4("0.0.0.1"),
             v4("172.16.0.1"),
             v4("172.31.255.254"),
@@ -626,7 +626,7 @@ mod fetch_tests {
         }
     }
 
-    /// R-net-003：私网解析全拒（tag 取首个 Deny）；公网放行且 Host 头保持
+    /// 私网解析全拒（tag 取首个 Deny）；公网放行且 Host 头保持
     /// 域名；301 不自动跟随、Location 原样带出。
     #[tokio::test]
     async fn private_host_resolving_blocked_public_allowed() {
@@ -692,8 +692,8 @@ mod fetch_tests {
         redir_mock.assert();
     }
 
-    /// T004：同 host 同解析结果的两次抓取复用同一只 pin Client
-    ///（reqwest 连接池随之复用）；解析结果变化（host 同、ip 异）生成新条目，
+    /// 同 host 同解析结果的两次抓取复用同一只 pin Client
+    /// （reqwest 连接池随之复用）；解析结果变化（host 同、ip 异）生成新条目，
     /// 防 pin 快照过期。缓存键含 ip，白盒断言条目数。
     #[tokio::test]
     async fn host_client_cache_reuses_connection() {

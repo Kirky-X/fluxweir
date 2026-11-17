@@ -322,7 +322,7 @@ fn group_key(base: &str, labels: &[(String, String)]) -> String {
     format!("{base}\u{0}{}", joined.join("\u{2}"))
 }
 
-/// OTLP 导出参数（`[otlp]` 配置段映射而来，见 T004）。
+/// OTLP 导出参数（`[otlp]` 配置段映射而来）。
 #[derive(Debug, Clone)]
 pub struct BridgeOptions {
     pub endpoint: String,

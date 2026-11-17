@@ -422,7 +422,7 @@ mod stream_restore {
     }
 
     /// 纯文本透传：无占位符文本原样输出（byte-equal），缓冲 ≤ 96 字节
-    ///（零延迟语义：整段立即可发）。
+    /// （零延迟语义：整段立即可发）。
     #[test]
     fn plain_text_passthrough_low_latency() {
         let reg = registry();
@@ -563,7 +563,7 @@ mod restore_json {
     }
 
     /// 请求域还原（跨请求还原预言机防线）：本请求 ticket 未登记的占位符
-    ///——哪怕已在注册表（他请求登记过）——一律不还原；域内命中正常回填。
+    /// ——哪怕已在注册表（他请求登记过）——一律不还原；域内命中正常回填。
     /// 伪造/回显他租户占位符的探测面由此闭合。
     #[test]
     fn restore_scopes_to_request_ticket() {
@@ -638,7 +638,7 @@ mod gate {
     }
 
     /// 检测器 panic → `MaskGate::mask_body` 返回 `MaskError::Unavailable`
-    ///（调用方按 503 拒发），原文绝不出站。
+    /// （调用方按 503 拒发），原文绝不出站。
     #[test]
     fn gate_error_yields_503_not_raw_send() {
         let config = Arc::new(fluxweir::config::ConfigManager::new(config_with(

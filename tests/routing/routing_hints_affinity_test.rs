@@ -20,7 +20,7 @@ mod web_server_hints {
     use std::time::Duration;
 
     /// 两 vendor 同 abstract 模型（shared-model）—— 亲和 boost 的最小场景
-    ///（与 gate_router_test affinity mod 的基座逐字段一致：并发上限 1 +
+    /// （与 gate_router_test affinity mod 的基座逐字段一致：并发上限 1 +
     /// shared-model 单模型）
     fn make_two_vendor_config() -> fluxweir::config::Config {
         crate::common::ensure_test_api_key();
@@ -61,7 +61,7 @@ mod web_server_hints {
     }
 
     /// ④ 无 header 时同前缀 messages 哈希 → 同兜底会话键 → 同 vendor
-    ///（web-server feature 下经 RoutingHints 的兜底路径）。
+    /// （web-server feature 下经 RoutingHints 的兜底路径）。
     #[cfg(feature = "web-server")]
     #[tokio::test]
     async fn prefix_hash_fallback_binds_same_vendor() {

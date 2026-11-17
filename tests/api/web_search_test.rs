@@ -168,7 +168,7 @@ async fn fetch_disabled_returns_404() {
     assert_eq!(body["error"]["type"], "web_search_disabled");
 }
 
-/// R-net-004 四约束 + 重定向：尺寸上限（413）、超时（504）、
+/// 四约束 + 重定向：尺寸上限（413）、超时（504）、
 /// 白名单外媒体（415）、text/plain 放行、301 不跟随带 Location。
 #[tokio::test]
 async fn fetch_enforces_size_cap_timeout_and_content_whitelist() {
@@ -280,7 +280,7 @@ async fn post_search(app: Router, body: serde_json::Value) -> Response {
     .unwrap()
 }
 
-/// R-search-003：源 1 失败源 2 成功的 fall-through；成功响应带出实际命中的
+/// 源 1 失败源 2 成功的 fall-through；成功响应带出实际命中的
 /// provider 与 OpenAI 风格 data 数组。
 #[tokio::test]
 async fn search_falls_through_providers() {
@@ -424,7 +424,7 @@ async fn search_provider_param_selects_single_source() {
     );
 }
 
-/// R-search-004 / T011：admin stats 按 (provider, key_idx) 出成败计数，
+///admin stats 按 (provider, key_idx) 出成败计数
 /// 零 key 材料回显（仅 key_idx 序号）。
 #[tokio::test]
 async fn admin_web_search_stats_reports_counts_without_key_material() {
@@ -499,7 +499,7 @@ async fn admin_web_search_stats_reports_counts_without_key_material() {
     );
 }
 
-/// T013：web_search_requests_total{provider,result} 与
+/// web_search_requests_total{provider,result} 与
 /// netguard_denied_total{tag} 打点，经 /admin/metrics 快照断言。
 #[tokio::test]
 async fn metrics_record_web_search_and_netguard_denials() {

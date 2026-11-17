@@ -2,6 +2,9 @@
 # 完整字段见: https://embarkstudios.github.io/cargo-deny/
 
 [advisories]
+# RUSTSEC-2026-0543（2026-11-17 入库）：chrono 全版本 unmaintained，patched=[] 无升级路径；
+# 依赖替换（jiff/time）归依赖治理 change。家族级豁免（confers 同日先行）。
+ignore = ["RUSTSEC-2026-0543"]
 db-urls = ["https://github.com/RustSec/advisory-db"]
 yanked = "deny"
 

@@ -519,7 +519,7 @@ pub(crate) async fn assemble_with_database(
         }
     };
 
-    // 配额账本 + 落盘接线（quota-aware-routing T005）：结算 UPSERT（单事务
+    // 配额账本 + 落盘接线：结算 UPSERT（单事务
     // 批量）+ 30s 周期全量 flush + 启动恢复活动窗 + 保留清理。repository
     // 恢复读取失败不静默——ERROR 留痕后按空账本启动（预算约束短暂放松，
     // 与 flush 误差同性质）。
@@ -923,7 +923,7 @@ pub(crate) fn register_embedding_pin_hook(
 
 /// 启动恢复 CostTracker 内存成本视图：内存库（`:memory:`）无跨重启数据，
 /// warn 跳过；文件库按窗口聚合 `token_usage` 回填。失败仅 warn 不阻断启动
-///（恢复是观测增强，不失败服务）。
+/// （恢复是观测增强，不失败服务）。
 #[cfg(feature = "cost-tracking")]
 async fn restore_cost_tracker(
     vendor_manager: &crate::vendor::VendorManager,
@@ -996,7 +996,7 @@ mod tests {
         );
     }
 
-    /// 目录同步周期任务挂载判定（T006）：双门控——enabled=false 不挂任务、
+    /// 目录同步周期任务挂载判定：双门控——enabled=false 不挂任务、
     /// interval_secs=0 不挂任务（仅 admin 手动触发）、两者同时满足才挂。
     #[cfg(feature = "catalog-sync")]
     #[test]

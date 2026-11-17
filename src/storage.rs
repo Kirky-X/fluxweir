@@ -133,14 +133,14 @@ pub struct ContextStatRow {
     /// 平均占用率（0.0 起；>1.0 表示超出窗口）
     pub avg_occupancy: f64,
     /// 缓存读占输入 token 的份额。Exclusive 协议（Anthropic）下可 >1
-    ///（分母 `prompt + cache_write` 不含 cache_read）
+    /// （分母 `prompt + cache_write` 不含 cache_read）
     pub cache_read_share: f64,
     /// 五桶计数：<20% / 20-40% / 40-60% / 60-80% / >=80%
     pub bucket_counts: [i64; 5],
 }
 
 /// 分账写入项：调用方透传请求方 key 摘要与四类用量及分项成本
-///（`model_catalog` 四档单价），聚合与 flush 由实现承担。
+/// （`model_catalog` 四档单价），聚合与 flush 由实现承担。
 #[derive(Debug, Clone)]
 pub struct KeyedUsage {
     pub vendor: String,
@@ -157,7 +157,7 @@ pub struct KeyedUsage {
 }
 
 /// (vendor, model) 维度成本聚合行 — CostTracker 启动恢复消费
-///（`Repository::query_cost_window` 产出）。
+/// （`Repository::query_cost_window` 产出）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct VendorModelCostRow {
     pub vendor: String,

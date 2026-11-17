@@ -156,7 +156,8 @@ fn function_call_item(call_id: &str, name: &str, arguments: &str) -> OutputItem 
 fn map_usage(usage: &crate::protocol::unified::TokenUsage) -> ResponsesUsage {
     // details 明细优先回写；缺省时 legacy cache_read_tokens 并入
     // cached_tokens（与 OpenAI 面策略一致）；reasoning_tokens 从 IR
-    // completion_tokens_details 回写（D4）
+    // completion_tokens_details 回写
+
     let input_tokens_details = match usage
         .prompt_tokens_details
         .as_ref()

@@ -289,7 +289,7 @@ mod tests {
     use super::resolve_database_url;
     use crate::config::DatabaseConfig;
 
-    /// url 非空：原样优先，path 不参与（db-backend-selection D2）
+    /// url 非空：原样优先，path 不参与（db-backend-selection）
     #[test]
     fn explicit_url_takes_precedence_over_path() {
         let config = DatabaseConfig {

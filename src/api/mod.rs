@@ -597,7 +597,8 @@ pub(crate) async fn execute_request_with_fallback(
     GateError,
 > {
     // 尝试级追踪 root（otlp）：fallback 循环级一次，N vendor attempt 共享
-    // 同一 trace（R-otlp-001 的 N+1 形态）；追踪未装配恒 None。
+    // 同一 trace（N+1 形态）；追踪未装配恒 None。
+
     #[cfg(feature = "otlp")]
     let request_trace = crate::vendor::manager::VendorManager::begin_request_trace(
         &state.config,
@@ -1505,7 +1506,7 @@ mod cooldown_retry_after {
     }
 
     /// 默认关（hint=false）：同样的全 Throttled 数据 → 原错误冒泡
-    ///（RateLimited 语义保留，不产生 AllVendorsThrottled）。
+    /// （RateLimited 语义保留，不产生 AllVendorsThrottled）。
     #[tokio::test]
     async fn hint_off_keeps_original_error() {
         let state = make_state(

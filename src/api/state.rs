@@ -37,7 +37,7 @@ pub struct ApiState {
     /// no-op（legacy 路径的 `bind_session_affinity` 不受影响）。
     pub affinity_writer: Option<Arc<AffinityWriter>>,
     /// 精确响应缓存（oxcache）— enabled 由 `[cache]` 段热读控制
-    ///（默认关闭）；None = 未接线。
+    /// （默认关闭）；None = 未接线。
     pub response_cache: Option<Arc<ResponseCache>>,
     /// LinUCB 状态 — selection="linucb" 档的臂状态；Router 与
     /// handler（奖励回传）共享同一实例。None = 未接线（该档回退 weighted、
@@ -87,7 +87,7 @@ impl std::fmt::Debug for ApiState {
 
 impl ApiState {
     /// LinUCB 奖励回传（落库记账点调用）：仅 linucb 档且接线时 update
-    ///（r = 成功 1 / 失败 0）；arm_key 与选择侧同源归一，None = 臂未被
+    /// （r = 成功 1 / 失败 0）；arm_key 与选择侧同源归一，None = 臂未被
     /// 咨询跳过奖励；脏样本由 BanditState::update 兜底丢弃
     pub fn record_linucb_reward(
         &self,

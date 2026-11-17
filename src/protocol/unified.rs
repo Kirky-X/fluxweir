@@ -352,7 +352,7 @@ pub(crate) fn json_depth(value: &Value) -> usize {
 }
 
 /// 工具 schema 体积/深度上限校验（入站解析处）：超限返回 Validation
-///（请求级 400），field 携带工具下标 + 实测值 + 上限值
+/// （请求级 400），field 携带工具下标 + 实测值 + 上限值
 pub(crate) fn validate_tool_schemas(tools: &[Tool]) -> Result<(), GateError> {
     for (index, tool) in tools.iter().enumerate() {
         let parameters = &tool.function.parameters;

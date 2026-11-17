@@ -173,7 +173,7 @@ impl Router {
     }
 
     /// embeddings 候选的类型过滤：该 abstract 下非 openai 型厂商 id 集合
-    ///（重复 id 对排除语义无影响，不去重）
+    /// （重复 id 对排除语义无影响，不去重）
     fn non_openai_exclusion(&self, normalized: &str) -> Vec<String> {
         self.config
             .resolve_model(normalized)
@@ -1536,7 +1536,7 @@ impl Router {
         }
     }
 
-    /// 前缀亲和候选对（D1）：enabled 且 ctx 带哈希且 n≥2 时产出 (i1,i2)，
+    /// 前缀亲和候选对：enabled 且 ctx 带哈希且 n≥2 时产出 (i1,i2)，
     /// 否则 None（选路完全回退历史路径）
     fn affinity_pair(&self, n: usize, ctx: Option<&RouteCtx>) -> Option<(usize, usize)> {
         let ctx = ctx?;
@@ -1549,7 +1549,7 @@ impl Router {
 
     /// LinUCB 选择档：selection="linucb"（热读）且接线且特征长度正确时
     /// argmax UCB；任一条件不满足返回 None 回退 weighted。α 热读 ucb_alpha
-    ///（非有限/负值按 0 = 纯贪心）
+    /// （非有限/负值按 0 = 纯贪心）
     fn linucb_route(
         &self,
         model_key: &str,
@@ -1683,7 +1683,7 @@ impl Router {
     /// 容量自动权重（仅 weight<=0，limit 归一 (0,1]）→ 均匀兜底 1.0。
     /// tenant 供 SLA 取 Q；sla_v=0（默认）时该打分项旁路。
     /// 配额感知因子（quota-aware-routing）：mode=smart 先摘预算耗尽候选
-    ///（全员耗尽保留全部并计数），重置最快者得第 6 加法项；mode=pace 按消耗
+    /// （全员耗尽保留全部并计数），重置最快者得第 6 加法项；mode=pace 按消耗
     /// 率带乘性升降权；mode=off / 未接线账本 → 零查询零副作用。
     pub async fn calculate_weights_overridden(
         &self,
@@ -1692,7 +1692,7 @@ impl Router {
         tenant: Option<&str>,
         ctx: Option<RouteCtx>,
     ) -> Vec<(f64, (VendorConfig, ModelConfig))> {
-        // 配额因子单次快照（T007/T008）：mode 判定一次 + 逐 vendor 视图一次，
+        // 配额因子单次快照：mode 判定一次 + 逐 vendor 视图一次，
         // smart 过滤与第 6 因子打分共用；off/未接线零查询零分配
         let (quota_mode, views) = self.quota_factor_views(&candidates).await;
         let (candidates, views) = self.apply_quota_filter(candidates, quota_mode, views).await;
@@ -1717,7 +1717,7 @@ impl Router {
             Vec::new()
         };
 
-        // 配额因子打分上下文（T007/T008 + R-budget-002）：过滤后的候选与
+        // 配额因子打分上下文：过滤后的候选与
         // 视图同序对齐；平局打破与两级降档同快照单点生效
         let scoring = quota_factor_scores(quota_mode, &views, &quota_section);
         let (quota_scores, pace_multipliers) =
@@ -1759,7 +1759,7 @@ impl Router {
             if let Some(Some(factor)) = pace_multipliers.get(i) {
                 weight *= *factor;
             }
-            // 两级降档乘性修正（R-budget-002：剩余 ≤10%/≤2% 缓/强转向，
+            // 两级降档乘性修正（剩余 ≤10%/≤2% 缓/强转向，
             // 与 pace 独立叠加；缺省启用）
             if let Some(Some(factor)) = scoring.degrade_multipliers.get(i) {
                 weight *= *factor;
@@ -1769,10 +1769,10 @@ impl Router {
         weighted
     }
 
-    /// 配额因子单次快照（T007/T008）：mode 判定一次 + 逐 vendor 视图一次
-    ///（同 vendor 多 model 候选共享同一视图，互斥锁与 `Utc::now` 只付一次）。
+    /// 配额因子单次快照：mode 判定一次 + 逐 vendor 视图一次
+    /// （同 vendor 多 model 候选共享同一视图，互斥锁与 `Utc::now` 只付一次）。
     /// off / 未接线 → 双空（调用方整链零查询零分配）；views 与 candidates
-    /// 同序对齐。pub 供确定性测试注入（R-budget-002 平局打破/降档验证）。
+    /// 同序对齐。pub 供确定性测试注入（平局打破/降档验证）。
     pub async fn quota_factor_views(
         &self,
         candidates: &[(VendorConfig, ModelConfig)],
@@ -1804,7 +1804,7 @@ impl Router {
         (mode, views)
     }
 
-    /// smart 候选过滤（T007 / R-vbr-002）：预算耗尽 vendor 摘出候选（候选与
+    ///smart 候选过滤：预算耗尽 vendor 摘出候选（候选与
     /// 视图同序收缩，产物直接供第 6 因子打分，免二次查询）；全员耗尽保留
     /// 全部并对每个 vendor 计 `quota_factor_depleted_total`。非 smart 或
     /// views 为空（off/未接线）→ 原样返回。收缩用原位 swap 压缩（零重建
@@ -1905,7 +1905,7 @@ impl Router {
 
     /// RNG 注入版选择（确定性入口，测试经 StdRng 复现选择分布）。
     /// 温度平滑 w^(1/T) 在本方法内恰好应用一次；入参为已算权重的候选
-    ///（权重计算 async 而 &mut dyn Rng 不能跨 await，只能两段式）。
+    /// （权重计算 async 而 &mut dyn Rng 不能跨 await，只能两段式）。
     pub fn weighted_select_with(
         &self,
         weighted: Vec<(f64, (VendorConfig, ModelConfig))>,
@@ -1922,7 +1922,7 @@ impl Router {
         // 系数与温度热读（同步段，无 await）
         let routing = self.config.read().routing.clone();
 
-        // 前缀亲和 PoTC（D1）：候选生成从"均匀随机"换为"前缀哈希对"，
+        // 前缀亲和 PoTC：候选生成从"均匀随机"换为"前缀哈希对"，
         // 对内按平滑权重择优。启用时取代 min+buffer 与 power_of_two
         if let Some((i1, i2)) = pair {
             if let (Some(a), Some(b)) = (weighted.get(i1), weighted.get(i2)) {
@@ -2512,7 +2512,7 @@ pub fn sla_median_cost(mut prices: Vec<f64>) -> Option<f64> {
 
 /// 路由权重：w_model×model.weight + w_queue×queue_factor +
 /// w_window×window_factor + w_latency×latency_factor + w_error×error_factor
-///（+ w_quota×quota_factor，mode=smart 时）。各因子语义见
+/// （+ w_quota×quota_factor，mode=smart 时）。各因子语义见
 /// compute_weight_breakdown；纯因子加权，不含温度平滑（平滑由
 /// weighted_select_with 恰好应用一次）。pub 供确定性测试与调试
 pub fn compute_weight(
@@ -2596,14 +2596,14 @@ pub struct WeightBreakdown {
     pub total: f64,
 }
 
-/// smart 因子的每候选打分输入（重置最快加成；quota-aware-routing T007）。
+/// smart 因子的每候选打分输入（重置最快加成）。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct QuotaFactorScore {
     /// reset_secs / period_secs ∈ \[0,1\]（0 = 即将重置 → 加成最大）
     pub normalized_reset: f64,
 }
 
-/// pace 因子的乘性修正（R-vbr-003 确定性纯函数）：消耗率比 > 1.1 → 降权
+/// pace 因子的乘性修正（确定性纯函数）：消耗率比 > 1.1 → 降权
 /// ×0.5；< 0.9 → 升权 ×1.2；带内不变 ×1.0。非有限值按带内处理。
 pub fn quota_pace_multiplier(pace_ratio: f64) -> f64 {
     if !pace_ratio.is_finite() {
@@ -2626,7 +2626,7 @@ pub struct QuotaFactorScoring {
     pub scores: Vec<Option<QuotaFactorScore>>,
     /// pace 消耗率带乘数（mode=pace 时非空）
     pub pace_multipliers: Vec<Option<f64>>,
-    /// 两级降档乘数（R-budget-002；缺省启用，阈值乘数可配）——与 pace 乘数
+    /// 两级降档乘数（缺省启用，阈值乘数可配）——与 pace 乘数
     /// 独立叠加，mode=smart/pace 都生效
     pub degrade_multipliers: Vec<Option<f64>>,
     /// 降档档位（explain 透出）：`"tier1"`（剩余 ≤10% 默认档）| `"tier2"`
@@ -2636,13 +2636,13 @@ pub struct QuotaFactorScoring {
     pub tie_break_winners: Vec<bool>,
 }
 
-/// 平局打破的剩余额度门（R-budget-002「剩余都 >10%」）：低于该值的候选
+/// 平局打破的剩余额度门（「剩余都 >10%」）：低于该值的候选
 /// 进入降档域（`degrade_for`），不再参与平局打破。固定 0.10 与降档档位一
 /// 缺省阈值分域互补；降档阈值可配、此门独立固定。
 const TIE_BREAK_MIN_REMAINING: f64 = 0.10;
 
-/// 两级降档判定（纯函数，R-budget-002）：已用比例 ≥ 档二阈值 → ×tier2 乘数
-///（先判紧档）；≥ 档一阈值 → ×tier1 乘数。视图无已判维度或降档关闭 → None。
+/// 两级降档判定（纯函数）：已用比例 ≥ 档二阈值 → ×tier2 乘数
+/// （先判紧档）；≥ 档一阈值 → ×tier1 乘数。视图无已判维度或降档关闭 → None。
 /// 阈值/乘数语义：tier1 默认 0.90/0.9（剩余 ≤10% 缓转向）、tier2 默认
 /// 0.98/0.75（剩余 ≤2% 强转向）——与平局打破的「剩余 >10%」门互补分域：
 /// 未及 90% 已用 = 平局打破域，之后逐级降档至硬耗尽（smart 摘除）。
@@ -2668,7 +2668,7 @@ fn degrade_for(
 /// 加成）+ 平局打破（reset_at 更早者在 ε 平局组内获满加成）；pace → 每候选
 /// 消耗率带乘性因子；双模式统一叠加两级降档乘数。off → 全空（零评分）。
 /// views 与候选集同序对齐（`Router::apply_quota_filter` 产物直入，免二次
-/// 查询）。pub 供确定性测试（R-budget-002 平局打破/降档验证入口）。
+/// 查询）。pub 供确定性测试（平局打破/降档验证入口）。
 pub fn quota_factor_scores(
     mode: crate::config::QuotaFactorMode,
     views: &[Option<crate::quota_contract::VendorBudgetView>],
@@ -2774,7 +2774,7 @@ fn routing_pair_enabled(router: &Router) -> bool {
 }
 
 /// 单请求路由上下文：前缀亲和与价格因子的请求级输入
-///（prefix_hash = API 层对稳定前缀的进程内哈希；est_prompt_tokens = body 字节/4 估算）
+/// （prefix_hash = API 层对稳定前缀的进程内哈希；est_prompt_tokens = body 字节/4 估算）
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RouteCtx {
     pub prefix_hash: u64,
@@ -2839,7 +2839,7 @@ pub const REASON_NOT_IN_CATALOG: &str = "not_in_catalog";
 pub const REASON_WEIGHT_ZERO: &str = "weight_zero";
 pub const REASON_AFFINITY_BOUND_ELSEWHERE: &str = "affinity_bound_elsewhere";
 pub const REASON_QUEUE_OVER_LIMIT: &str = "queue_over_limit";
-/// smart 因子摘除（R-vbr-002）：vendor 预算耗尽且非全员耗尽——生产路由
+/// smart 因子摘除：vendor 预算耗尽且非全员耗尽——生产路由
 /// 在权重前已摘出候选（解释块同口径，与真实路由一致）
 pub const REASON_QUOTA_DEPLETED: &str = "quota_depleted";
 pub const REASON_ELIGIBLE: &str = "eligible";
@@ -2863,9 +2863,9 @@ pub struct CandidateAssessment {
     pub weight: Option<f64>,
     /// 当前 selection 档位（入选者有值）。
     pub selection: Option<&'static str>,
-    /// 平局打破生效者（R-budget-002：quota views 透出；入选者有值）。
+    /// 平局打破生效者（quota views 透出；入选者有值）。
     pub quota_tie_break: Option<bool>,
-    /// 降档档位（R-budget-002：`tier1`/`tier2`；未降档 None，入选者有值）。
+    /// 降档档位（`tier1`/`tier2`；未降档 None，入选者有值）。
     pub quota_degrade_tier: Option<&'static str>,
 }
 

@@ -1569,7 +1569,7 @@ mod failure_rate_gate {
     }
 
     /// gate=false（默认）：同样的 (6 失败/6 总) 数据 → 权重不变
-    ///（默认路径回归——软降权关闭时行为与现状逐位一致）。
+    /// （默认路径回归——软降权关闭时行为与现状逐位一致）。
     #[tokio::test]
     async fn gate_off_same_data_keeps_weights_identical() {
         let config = make_two_vendor_config(false);
@@ -1783,7 +1783,7 @@ mod cooldown_improvements {
     }
 
     /// (a) 门控开：X-Weight 覆盖 model.weight → 两侧同为 3.0 → 等权
-    ///（两侧都应显著出现；若被二次门控吞掉则 heavy 单边 ~74%，可检出）。
+    /// （两侧都应显著出现；若被二次门控吞掉则 heavy 单边 ~74%，可检出）。
     #[tokio::test]
     async fn hints_model_branch_applies_request_weight_when_gate_on() {
         let routing = RoutingSection {
@@ -1948,7 +1948,7 @@ mod soft_affinity {
     }
 
     /// soft 模式：boost 后 StdRng 固定种子下高 boost 必选 bound
-    ///（×11 权重对等权候选，固定种子选择序列确定）。
+    /// （×11 权重对等权候选，固定种子选择序列确定）。
     #[tokio::test]
     async fn soft_boost_fixed_seed_selects_bound_vendor() {
         let config = make_config("soft", 1.0, false);
@@ -1974,7 +1974,7 @@ mod soft_affinity {
     }
 
     /// boost=0：无操作（权重逐位不变）→ 同种子选择与无亲和一致
-    ///（结构性回滚语义锁定）。
+    /// （结构性回滚语义锁定）。
     #[tokio::test]
     async fn boost_zero_is_noop_identical_to_no_affinity() {
         let config = make_config("soft", 0.0, false);
@@ -2341,7 +2341,7 @@ mod sla_virtual_queue {
     }
 
     /// 缺价方向性（评审 issue#16）：缺价 vendor 的 Ĉ = 候选集已知单价中位数
-    ///（保守不奖励，不得高于同质量有定价 vendor）——非记 0（那会反向奖励）。
+    /// （保守不奖励，不得高于同质量有定价 vendor）——非记 0（那会反向奖励）。
     #[tokio::test]
     async fn sla_missing_price_uses_candidate_median() {
         let vendors = vec![
@@ -2569,7 +2569,7 @@ mod linucb_selection {
     }
 
     /// 接线形态：Router.with_bandit + 测试侧持有同一 BanditState Arc
-    ///（状态可观察）。
+    /// （状态可观察）。
     async fn make_wired(
         routing: RoutingSection,
         vendors: Vec<VendorConfig>,
@@ -2582,7 +2582,7 @@ mod linucb_selection {
     }
 
     /// 未接线（with_bandit 未调用）：selection="linucb" 时回退 weighted
-    ///（安全语义，对齐 affinity 的 None）——路由照常成功。
+    /// （安全语义，对齐 affinity 的 None）——路由照常成功。
     #[tokio::test]
     async fn linucb_without_wiring_falls_back_to_weighted() {
         let cm = Arc::new(ConfigManager::new(make_config(
@@ -2644,7 +2644,7 @@ mod linucb_selection {
     }
 
     /// 已接线：利用 — good 臂灌成功奖励后 mean 项压过未采样臂的纯探索项
-    ///（ucb_good = 0.75+0.5 = 1.25 > ucb_bad = 1.0），选择从先验翻转为
+    /// （ucb_good = 0.75+0.5 = 1.25 > ucb_bad = 1.0），选择从先验翻转为
     /// 定向（奖励回传驱动 UCB 变化的端到端等价断言）。
     #[tokio::test]
     async fn linucb_reward_flips_selection() {
@@ -2952,7 +2952,7 @@ mod lps_lookahead {
     }
 
     /// δ>0：逼近并发上限（高到达率）vendor 的权重显著低于空闲者
-    ///（Ŵ_busy>0 → 因子 1/(1+δ·Ŵ/Ŵ_ref)<1；Ŵ_idle=0 → 因子 1）。
+    /// （Ŵ_busy>0 → 因子 1/(1+δ·Ŵ/Ŵ_ref)<1；Ŵ_idle=0 → 因子 1）。
     #[tokio::test]
     async fn lps_penalty_scales_down_congested_vendor() {
         let (router, vm, _cm) = make_router(RoutingSection {
@@ -3017,7 +3017,7 @@ mod lps_lookahead {
 
     /// deadline 门控（硬约束）：全部候选 Ŵ 超时（头 x-deadline-ms=0.001ms）
     /// → 空集规则改选 Ŵ 最小者（idle，Ŵ=0）。gate 关时同头被忽略
-    ///（正常权重路径返回，非空集回退语义可区分——此处断言 gate 关时不
+    /// （正常权重路径返回，非空集回退语义可区分——此处断言 gate 关时不
     /// 触发回退即可）。
     #[tokio::test]
     async fn deadline_gate_empty_feasible_set_picks_min_wait() {
@@ -3265,7 +3265,7 @@ mod route_gap_coverage {
 
     /// 全部 vendor 运维置为 Unavailable 且 fail-open 关闭（默认）：global
     /// 路径把全部候选计入 status_dropped 后仍返回 None → Validation 错误
-    ///（fail-open 不开启时不得把冷却 vendor 纳入流量）。
+    /// （fail-open 不开启时不得把冷却 vendor 纳入流量）。
     #[tokio::test]
     async fn auto_route_all_unavailable_without_fail_open_errors() {
         let (router, vm, _cm) = make_router(
@@ -3349,7 +3349,7 @@ mod route_gap_coverage {
     // ---- route_with_hints：preferred_vendor 分支 ----
 
     /// 指定 vendor 不存在 → router-vendor-unavailable Validation 错误
-    ///（try_vendor_route 的 get_vendor None 路径 + 显式 Err 收敛）。
+    /// （try_vendor_route 的 get_vendor None 路径 + 显式 Err 收敛）。
     #[tokio::test]
     async fn hints_unknown_vendor_returns_unavailable_error() {
         let (router, _vm, _cm) =
@@ -3534,7 +3534,7 @@ mod route_gap_coverage {
     // ---- direct 形式（vendor.model）的排除与门控 ----
 
     /// direct 候选 vendor 在排除集中 → None → 收敛 Validation
-    ///（失败迁移重路由的排除语义对 direct 形式同样生效）。
+    /// （失败迁移重路由的排除语义对 direct 形式同样生效）。
     #[tokio::test]
     async fn direct_route_excluded_vendor_errors() {
         let (router, _vm, _cm) = make_router(
@@ -3598,7 +3598,7 @@ mod route_gap_coverage {
     // ---- LinUCB 选择档的回退与 α 钳制 ----
 
     /// 特征长度 != LINUCB_DIM → linucb_route 返回 None 回退 weighted
-    ///（脏特征不得参与选择，也不得 panic）。
+    /// （脏特征不得参与选择，也不得 panic）。
     #[tokio::test]
     async fn linucb_wrong_feature_length_falls_back_to_weighted() {
         let cm = Arc::new(ConfigManager::new(make_config(
@@ -4061,7 +4061,7 @@ mod route_gap_coverage {
     }
 
     /// global 路径 deadline 门控：部分候选超时 → 可行集筛选后只剩 idle
-    ///（Feasible 分支作用于 global 候选集）。并发上限 Some(2) 使 Ŵ 落在
+    /// （Feasible 分支作用于 global 候选集）。并发上限 Some(2) 使 Ŵ 落在
     /// 可区分量级（缺省 100 时 Ŵ 趋零、全候选可行，筛选不触发）。
     #[tokio::test]
     async fn global_lps_deadline_feasible_subset() {
@@ -4653,7 +4653,7 @@ mod embedding_compat_group {
         );
     }
 
-    /// T007 生命周期：配置应用成功（swap_memory，即热载桥接落点）→ 旧 pin
+    /// 生命周期：配置应用成功（swap_memory，即热载桥接落点）→ 旧 pin
     /// 失效；下一请求按新配置重新粘着（旧厂商已不在配置 → 重选新厂商并重建 pin）
     #[tokio::test]
     async fn config_apply_clears_pin_and_next_request_re_pins() {
@@ -4723,7 +4723,7 @@ mod embedding_compat_group {
         );
     }
 
-    /// T009 回归守卫：chat 主路径 `route` 零感知 pin——嵌入路径粘着某厂商后，
+    /// 回归守卫：chat 主路径 `route` 零感知 pin——嵌入路径粘着某厂商后，
     /// chat 路由仍可按权重轮换命中另一厂商，且 pin 表内容不被 chat 调用改写
     #[tokio::test]
     async fn chat_route_ignores_embedding_pin() {
@@ -4817,7 +4817,7 @@ mod embedding_compat_group {
     }
 
     /// pin 投毒防护：abstract 混有非 openai 型厂商（高权重）与 openai 型厂商
-    ///（低权重）时，嵌入路由只在 openai 型厂商间选择与粘着——否则首写 pin
+    /// （低权重）时，嵌入路由只在 openai 型厂商间选择与粘着——否则首写 pin
     /// 落在高权重非 openai 厂商上，protocol_error 不回馈熔断，概率性失败被
     /// 放大成该 abstract 的永久失败
     #[tokio::test]
@@ -4968,7 +4968,7 @@ mod embedding_compat_group {
     }
 
     /// 同 vendor 跨类型条目不越界：选中 rr-a 时必须是其 rerank 条目
-    ///（m-chat 永不被返回；若加权选中 chat 条目，按 vendor 收缩到 rr-b）
+    /// （m-chat 永不被返回；若加权选中 chat 条目，按 vendor 收缩到 rr-b）
     #[tokio::test]
     async fn rerank_route_never_returns_cross_type_entry() {
         // A 同时挂 chat（高权重）与 rerank 条目；B 只有 rerank 条目
@@ -5409,7 +5409,7 @@ mod embedding_compat_group {
     }
 }
 
-/// 配额感知路由因子（quota-aware-routing，R-vbr-002/003）：
+/// 配额感知路由因子（quota-aware-routing）：
 /// smart 耗尽摘除 / 全耗尽兜底 / 快重置加成；pace 速率带升降权。
 /// 预算态经 `restore_from_ledger` 注入受控的窗口起点与用量（生产启动路径）。
 #[cfg(test)]
@@ -5513,7 +5513,7 @@ mod quota_factor {
         (weights, vm.metrics().clone())
     }
 
-    /// smart 因子（R-vbr-002）：预算耗尽 vendor 被摘出候选；重置最快者
+    /// smart 因子：预算耗尽 vendor 被摘出候选；重置最快者
     /// 权重升；全员耗尽保留全部；mode=off 零参与。
     #[tokio::test]
     async fn depleted_vendor_excluded_and_reset_soonest_scored_up() {
@@ -5577,7 +5577,7 @@ mod quota_factor {
         );
     }
 
-    /// pace 因子（R-vbr-003）：消耗率带——rate 比 >1.1 降权 ×0.5、<0.9
+    /// pace 因子：消耗率带——rate 比 >1.1 降权 ×0.5、<0.9
     /// 升权 ×1.2、带内不变；mode=off 时因子零参与。
     #[tokio::test]
     async fn over_pace_vendor_deweight_under_pace_upweight() {
@@ -5619,7 +5619,7 @@ mod quota_factor {
         );
     }
 
-    // ---- 配额时钟补全（R-budget-002）：平局打破 + 两级降档 ----
+    // ---- 配额时钟补全：平局打破 + 两级降档 ----
 
     use fluxweir::config::QuotaFactorSection as Qfs;
 
@@ -5680,7 +5680,7 @@ mod quota_factor {
             .collect()
     }
 
-    /// 平局打破生效（R-budget-002）：score 平局（同 normalized、异
+    /// 平局打破生效：score 平局（同 normalized、异
     /// reset_secs）且双方剩余 >10% → reset_at 更早者满加成、权重严格更高；
     /// ε=0 关闭时两权重回到相等（纯 6 因子平局）。
     #[tokio::test]
@@ -5810,7 +5810,7 @@ mod quota_factor {
         );
     }
 
-    /// 两级降档（R-budget-002）：已用 95% → ×0.9、99% → ×0.75（先判紧档）；
+    /// 两级降档：已用 95% → ×0.9、99% → ×0.75（先判紧档）；
     /// 未消耗者不降档；缺省配置即启用。
     #[tokio::test]
     async fn two_tier_degrade_multipliers_apply_with_defaults() {
@@ -6051,7 +6051,7 @@ mod quota_factor {
     }
 
     /// cache_expected + 估算 tokens 超长上下文阈值：输入价切长上下文档
-    ///（价格因子相对权重按 5.5 倍差显现，而非 cache 档的 0.75）。
+    /// （价格因子相对权重按 5.5 倍差显现，而非 cache 档的 0.75）。
     #[tokio::test]
     async fn long_context_price_applies_above_threshold() {
         let mut config = common::test_config(vec![

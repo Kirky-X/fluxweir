@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! Responses 语义化 SSE：IR → 事件编码器（入站）与上游事件 → IR 解析器
-//!（出站）。
+//! （出站）。
 //!
 //! 事件序（每个 item 先 added 后 done，终止事件恰好一次）：
 //! `response.created` → `response.in_progress` →

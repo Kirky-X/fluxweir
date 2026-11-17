@@ -199,7 +199,7 @@ async fn readyz_reflects_component_health() {
     );
 }
 
-/// /admin/metrics 暴露缓存经济学亲和计数与两个丢失去向（T008）：字段存在
+/// /admin/metrics 暴露缓存经济学亲和计数与两个丢失去向：字段存在
 /// 且可累加。settle/恢复打点经 GlobalMetrics；通道丢弃与落库失败各有
 /// 精确出口（两者原因不同，运维处置不同）。
 #[tokio::test]
@@ -394,7 +394,7 @@ async fn admin_metrics_exposes_quota_counters() {
 
 /// /admin/metrics 暴露目录同步观测计数（catalog-sync）：reason 分列失败
 /// 计数（labeled 数组）与累计新增条目字段在位且可累加。打点经 GlobalMetrics
-///（plan_from_source 失败路径 / persist_plan 落盘成功路径写），此处直录
+/// （plan_from_source 失败路径 / persist_plan 落盘成功路径写），此处直录
 /// 断言出口形状——与配额三计数同款出口测试。
 #[tokio::test]
 async fn admin_metrics_exposes_catalog_sync_counters() {

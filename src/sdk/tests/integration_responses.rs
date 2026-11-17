@@ -147,7 +147,7 @@ async fn get_and_delete_response() {
 }
 
 /// 扩展 typed 字段与 extra_body 进 payload；extra_body 与 typed 冲突时
-/// typed 优先（D7，spec R-sdk-client 验收：include + max_tool_calls）。
+/// typed 优先（include + max_tool_calls）。
 #[tokio::test]
 async fn responses_payload_includes_extended_fields() {
     let mut server = mockito::Server::new_async().await;

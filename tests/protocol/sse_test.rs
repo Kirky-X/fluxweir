@@ -866,7 +866,7 @@ mod sdk_client_coverage {
     }
 
     /// admin 端点在 cannot-be-a-base URL 上 join 失败 → Config 错误
-    ///（models / vendors / health 三处拼接点）。
+    /// （models / vendors / health 三处拼接点）。
     #[tokio::test]
     async fn admin_join_failure_on_non_base_url_is_config_error() {
         let client = build_client("mailto:user@example.com");

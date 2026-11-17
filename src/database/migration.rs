@@ -20,7 +20,7 @@
 //! 嵌入——单二进制部署、无运行时路径依赖。.sql 文件即已发布迁移的逐字节
 //! 真源，与常量同受 FROZEN 约束：禁止改动，新变更写新版本文件。
 //! 各 .sql 文件首尾的空行是从原 raw string 常量逐字节搬运的刻意保留
-//!（保证 `core_migration_file` 产出的 content 与外部化前完全一致），
+//! （保证 `core_migration_file` 产出的 content 与外部化前完全一致），
 //! 勿以格式化工具「清理」。
 //! 存量库基线 = 幂等重放（V1 UP 全 `IF NOT EXISTS`）；迁移失败直接上浮（无静默降级）。
 
@@ -42,7 +42,7 @@ const UP_V1_POSTGRES: &str = include_str!("migrations/core/v1_postgres.up.sql");
 const UP_V1_MYSQL: &str = include_str!("migrations/core/v1_mysql.up.sql");
 
 /// V2 UP（sqlite）：UNIQUE 是表 DDL 的一部分，键换绑 + 删列只能重建表
-///（rename → create → 搬数 → drop）；旧行 api_key_hash=''、cost_usd_sum 整额入 input_cost。
+/// （rename → create → 搬数 → drop）；旧行 api_key_hash=''、cost_usd_sum 整额入 input_cost。
 const UP_V2_SQLITE: &str = include_str!("migrations/core/v2_sqlite.up.sql");
 
 /// V2 UP（postgres）：UNIQUE 约束按自动命名惯例 `{table}_{cols}_key` 换绑；
@@ -81,7 +81,7 @@ const UP_V3_MYSQL: &str = include_str!("migrations/core/v3_mysql.up.sql");
 const DOWN_V3: &str = include_str!("migrations/core/v3.down.sql");
 
 /// V4 UP（sqlite）：Responses 有状态表；items/response 以 JSON 文本存
-///（sqlite 无原生 JSON 列类型，TEXT 即可）。
+/// （sqlite 无原生 JSON 列类型，TEXT 即可）。
 const UP_V4_SQLITE: &str = include_str!("migrations/core/v4_sqlite.up.sql");
 
 /// V4 UP（postgres）：JSON 文本用 TEXT，时间戳 BIGINT。
@@ -174,7 +174,7 @@ const DOWN_V8: &str = include_str!("migrations/core/v8.down.sql");
 const DOWN_V8_MYSQL: &str = include_str!("migrations/core/v8_mysql.down.sql");
 
 /// V9 UP（三方言同形）：request_logs 键归因列。TEXT/VARCHAR(64) 可空——
-/// 历史行、订阅账号凭证、env 缺失均为 NULL（magpie-absorb-r1 R-usage-001）。
+/// 历史行、订阅账号凭证、env 缺失均为 NULL（magpie-absorb-r1）。
 const UP_V9_SQLITE: &str = include_str!("migrations/core/v9_sqlite.up.sql");
 const UP_V9_POSTGRES: &str = include_str!("migrations/core/v9_postgres.up.sql");
 const UP_V9_MYSQL: &str = include_str!("migrations/core/v9_mysql.up.sql");
@@ -1266,7 +1266,7 @@ mod live_tests {
     }
 
     /// V5：request_logs 四列 + 会话索引存在；重跑 init_schema 幂等
-    ///（列已存在时 ALTER 不得二次执行——版本历史短路）。
+    /// （列已存在时 ALTER 不得二次执行——版本历史短路）。
     #[tokio::test]
     async fn v5_adds_session_and_context_columns_idempotently() {
         let pool = memory_pool().await;

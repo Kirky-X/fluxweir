@@ -107,7 +107,7 @@ pub struct EmbedData {
 }
 
 /// 单条 embedding 向量：f32 数组（默认编码）或 base64 字符串
-///（`encoding_format: base64`；untagged 判别）。
+/// （`encoding_format: base64`；untagged 判别）。
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(untagged)]
 pub enum EmbeddingValue {

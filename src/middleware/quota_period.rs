@@ -180,7 +180,7 @@ mod tests {
     }
 
     /// calendar 日窗对齐 UTC 00:00；tz 偏移把边界卷到本地零点
-    ///（+8h：本地 2026-01-15 00:00 = UTC 2026-01-14 16:00）。
+    /// （+8h：本地 2026-01-15 00:00 = UTC 2026-01-14 16:00）。
     #[test]
     fn calendar_daily_aligns_utc_midnight() {
         let now = at(2026, 1, 15, 10, 30);

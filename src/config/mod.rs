@@ -103,7 +103,7 @@ pub struct VendorConfig {
     #[serde(default)]
     pub chat_path: Option<String>,
     /// 端点风格：`chat`（缺省，chat/completions）| `responses`
-    ///（OpenAI Responses `/responses`，仅 type_ = "openai" 合法）。
+    /// （OpenAI Responses `/responses`，仅 type_ = "openai" 合法）。
     /// 与 `chat_path` 互斥（路径语义歧义拒绝）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_style: Option<String>,
@@ -125,7 +125,7 @@ pub struct VendorConfig {
     #[serde(default = "loader::default_vendor_cache_ttl_secs")]
     pub cache_ttl_secs: u64,
     /// 沉默缓存厂商：上游不在 usage 里报 cache_read/cache_creation
-    ///（OpenAI 前缀缓存、Gemini 隐式缓存等）。auto 模式把 prompt_tokens
+    /// （OpenAI 前缀缓存、Gemini 隐式缓存等）。auto 模式把 prompt_tokens
     /// 当写入值计入缓存价值，否则这类上游的 worth 恒 0、永不粘。默认 false
     #[serde(default)]
     pub silent_cache: bool,
@@ -338,7 +338,7 @@ pub enum RateLimitConfig {
     Interval {
         hours: u64,
         /// 滑动窗口开关：默认 false = 固定窗口；true = 分片滑动窗口
-        ///（消除固定窗口翻越点的瞬时 2× 配额双花）
+        /// （消除固定窗口翻越点的瞬时 2× 配额双花）
         #[serde(default)]
         sliding: bool,
     },
@@ -366,7 +366,7 @@ pub struct ConcurrencyConfig {
     #[serde(default)]
     pub max_concurrent_requests: Option<usize>,
     /// token 加权并发票据开关：开启时按预估 token 量计费
-    ///（agentic 长会话不再与短请求等价占票）；构造期消费，restart-required
+    /// （agentic 长会话不再与短请求等价占票）；构造期消费，restart-required
     #[serde(default)]
     pub token_weighted: bool,
     /// 单请求票据下限（默认 1）
@@ -452,7 +452,7 @@ pub struct AuthSection {
     #[serde(default)]
     pub api_keys: Vec<String>,
     /// 可信代理：嵌入宿主经 request extensions 注入 TrustedIdentity 后跳过
-    /// 自身 key 校验（D10；缺省 false = 行为逐字节一致，热读）
+    /// 自身 key 校验（缺省 false = 行为逐字节一致，热读）
     #[serde(default)]
     pub trusted_proxy: bool,
     #[serde(default)]
@@ -467,7 +467,7 @@ pub struct AuthSection {
 }
 
 /// `[auth.oidc_rules]` 段：OIDC 换短时网关键规则表（`oidc` feature 编译门）。
-/// 无规则 = 整体关闭；校验经 validate_oidc_rules（loader，R-auth-001）。
+/// 无规则 = 整体关闭；校验经 validate_oidc_rules（loader）。
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub struct OidcRulesSection {
     /// 规则表（空 = 整体关闭）
@@ -583,7 +583,7 @@ pub struct RetrySection {
     #[serde(default = "default_retry_jitter")]
     pub jitter: f64,
     /// 同步惊群展宽比例：延迟 = base + U(0, spread_jitter) × base
-    ///（消除多实例同刻重试）；0.0 = 回滚阀（Retry-After 原样、5xx 固定 1s）
+    /// （消除多实例同刻重试）；0.0 = 回滚阀（Retry-After 原样、5xx 固定 1s）
     #[serde(default = "default_retry_spread_jitter")]
     pub spread_jitter: f64,
     /// 跨 vendor 总尝试预算（换路 fallback 的 attempts 上限，防
@@ -673,7 +673,7 @@ pub struct RoutingSection {
     /// 负载维（queue_factor）输入档位单选："queue"（默认，worker 队列
     /// 深度）/ "in_flight"（在途数）/ "in_flight_relative"（相对化
     /// (x−fleet_mean)/max(1,fleet_mean) 映射 0..100）。负载维单选不叠加
-    ///（叠加会双计同一请求）；未知值按 "queue"
+    /// （叠加会双计同一请求）；未知值按 "queue"
     #[serde(default = "default_load_signal")]
     pub load_signal: String,
     /// Peak-EWMA 时间常数 τ（ms）：α_dyn = 1−exp(−Δt/τ)；0 = 无平滑（慎用）
@@ -744,7 +744,7 @@ pub struct RoutingSection {
     #[serde(default)]
     pub lps_delta: f64,
     /// LPS 硬约束门控：默认 false 不筛选；开启后按 Ŵ≤deadline 筛可行集
-    ///（deadline = x-deadline-ms 头），空集改选 Ŵ 最小者
+    /// （deadline = x-deadline-ms 头），空集改选 Ŵ 最小者
     #[serde(default)]
     pub lps_deadline_gate: bool,
     /// 默认截止（毫秒）：lps_deadline_gate 开启且请求未带 x-deadline-ms 头时使用
@@ -755,7 +755,7 @@ pub struct RoutingSection {
     #[serde(default = "default_ucb_alpha")]
     pub ucb_alpha: f64,
     /// `[routing.difficulty]` 子段 — 难度定档路由。缺省 enabled=false
-    ///（模块整体旁路）。字段热读
+    /// （模块整体旁路）。字段热读
     #[serde(default)]
     pub difficulty: DifficultySection,
 }
@@ -779,7 +779,7 @@ fn default_price_factor_mode() -> String {
 pub struct AffinitySection {
     #[serde(default = "loader::default_affinity_economy_mode")]
     pub mode: String,
-    /// 会话头别名列表（magpie-absorb-r1 R-affinity-001）：按序探测、首个
+    /// 会话头别名列表（magpie-absorb-r1）：按序探测、首个
     /// 存在且非空者作亲和键源（大小写不敏感）。缺省/None = 仅 x-session-id
     /// （零配置行为与历史逐字节一致）。空白元素被 loader 拒绝；大小写归一
     /// 在消费点（routing_hints）进行。
@@ -1234,7 +1234,7 @@ pub struct AdmissionSection {
     #[serde(default = "default_congestion_threshold")]
     pub congestion_threshold: f64,
     /// 观测优先级公式系数（论文式 1 典型值 2.0/1.0/4.0）。α_slo 预留
-    ///（ℓ* 恒 0，本条不生效）；三条系数只进
+    /// （ℓ* 恒 0，本条不生效）；三条系数只进
     /// [`admission_priority`](crate::middleware::admission::admission_priority)
     /// 折算的观测优先级，shed 判定按档位基准权重直比、不消费该公式。
     #[serde(default = "default_alpha_slo")]
@@ -1355,8 +1355,8 @@ fn default_grpc_max_connections() -> usize {
 
 /// `[catalog_sync]` 段：模型目录自动同步（catalog-sync feature 门控）参数。
 /// 双门控的运行时半边——缺段/缺字段 enabled=false 完全禁用；字段热读
-///（POST /admin/config 立即生效）。Default 实现与缺省函数落 `loader`
-///（规则 14 与 [`QuotaWindowConfig`] 同款：本文件只承载结构体定义）。
+/// （POST /admin/config 立即生效）。Default 实现与缺省函数落 `loader`
+/// （规则 14 与 [`QuotaWindowConfig`] 同款：本文件只承载结构体定义）。
 /// - `source_url`：外部模型目录 JSON 源（默认 models.dev api.json）；
 ///   enabled 时校验仅 HTTPS（loopback 放行 http 供嵌入式上游）
 /// - `interval_secs`：周期同步间隔（0 = 不挂周期任务，仅 admin 手动触发）
@@ -1414,11 +1414,11 @@ pub struct Config {
     #[serde(default)]
     pub rate_limit: RateLimitSection,
     /// `[resilience]` 段 — 韧性覆盖面。缺段时 cover_all_paths=false
-    ///（三条裸路径行为不变）。Section 字段落地防热更抹段。
+    /// （三条裸路径行为不变）。Section 字段落地防热更抹段。
     #[serde(default)]
     pub resilience: ResilienceSection,
     /// `[admission]` 段 — 拥塞感知优先级准入。缺段时 enabled=false
-    ///（完全旁路）。
+    /// （完全旁路）。
     #[serde(default)]
     pub admission: AdmissionSection,
     /// `[health]` 段 — 主动健康检查探针。缺段时 mode=off（零后台
@@ -1426,7 +1426,7 @@ pub struct Config {
     #[serde(default)]
     pub health: HealthSection,
     /// `[quota]` 段 — 成本与 token 维度配额。缺段时 enabled=false
-    ///（零判限）。Section 字段落地防热更抹段。
+    /// （零判限）。Section 字段落地防热更抹段。
     #[serde(default)]
     pub quota: QuotaSection,
     /// `[[vendor_budgets]]` 段 — vendor 声明式预算（配额感知路由因子的
@@ -1445,7 +1445,7 @@ pub struct Config {
     #[serde(default)]
     pub docs: DocsSection,
     /// `[lexcompress]` 段 — 词法压缩（X-Compress 触发）。缺段时 enabled=false
-    ///（完全旁路）
+    /// （完全旁路）
     #[serde(default)]
     pub lexcompress: LexCompressSection,
     /// `[responses]` 段 — OpenAI Responses API 入站端点与有状态能力。
@@ -1492,7 +1492,7 @@ pub struct Config {
 /// `[masking]` 段：出站请求掩码（feature `masking`，不进 `full`）。
 /// enabled 默认 false（零行为）；字段热读——检测器按 words/rules 变更惰性
 /// 重建，在途请求用旧映射还原（TTL 24h 覆盖）。闭集与正则校验落 `loader`
-///（规则 14）；Default 实现亦落 `loader`。
+/// （规则 14）；Default 实现亦落 `loader`。
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct MaskingSection {
     /// 掩码总开关（默认 false = 零行为）
@@ -1525,9 +1525,9 @@ pub struct MaskingSection {
 
 /// `[masking.ledger]` 段：掩码审计台账（feature `masking` + 本段 enabled
 /// 双门控，默认 false = 不写任何文件）。按天 JSONL 记录掩码命中元数据
-///（ts/kind/finder/placeholder/首字符 hint），**值与占位符→原值映射不落
+/// （ts/kind/finder/placeholder/首字符 hint），**值与占位符→原值映射不落
 /// 盘**；保留上限双刀：retention_days 按天裁剪 + max_total_bytes 总量裁剪
-///（每日首写触发，删最旧）。Default 实现落 `loader`（规则 14）。
+/// （每日首写触发，删最旧）。Default 实现落 `loader`（规则 14）。
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct MaskingLedgerSection {
     /// 台账开关（默认 false = 零落盘）
@@ -1556,7 +1556,7 @@ pub struct WebSearchSection {
 }
 
 /// `[[web_search.providers]]` 单条搜索源。key 来源 vault 引用优先于 env
-///（明文不落配置）；`kind` 合法集 tavily|brave|exa|searxng（加载校验在
+/// （明文不落配置）；`kind` 合法集 tavily|brave|exa|searxng（加载校验在
 /// loader，规则 14）；searxng 必须显式给 base_url（实例能力由部署方保证）。
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct WebSearchProviderConfig {
@@ -1613,7 +1613,7 @@ pub struct UsageInsightsSection {
 ///   `http://localhost:4318/v1/metrics`）
 /// - `interval_secs`：推送周期（1..=86400，缺省 60）
 /// - `timeout_secs`：单次导出超时（1..=300，缺省 10）
-/// - `tracing`：尝试级 span 追踪子段（R-otlp-001/002；见
+/// - `tracing`：尝试级 span 追踪子段（见
 ///   [`OtlpTracingSection`]）
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct OtlpSection {
@@ -1632,7 +1632,7 @@ pub struct OtlpSection {
 
 /// `[otlp.tracing]` 子段：vendor attempt 级 span 追踪（feature `otlp`）。
 /// 双门控默认关：`enabled=false`（不装 provider）或 `sample_ratio=0.0`
-///（全不采样）→ 零 span、零网络导出。字段热读与否：装配期一次性（启动
+/// （全不采样）→ 零 span、零网络导出。字段热读与否：装配期一次性（启动
 /// 即定），与 metrics 桥同口径。
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct OtlpTracingSection {
@@ -1780,7 +1780,7 @@ impl Default for HealthSection {
 }
 
 /// `[quota]` 段：成本与 token 维度配额（预扣-回补）。enabled 默认 false
-///（零判限）；window_secs 固定窗口（默认 3600，0 非法）；est_chars_per_token
+/// （零判限）；window_secs 固定窗口（默认 3600，0 非法）；est_chars_per_token
 /// 输入估算常数（默认 4）。per-key 限额放 [[auth.keys]]（0 = 不限）；
 /// 窗口账本 `[[quota.windows]]` 非空时按数组生效（旧 window_secs 忽略并
 /// WARN），为空时旧字段编译为 `id="default"` 单窗（行为与历史逐位一致）。
@@ -1801,7 +1801,7 @@ pub struct QuotaSection {
 
 /// `[[quota.windows]]` 单窗：`id` 唯一标识（账本行键与指标标签）、
 /// `scope` 作用域（api_key 按租户 / global 全局聚合）、周期两形态
-///（period=rolling 配 `rolling_secs`；period=calendar 配
+/// （period=rolling 配 `rolling_secs`；period=calendar 配
 /// `calendar`=daily|weekly|monthly + `tz_offset_secs` 时区偏移）、
 /// 双维度限额（0 = 落回 [[auth.keys]] 的 per-key 限额，双零即该窗不判）。
 /// 闭集与数值域经 validate_quota_windows 在加载与热更两处校验。
@@ -1884,7 +1884,7 @@ pub struct VendorBudgetConfig {
 /// `QuotaFactorMode::parse`（实现在 loader）；
 /// 字段热读（POST /admin/config 立即生效）
 ///
-/// 配额时钟补全（R-budget-002，同一快照单点生效）：
+/// 配额时钟补全（同一快照单点生效）：
 /// - 平局打破：候选 quota 分差 < `tie_epsilon`（默认 0.05，0 = 关闭）且
 ///   各自剩余额度都 >10% 时，`reset_at` 更早者获满加成（将作废的额度
 ///   先用掉）；
@@ -2650,7 +2650,7 @@ enabled = true
         );
     }
 
-    /// D8 厂商字段解析：`anthropic_version` 缺省 None 且不落盘、声明即
+    /// 厂商字段解析：`anthropic_version` 缺省 None 且不落盘、声明即
     /// 读出；`forward_beta_headers`/`send_nonstandard_params` 缺省 false。
     #[test]
     fn vendor_config_parses_anthropic_version_and_switches() {

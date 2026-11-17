@@ -54,7 +54,7 @@ pub struct ModelCatalogEntry {
     pub long_context_input_price: f64,
     /// 1h 档 cache write 单价（第 5 价位；Anthropic ephemeral_1h 语义）。
     /// 0.0=未配置不产生成本；协议侧 1h tokens 解析落地前计费暂不消费此价
-    /// （见 magpie-absorb-r1 R-catalog-002 修订注记）。
+    /// （见 magpie-absorb-r1 修订注记）。
     #[serde(default)]
     pub cache_creation_1h_price: f64,
     /// 长上下文价触发的估 prompt token 阈值（0 = 不启用）
@@ -79,7 +79,7 @@ pub struct ModelCatalogEntry {
 }
 
 /// Anthropic 自动缓存断点注入策略：内容块上的 `cache_control` 标记
-///（平台单请求上限 4），命中按前缀缓存计费；默认开启，条目级可关
+/// （平台单请求上限 4），命中按前缀缓存计费；默认开启，条目级可关
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct CacheBreakpointPolicy {
     /// 注入开关（anthropic 型 vendor 转换出站）

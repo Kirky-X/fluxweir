@@ -2769,7 +2769,7 @@ mod converter {
     // OpenAI：usage cache token + finish_reason 结构化
 
     /// 入站：prompt_tokens_details.cached_tokens → cache_read_tokens
-    ///（OpenAI 无 cache_creation 概念 → 0）；finish_reason 已知词双写结构化槽。
+    /// （OpenAI 无 cache_creation 概念 → 0）；finish_reason 已知词双写结构化槽。
     #[tokio::test]
     async fn test_openai_parse_response_cache_tokens_and_finish() {
         let openai = OpenAIConverter::new();
@@ -2828,7 +2828,7 @@ mod converter {
     }
 
     /// 出站：cache_read_tokens → usage.prompt_tokens_details.cached_tokens
-    ///（非零才携带）；cache_creation 无 OpenAI 槽，不产出。
+    /// （非零才携带）；cache_creation 无 OpenAI 槽，不产出。
     #[tokio::test]
     async fn test_openai_response_to_external_cache_tokens() {
         let openai = OpenAIConverter::new();
@@ -3401,7 +3401,8 @@ mod converter {
             json!({"type": "enabled", "budget_tokens": 2048})
         );
 
-        // Adaptive → 原生 adaptive（D3）
+        // Adaptive → 原生 adaptive
+
         let mut request = minimal_unified_request("claude", "hi");
         request.thinking_config = Some(ThinkingConfig::Adaptive { display: None });
         let out = anthropic.request_to_external(request).expect("to external");

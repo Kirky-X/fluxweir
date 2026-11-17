@@ -3,7 +3,7 @@
 
 //! 集成测试 — CircuitBreaker（limiteron::circuit）接入 VendorManager。
 //! mockito 预置 5×500 + [retry] max_retries=0 自然驱动熔断
-//!（failure_threshold=5，每请求恰好 1 次 HTTP）；熔断/限流的路由判定
+//! （failure_threshold=5，每请求恰好 1 次 HTTP）；熔断/限流的路由判定
 //! 实时化于 get_status（持久回写会造成「路由排除→无探针→永不恢复」死锁）。
 //!
 //! 集成属性：
@@ -17,7 +17,7 @@ mod common;
 
 /// 短窗口注入的成对常量：CB Open 窗口 300ms，睡眠 400ms。裕度不变量
 /// 「睡眠 > 窗口」由此锁定——把任一侧单独调过中线会翻转结构保证
-///（tokio 单调钟下 sleep 不早于返回，elapsed ≥ 睡眠 > 窗口必然越过）。
+/// （tokio 单调钟下 sleep 不早于返回，elapsed ≥ 睡眠 > 窗口必然越过）。
 const OPEN_WINDOW_MS: u64 = 300;
 const WINDOW_SLEEP_MS: u64 = 400;
 

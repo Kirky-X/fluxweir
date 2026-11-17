@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// 启动恢复上限（条）：与 magpie 的 sticksKept 同值；超出部分不进内存
-///（亲和是优化，恢复集是有界近似）
+/// （亲和是优化，恢复集是有界近似）
 pub const RESTORE_LIMIT: u32 = 512;
 
 /// 启动恢复：读未过期的前 [`RESTORE_LIMIT`] 条 → 按剩余 TTL 重建亲和键 →

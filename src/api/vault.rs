@@ -4,7 +4,7 @@
 //! 密钥保密柜管理面（key-vault）：录入/列表/删除，明文只进不出。
 //!
 //! 挂载于 `/admin/vault/keys*`，受全局 auth 中间件保护；响应与日志零明文
-//!（列表只回 `SecretKeyRecord` 掩码面）。put/remove 后即时重注 inline
+//! （列表只回 `SecretKeyRecord` 掩码面）。put/remove 后即时重注 inline
 //! key pool（热生效；柜清空时清池回退 env 兜底）。
 
 use std::sync::Arc;

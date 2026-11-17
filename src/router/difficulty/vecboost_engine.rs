@@ -7,8 +7,8 @@
 //! 本层只做：引擎加载、DecisionRequest 构造（有界 state）、P(high) 提取。
 //!
 //! 接口事实（vecboost 源码核实）：`AnyEngine` 实现 `InferenceEngine`
-//!（engine/impl_..rs:31）；choice 答案带逐选项校准概率
-//!（`DecisionAnswerBody::Choice.probabilities`）；引擎 token 预算超限
+//! （engine/impl_..rs:31）；choice 答案带逐选项校准概率
+//! （`DecisionAnswerBody::Choice.probabilities`）；引擎 token 预算超限
 //! **拒绝不截断** → 文本有界性由 [`super::features`] 承诺（≤2KB）。
 
 use vecboost::config::model::{DeviceType, EngineType, ModelConfig, ModelTask};

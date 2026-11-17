@@ -516,7 +516,7 @@ impl axum::response::IntoResponse for FluxweirErrorResponse {
     }
 }
 
-// ---------- provider 抽象（R-search-001） ----------
+// ---------- provider 抽象 ----------
 
 /// 搜索源抽象：单次尝试（key 由 KeyPool 轮转供给），响应形状各源自适应。
 #[async_trait::async_trait]
@@ -809,7 +809,7 @@ impl SearchProvider for SearXNGProvider {
     }
 }
 
-// ---------- key 池（R-search-002） ----------
+// ---------- key 池 ----------
 
 /// key 来源：env 变量名或 vault 条目引用（明文不落配置）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1042,7 +1042,7 @@ mod provider_tests {
         provider_client()
     }
 
-    /// R-search-001：四 provider 请求形态与 Hit 解析（mock 端点断言）。
+    /// 四 provider 请求形态与 Hit 解析（mock 端点断言）。
     #[tokio::test]
     async fn tavily_brave_exa_searxng_request_shapes_and_parse() {
         let mut server = mockito::Server::new_async().await;
@@ -1132,7 +1132,7 @@ mod provider_tests {
         m.assert();
     }
 
-    /// R-search-002：轮转推进、近 5 分钟失败 key 跳过、全失败回头兜底、stats 计数。
+    /// 轮转推进、近 5 分钟失败 key 跳过、全失败回头兜底、stats 计数。
     #[tokio::test]
     async fn rotation_advances_and_recently_failed_key_skipped() {
         std::env::set_var("WEB_SEARCH_POOL_KEY_A", "ka");

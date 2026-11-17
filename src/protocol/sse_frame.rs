@@ -33,8 +33,8 @@ pub fn encode_sse_error(msg: &str) -> String {
 }
 
 /// 网关侧流中错误帧 — data 为 `{"error":{"type","message"}}` JSON 信封
-///（与 REST 错误体同构）：帧内不得携带 vendor id / api_base 等内部拓扑
-///（内部错误详情只进 tracing 日志）。
+/// （与 REST 错误体同构）：帧内不得携带 vendor id / api_base 等内部拓扑
+/// （内部错误详情只进 tracing 日志）。
 pub fn encode_gateway_stream_error(message: &str) -> String {
     let payload = serde_json::json!({
         "error": {
@@ -61,8 +61,8 @@ pub struct SseFrame {
 
 impl SseFrame {
     /// 帧是否携带上游错误信号：`event: error` / `event: response.failed`
-    ///（Responses 上游失败语义），或 data 是含 `"error"` 对象的 JSON
-    ///（Anthropic 流中错误的规范形状）。
+    /// （Responses 上游失败语义），或 data 是含 `"error"` 对象的 JSON
+    /// （Anthropic 流中错误的规范形状）。
     pub fn is_error(&self) -> bool {
         if matches!(
             self.event.as_deref(),

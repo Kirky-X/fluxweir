@@ -185,7 +185,7 @@ pub struct GlobalMetrics {
     embedding_group_exhausted_total: AtomicU64,
     embedding_dimension_mismatch_total: AtomicU64,
     /// rerank 观测三计数：成功请求数 / 参与重排文档数 / 上游失败数
-    ///（vendor 维度由既有 per_vendor 请求计数覆盖）
+    /// （vendor 维度由既有 per_vendor 请求计数覆盖）
     rerank_requests_total: AtomicU64,
     rerank_documents_total: AtomicU64,
     rerank_upstream_failures_total: AtomicU64,
@@ -200,22 +200,22 @@ pub struct GlobalMetrics {
     gemini_upstream_failures_total: AtomicU64,
     /// 缓存经济学亲和四计数（[routing.affinity]）：
     /// 粘性写入（legacy/auto/turn 成功结算都 +1，`off` 不写）/ 该写未写
-    ///（auto 下 threshold-skip）/ 落盘通道满丢弃 / 启动恢复条数
+    /// （auto 下 threshold-skip）/ 落盘通道满丢弃 / 启动恢复条数
     affinity_stick_total: AtomicU64,
     affinity_drift_total: AtomicU64,
     affinity_persist_drop_total: AtomicU64,
     affinity_restored_count: AtomicU64,
     /// 配额观测（quota-aware-routing）：逐窗拒绝 / 逐 vendor 耗尽兜底
-    ///（labeled，进程内 HashMap 承载）与账本落库失败批次
+    /// （labeled，进程内 HashMap 承载）与账本落库失败批次
     quota_window_refused_total: RwLock<HashMap<String, AtomicU64>>,
     quota_factor_depleted_total: RwLock<HashMap<String, AtomicU64>>,
     quota_ledger_flush_fail_total: AtomicU64,
     /// 目录同步观测（catalog-sync）：失败计数按 reason 标签分列
-    ///（timeout/network/http_status/too_large/client/parse）与累计新增条目
+    /// （timeout/network/http_status/too_large/client/parse）与累计新增条目
     catalog_sync_fail_total: RwLock<HashMap<String, AtomicU64>>,
     catalog_sync_added_total: AtomicU64,
     /// 订阅账号观测（subscription-vendor）：刷新失败累计与当前降级账号数
-    ///（gauge：进入 Degraded +1，恢复 Active / 摘除 / 吊销 −1）
+    /// （gauge：进入 Degraded +1，恢复 Active / 摘除 / 吊销 −1）
     subscription_refresh_fail_total: AtomicU64,
     subscription_accounts_degraded: AtomicU64,
     /// 搜索注入观测（web-search-inject）：请求计数按
@@ -224,7 +224,7 @@ pub struct GlobalMetrics {
     web_search_requests_total: RwLock<HashMap<String, AtomicU64>>,
     netguard_denied_total: RwLock<HashMap<String, AtomicU64>>,
     /// 出站掩码观测（feature `masking`，门未接线时恒 0）：命中计数
-    ///（标签 kind:action，mask/warn 各记一行）与 blocked / fail / restore
+    /// （标签 kind:action，mask/warn 各记一行）与 blocked / fail / restore
     masking_hits_total: RwLock<HashMap<String, AtomicU64>>,
     masking_blocked_total: AtomicU64,
     masking_fail_total: AtomicU64,
@@ -698,7 +698,7 @@ impl GlobalMetrics {
 
     /// 流量滑窗内总请求数 — 守门器的 λ 估计分母（窗 60s，
     /// λ = 本值 / 60）。读侧推进语义与 [`Self::traffic_shares`] 一致
-    ///（全体 `max(last_seen)` 为逻辑当前时刻）。
+    /// （全体 `max(last_seen)` 为逻辑当前时刻）。
     pub fn traffic_window_total(&self) -> u64 {
         let mut guard = match self.per_vendor.write() {
             Ok(g) => g,
@@ -813,7 +813,7 @@ impl GlobalMetrics {
     }
 
     /// 多窗拒绝逐窗计数：429 拒绝时对每个受拒窗 `+1`
-    ///（标签 = window id；labeled counter，进程内 HashMap 承载）
+    /// （标签 = window id；labeled counter，进程内 HashMap 承载）
     pub fn record_quota_window_refused(&self, window_id: &str) {
         self.quota_window_refused_total
             .write()
@@ -1021,7 +1021,7 @@ impl GlobalMetrics {
 
     /// vendor 的 EWMA 延迟（ms）与错误率快照 — 路由权重第 4 维输入。
     /// 延迟只由 record_e2e 喂入（口径分道）；无 e2e 数据返回 None
-    ///（Router 走中性因子不惩罚冷启动；纯流式 vendor 若返回 Some(0.0)
+    /// （Router 走中性因子不惩罚冷启动；纯流式 vendor 若返回 Some(0.0)
     /// 会被 latency_factor/Po2C 恒判优，舰队整体倾斜——判定必须与
     /// vendor_ewma_e2e 同源 e2e_samples > 0）
     pub fn vendor_ewma(&self, vendor: &str) -> Option<(f64, f64)> {
@@ -1307,7 +1307,7 @@ pub struct VendorMetrics {
     /// EWMA 错误率（`[0,1]`，α=0.2，成功=0/失败=1 的滑动平均）
     pub ewma_error_rate: f64,
     /// EWMA 样本数（0 = 尚无观测，ewma 字段无意义）— record_request 驱动
-    ///（后对齐错误率道的样本数）
+    /// （后对齐错误率道的样本数）
     pub ewma_samples: u64,
     /// 流式 TTFT EWMA（ms）— 口径 = send → 上游响应头（严格首
     /// token 网关侧不可得，响应头近似）
@@ -1404,7 +1404,7 @@ fn entropy_from_shares(shares: &[(String, f64)]) -> f64 {
 /// 指标快照 — 可序列化返回给客户端
 ///
 /// 新增字段：`affinity_hits`/`affinity_misses`/`affinity_hit_rate`
-///（会话亲和命中率）与 `top1_share`/`share_entropy`（流量分布熵监控），
+/// （会话亲和命中率）与 `top1_share`/`share_entropy`（流量分布熵监控），
 /// /admin/metrics 序列化自动带出。
 #[derive(Debug, Serialize)]
 pub struct MetricsSnapshot {
@@ -2372,8 +2372,8 @@ mod tests {
     }
 
     /// 429 感知对照断言：RateLimited 计入失败率滑窗
-    ///（failure window 视角是失败），而 CB 分类器对其无感
-    ///（error_map.rs GateErrorClassifier 的既有语义——独立计数、
+    /// （failure window 视角是失败），而 CB 分类器对其无感
+    /// （error_map.rs GateErrorClassifier 的既有语义——独立计数、
     /// 不影响 CB 自身的 failure_count）。
     #[cfg(feature = "resilience")]
     #[test]

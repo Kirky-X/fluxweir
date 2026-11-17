@@ -427,7 +427,7 @@ impl WindowState {
 
 /// 429 拒绝详情：`retry_after_secs` = 受拒窗中最晚重置秒数（所有窗须同时
 /// 有余，最早可成功重试时刻 = 最晚重置的受拒窗——proposal「取最远重置窗」）；
-/// `windows` 列全部生效窗（脱敏：仅 window id 与重置秒数，R-quota-001 约束）。
+/// `windows` 列全部生效窗（脱敏：仅 window id 与重置秒数）。
 #[derive(Debug, Clone)]
 pub struct QuotaRefusal {
     pub retry_after_secs: u64,
@@ -461,8 +461,8 @@ pub(crate) fn refusal_body(refusal: &QuotaRefusal) -> String {
 
 /// 配额账本（`ApiState.quota` 承载，中间件与回补钩共享同一实例）：
 /// 账本键（租户摘要 / `__global__`）→ 窗口 id → 状态。一 key 多窗并存，
-/// 每窗独立判定（R-quota-001）。另承载 vendor 预算记账态（T006，与租户
-/// 窗口同构）与落盘句柄（T005，结算 UPSERT + 周期 flush 的生产侧）。
+///每窗独立判定。另承载 vendor 预算记账态（与租户
+/// 窗口同构）与落盘句柄（结算 UPSERT + 周期 flush 的生产侧）。
 #[derive(Debug, Default)]
 pub struct QuotaState {
     ledgers: Mutex<HashMap<String, HashMap<String, WindowState>>>,
@@ -730,7 +730,7 @@ impl QuotaState {
         self.enqueue_ledger_rows(settled, now);
     }
 
-    /// vendor 预算记账（usage 结算点，T006）：实际用量累计进该 vendor 的
+    /// vendor 预算记账（usage 结算点）：实际用量累计进该 vendor 的
     /// 各预算窗（无预扣预留——按实际记账）；无预算 vendor 零开销早退。
     /// 落盘句柄在位时同路入队（window_id=`vendor:{id}`）。
     pub fn record_vendor_usage(&self, config: &Config, vendor_id: &str, tokens: u64, cost: u64) {
@@ -795,7 +795,7 @@ impl QuotaState {
     /// ≥ now），过期行跳过；周期语义按当前配置解释（账本不存周期事实）。
     /// 返回恢复窗数。租户 / `__global__` / `__vendor__:{id}` 三类作用域行同路。
     /// 租户账本灌回套 `QUOTA_MAX_TRACKED_KEYS` 上限：超限键跳过并显性 warn
-    ///（读侧 SQL 下界已滤过期行，此处防高基数残留撑爆内存——被跳过键的窗
+    /// （读侧 SQL 下界已滤过期行，此处防高基数残留撑爆内存——被跳过键的窗
     /// 后续请求自然重建，fail-open 方向与 flush 误差一致）。
     pub fn restore_from_ledger(
         &self,
@@ -1357,7 +1357,7 @@ fn quota_applies_config(
     })
 }
 
-/// key 预算估成本（R-budget-001 入口单点）：输入腿 = 请求体字节 / cpt ×
+/// key 预算估成本（入口单点）：输入腿 = 请求体字节 / cpt ×
 /// 输入单价（档源与租户配额同一 `resolve_price_source`，不允许第二套
 /// 价目表）；输出腿 = 完成 token 滑动均值 × 输出单价，冷启动（无均值）
 /// 取 `cold_start_output_millicents`（调用方传规则窗限额一半——保守方向：
@@ -1393,7 +1393,7 @@ pub fn key_budget_estimate(
 
 /// key 预算适用性产物（入口判定）：fail_open 开关（同 key 多条规则时取
 /// 首条——同 key 多窗属罕见形态，首条即声明语义）与冷启动输出预留基准
-///（规则窗限额最小值的 1/2，多窗取最紧——保守方向）。
+/// （规则窗限额最小值的 1/2，多窗取最紧——保守方向）。
 struct KeyBudgetLease {
     fail_open: bool,
     cold_start_output_millicents: u64,
@@ -1658,7 +1658,7 @@ pub fn settle_nonstream(
     if has_vendor_budgets {
         state.record_vendor_usage(&snapshot, vendor_id, actual_tokens, actual_cost);
     }
-    // 网关键预算结算回冲（R-budget-001：FIFO 配对在飞预留，实际用量入窗；
+    // 网关键预算结算回冲（FIFO 配对在飞预留，实际用量入窗；
     // 无预留不丢账）
     if has_key_budgets {
         state
@@ -1708,7 +1708,7 @@ pub fn settle_nonstream_cached(
 }
 
 /// 结算上下文（转换流）：账本句柄、租户与预扣口径一次构造，上下文不持有请求体
-///（整段对话不在流存活期常驻内存）。`for_request` 内置早退——不适用返回
+/// （整段对话不在流存活期常驻内存）。`for_request` 内置早退——不适用返回
 /// `None`，调用方零包装直通。适用性 = 租户配额窗非空 / vendor 预算在位 /
 /// key 预算在位（后两者让无限额租户的流同样构建 ctx，预算记账不漏流式用量）。
 pub struct SettlementCtx {
@@ -2370,7 +2370,7 @@ mod tests {
         assert_eq!(quota.snapshot("k", "default"), (60, 0), "拒收不得落账");
     }
 
-    // ---- 多窗准入（quota-aware-routing T003 / R-quota-001）----
+    // ---- 多窗准入 ----
 
     /// 双 calendar 窗运行时面：daily 限额 tokens_limit_a、weekly 限额 b。
     fn calendar_windows(daily_limit: u64, weekly_limit: u64) -> Vec<RuntimeWindow> {
@@ -2459,7 +2459,7 @@ mod tests {
     }
 
     /// scope=global 窗全体请求共享同一账本键（`__global__`），与 api_key 窗
-    /// 互不串账（R-quota-001 / design 决策 3）。
+    /// 互不串账。
     #[test]
     fn global_window_shares_state_across_tenants() {
         let quota = QuotaState::new();
@@ -2483,7 +2483,7 @@ mod tests {
         assert_eq!(quota.tracked_keys(), 1, "全局窗只建一个账本键");
     }
 
-    // ---- vendor 预算记账（quota-aware-routing T006 / R-vbr-001）----
+    // ---- vendor 预算记账 ----
 
     /// vendor 预算配置（单 vendor rolling token 预算）。
     fn vendor_budget_config() -> crate::config::Config {
@@ -2499,7 +2499,7 @@ mod tests {
         config
     }
 
-    /// 结算累计进 VendorBudgetState；无预算 vendor 不参与（R-vbr-001）。
+    /// 结算累计进 VendorBudgetState；无预算 vendor 不参与。
     #[test]
     fn usage_settles_into_vendor_budget_state() {
         let config = Arc::new(ConfigManager::new(vendor_budget_config()));

@@ -101,7 +101,7 @@ pub async fn list_models(
 }
 
 /// 条目任务类型标注：显式 `model_type` 优先；未声明时按嵌入字段
-///（`dimensions` / 非空 `compat_group`）推断 embedding，其余 chat。
+/// （`dimensions` / 非空 `compat_group`）推断 embedding，其余 chat。
 /// 仅用于 `/v1/models` 的增量字段，不改变 id 集合与排序。
 fn model_task(model: &crate::config::ModelConfig) -> &'static str {
     use crate::config::ModelTask;

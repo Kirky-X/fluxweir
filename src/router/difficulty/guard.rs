@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! 定档分类器熔断降级状态机（F6）：closed →（连续失败达阈值）→ open →
-//!（探测间隔到）→ 半开探测 → 成功回 closed / 失败回 open。纯状态机 +
+//! （探测间隔到）→ 半开探测 → 成功回 closed / 失败回 open。纯状态机 +
 //! 调用方注入时钟（`Instant` 入参），确定性可测。降级不抛错——调用方
 //! 据 [`Availability`] 决定是否调用分类器，失败请求一律退纯规则。
 

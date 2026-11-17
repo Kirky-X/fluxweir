@@ -363,7 +363,7 @@ mod stats_endpoint {
     use std::sync::Arc;
 
     /// `stats_endpoint_excludes_values`：/admin/masking/stats 只含元数据
-    ///（kind 计数与长度直方图），响应中无任何原值子串。
+    /// （kind 计数与长度直方图），响应中无任何原值子串。
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn stats_endpoint_excludes_values() {
         let secret = "sk-stats-secret-0123456789abcdefgh";
@@ -462,7 +462,7 @@ mod stats_endpoint {
     }
 }
 
-/// 台账 admin 面（R-masking-002 验收）：关闭语义 + 开启可查。
+/// 台账 admin 面：关闭语义 + 开启可查。
 mod ledger_endpoint {
     use fluxweir::api::admin;
     use fluxweir::config::{ConfigManager, MaskingLedgerSection, MaskingSection};

@@ -215,7 +215,7 @@ impl Repository {
     /// 列存在性探针语句与结果列名（纯函数）。
     /// sqlite 的 PRAGMA table_info 返回键为 `name`；information_schema 两后端
     /// 统一 `AS column_name` 显式别名——postgres 对未加引号的标识符做小写折叠
-    ///（裸 `COLUMN_NAME` 结果列名实为 `column_name`，按原名取值恒落空）。
+    /// （裸 `COLUMN_NAME` 结果列名实为 `column_name`，按原名取值恒落空）。
     /// 语句与键随元组成对返回，调用方不再分支。
     fn column_probe(backend: DatabaseBackend, table: &str, column: &str) -> (String, &'static str) {
         match backend {
@@ -639,7 +639,7 @@ impl Repository {
 
     /// 上下文利用率分桶（`GET /admin/context-stats`）：按模型聚合。
     /// 占用率分母为 `context_window_tokens`，分子为输入侧 token
-    ///（prompt + cache_read + cache_write，均为占窗的输入部分）。
+    /// （prompt + cache_read + cache_write，均为占窗的输入部分）。
     /// 窗口未登记的模型行不参与（分母缺失）。
     pub async fn query_context_stats(&self, since_ts: i64) -> Result<Vec<ContextStatRow>, DbError> {
         let session = self.pool.get_session("admin").await?;
@@ -737,7 +737,7 @@ impl Repository {
     }
 
     /// 未过期粘性读取（启动恢复）：按 `expires_at` 降序取前 `limit` 条
-    ///（最新写入优先）；`LIMIT` 下推到 SQL，不把全表拉进内存。
+    /// （最新写入优先）；`LIMIT` 下推到 SQL，不把全表拉进内存。
     pub async fn read_affinity_sticks(
         &self,
         now: i64,
@@ -775,7 +775,7 @@ impl Repository {
     /// quota_ledger 批量 UPSERT（quota-aware-routing V7）：复合主键
     /// (api_key_hash, window_id, window_start) 冲突时覆盖用量与 updated_at。
     /// 空切片短路（无 SQL 往返）；六列全部参数化绑定；整批包单事务 commit
-    ///（N 次自动提交 fsync 合为 1，与 [`Self::log_requests_batch`] 同模式，
+    /// （N 次自动提交 fsync 合为 1，与 [`Self::log_requests_batch`] 同模式，
     /// 单条失败回滚整批不留半写批次）。
     pub async fn upsert_quota_ledger(
         &self,
@@ -820,7 +820,7 @@ impl Repository {
     /// quota_ledger 保留清理：删除 `window_start` 早于 `not_before` 下界的
     /// 过期周期行，返回删除数。下界由
     /// [`crate::middleware::quota::ledger_retention_secs`] 按配置最长窗推导
-    ///（宁多留一行不误删活动行），与启动恢复读侧同参单源。
+    /// （宁多留一行不误删活动行），与启动恢复读侧同参单源。
     pub async fn purge_expired_quota_ledger(&self, not_before: i64) -> Result<u64, DbError> {
         let session = self.pool.get_session("admin").await?;
         let conn = session.connection()?;
@@ -1057,7 +1057,7 @@ fn int_sum_expr(backend: DatabaseBackend, column: &str) -> String {
 
 /// 整数列读取为 i32（纯函数）：postgres 侧这些列自 V1 起即 BIGINT，
 /// 按 i32 直读会解码失败而静默落成缺省值（NULL/0）；统一经 i64 读再收窄
-///（sqlite/mysql 的 i64 读法兼容）。越界值按缺省处理（计数/状态码量级内）。
+/// （sqlite/mysql 的 i64 读法兼容）。越界值按缺省处理（计数/状态码量级内）。
 fn read_i32(row: &QueryResult, column: &str) -> Option<i32> {
     row.try_get::<Option<i64>>("", column)
         .ok()
@@ -1168,7 +1168,7 @@ mod schema_tests {
             .join("\n")
     }
 
-    /// 三后端投影均非空、均含四张表（db-backend-selection R-schema-001）
+    /// 三后端投影均非空、均含四张表（db-backend-selection）
     #[test]
     fn all_backends_define_the_same_tables() {
         for backend in [
@@ -1193,7 +1193,7 @@ mod schema_tests {
     }
 
     /// mysql 投影只含建表（索引由 ensure_indexes_mysql 幂等创建）；
-    /// sqlite/pg 投影自带 CREATE INDEX IF NOT EXISTS（R-schema-001/002）
+    /// sqlite/pg 投影自带 CREATE INDEX IF NOT EXISTS
     #[test]
     fn mysql_projection_defers_indexes_to_runtime() {
         assert!(!ddl(schema_sql_for_backend(DatabaseBackend::MySql)).contains("CREATE INDEX"));
@@ -1203,7 +1203,7 @@ mod schema_tests {
             .contains("CREATE INDEX IF NOT EXISTS"));
     }
 
-    /// 类型映射抽查：自增主键与浮点（R-schema-001）
+    /// 类型映射抽查：自增主键与浮点
     #[test]
     fn dialect_type_mappings() {
         let pg = ddl(schema_sql_for_backend(DatabaseBackend::Postgres));
@@ -1223,7 +1223,7 @@ mod schema_tests {
         assert!(mysql.contains("actual_vendor VARCHAR(255)"));
     }
 
-    /// LIKE 通配符转义：三类元字符 + 反斜杠优先（R-schema-003 关联的
+    /// LIKE 通配符转义：三类元字符 + 反斜杠优先（
     /// search 输入面收敛）
     #[test]
     fn escape_like_escapes_wildcards_and_backslash() {
@@ -1233,7 +1233,7 @@ mod schema_tests {
         assert_eq!(super::escape_like("a\\%b"), "a\\\\\\%b");
     }
 
-    /// 三投影逐列集合守卫（R-schema-001）：每表全部列名
+    /// 三投影逐列集合守卫：每表全部列名
     /// 必须在三份投影的对应建表段中出现——防「加列只改权威源」漂移
     #[test]
     fn column_sets_match_across_projections() {
@@ -1332,7 +1332,7 @@ mod schema_tests {
         }
     }
 
-    /// 列探针语句分派：语句与结果键成对返回（R-schema-002）。
+    /// 列探针语句分派：语句与结果键成对返回。
     /// information_schema 两后端统一 `AS column_name` 显式别名——postgres 对
     /// 未加引号标识符做小写折叠，裸 `COLUMN_NAME` 的结果列名实为
     /// `column_name`，按原名取值恒落空（探针恒判缺失 → 重复 ALTER 报
@@ -1363,7 +1363,7 @@ mod schema_tests {
 
     /// 整数聚合列投影分派：postgres 的 `SUM(bigint)` 是 numeric、mysql 是
     /// decimal，按 i64 解码静默归 0，故两后端显式 CAST；sqlite 的 SUM 保持
-    /// 整数类型（R-schema-002 的读回口径）。
+    /// 整数类型（读回口径）。
     #[test]
     fn int_sum_expr_casts_on_server_side_backends() {
         use super::int_sum_expr;

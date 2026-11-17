@@ -16,7 +16,7 @@ use std::collections::HashMap;
 
 /// 单次掩码命中元数据（种类/长度/来源/首字符/占位符）——admin 统计面与
 /// 审计台账口径，不含值本身（唯一值片段是台账 hint 的单首字符，见
-/// `ledger` 模块与 delta spec R-masking-002 的显式约定）。
+/// `ledger` 模块的显式约定）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MaskedHitInfo {
     pub kind: MaskKind,
@@ -100,7 +100,7 @@ impl KindSet {
 
 /// 对出站 body 做掩码遍历。返回命中元数据列表（种类/长度）；`Block` 动作
 /// 命中返回 [`MaskError::Blocked`]。所有生成的占位符同步登记进 `ticket`
-///（回程还原的放行判据）。
+/// （回程还原的放行判据）。
 pub fn mask_json(
     body: &mut Value,
     detector: &dyn MaskDetector,

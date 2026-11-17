@@ -5,7 +5,7 @@
 //!
 //! 输入为请求 body（openai/anthropic 两种 messages 形态兼容），输出
 //! [`RuleFeatures`]。文本面**有界**：引擎 token 预算超限即拒绝而非截断
-//!（vecboost `decision.rs` 契约），故本层取「system + 末条 user 消息」
+//! （vecboost `decision.rs` 契约），故本层取「system + 末条 user 消息」
 //! 前缀 ≤2KB，超长请求的剩余信息由结构特征（消息数/长度分档）承接。
 
 use serde_json::Value;

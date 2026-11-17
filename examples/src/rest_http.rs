@@ -164,7 +164,7 @@ async fn anthropic_messages(client: &Client, base_url: &str, headers: &HeaderMap
 }
 
 /// SSE 流式：`bytes_stream` 手工解析——跨 chunk 字节缓冲、按 `\n` 切行
-///（只对完整行解码，多字节 UTF-8 不会被块边界劈坏）、`data: [DONE]`
+/// （只对完整行解码，多字节 UTF-8 不会被块边界劈坏）、`data: [DONE]`
 /// 终止、`event: error` 帧按失败处理
 async fn chat_stream(client: &Client, base_url: &str, headers: &HeaderMap) -> Result<()> {
     let body = json!({

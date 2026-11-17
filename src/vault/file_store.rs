@@ -52,7 +52,8 @@ impl FileKeyStore {
     /// 打开文件柜：文件存在则解密载入，不存在则以空柜启动（首次 put 时落盘）。
     pub fn open(master_key: Vec<u8>, path: impl Into<PathBuf>) -> Result<Self, VaultError> {
         let path = path.into();
-        // 崩溃安全读取（magpie-absorb-r1 R-state-002）：校验=magic 前缀+解密
+        // 崩溃安全读取（magpie-absorb-r1）：校验=magic 前缀+解密
+
         // +JSON 解析三者全过；主文件损坏→隔离 .bad-<ts> 并回退 .bak；均坏→
         // 显式错误（绝不静默空柜——那等于丢账号密钥数据）。
         let validate = |raw: &[u8]| -> Option<BTreeMap<String, StoredEntry>> {
@@ -281,7 +282,7 @@ mod tests {
         assert!(!store.remove(&record.id).await.expect("remove again"));
     }
 
-    /// 端到端故障注入（吸收审计 D3）：主文件损坏 → 重新打开必须经 .bak
+    /// 端到端故障注入（吸收审计）：主文件损坏 → 重新打开必须经.bak
     /// 恢复而非报错/空柜——单测五路径之外验证接线处的真实文件行为
     #[tokio::test]
     async fn corrupted_primary_recovers_from_bak_on_reopen() {

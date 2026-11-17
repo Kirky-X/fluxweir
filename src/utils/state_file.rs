@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 崩溃安全状态文件读取（magpie-absorb-r1 R-state-001，吸收自 magpie
+//! 崩溃安全状态文件读取（magpie-absorb-r1，吸收自 magpie
 //! `internal/lastgood` 的断电全零文件事故教训）：**先验 `.bak`**——恢复源
 //! 可用即用其内容，才把坏主文件改名 `*.bad-<unix_ts>` 隔离（保留取证
 //! 现场）；无可用恢复源时主文件原位保留并返回 `Unrecoverable`（调用方

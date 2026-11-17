@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! OIDC 短时键别名表（进程内 TTL，auth-and-masking R-auth-002 的常驻半边）。
+//! OIDC 短时键别名表（进程内 TTL，auth-and-masking 的常驻半边）。
 //!
 //! JWT 验签成功后，`middleware::oidc`（`oidc` feature 门控）签发一个进程内
 //! 短时凭据并在此登记「凭据 → 母键摘要」别名；`api_key_digest` 与认证档位
@@ -11,7 +11,7 @@
 //! 安全不变量：
 //! - 凭据含随机熵（uuid v4 双份），不可由 issuer+sub 推算——直接呈报短时
 //!   凭据无法绕过 JWT 验签（验签路径外的静态校验不会命中别名）。
-//! - 过期惰性清除；进程重启即空表（不落盘，R-auth-002「重启失效」）。
+//! - 过期惰性清除；进程重启即空表（不落盘，「重启失效」）。
 //! - 会话身份 = issuer+sub 摘要：同 (issuer, sub) 刷新复用同一凭据，
 //!   表容量按会话数有界（高基数约束同 quota 账本）。
 

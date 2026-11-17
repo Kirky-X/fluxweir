@@ -269,7 +269,7 @@ fn request_content_length(head: &str) -> usize {
 }
 
 /// 裸 TCP 流式上游：前 `broken_conns` 个连接在发出 `broken_body` 后突断
-///（content-length 虚高 + 半途 drop → 客户端 hyper 侧报 incomplete
+/// （content-length 虚高 + 半途 drop → 客户端 hyper 侧报 incomplete
 /// message），此后每个连接返回 `ok_body`。返回 (base_url, 连接计数)。
 /// 请求体按 content-length 读满后再写响应，防半途 drop 触发 RST 吞掉
 /// 已写出的响应字节。帧内容参数化：透传路径与两条转换路径（Anthropic
@@ -348,7 +348,7 @@ async fn spawn_stream_upstream(broken_conns: usize) -> (String, Arc<AtomicUsize>
     .await
 }
 
-///：首跳上游 429（首字节前失败）→ 换路
+/// ：首跳上游 429（首字节前失败）→ 换路
 /// 第二 vendor 建流，客户端拿到完整正常 SSE，响应不含任何错误帧。
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn first_hop_429_fails_over_stream_before_first_byte() {
@@ -392,7 +392,7 @@ async fn first_hop_429_fails_over_stream_before_first_byte() {
     mock_b.assert_async().await;
 }
 
-///：首跳连接错误（连接拒绝，首字节前）→
+/// ：首跳连接错误（连接拒绝，首字节前）→
 /// 换路第二 vendor，客户端无感。
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn first_hop_connection_error_fails_over_stream_before_first_byte() {
@@ -428,7 +428,7 @@ async fn first_hop_connection_error_fails_over_stream_before_first_byte() {
     mock_b.assert_async().await;
 }
 
-///：流建立后上游断流 → 客户端恰收
+/// ：流建立后上游断流 → 客户端恰收
 /// 1 个网关错误帧（data 为 {"error":{type,message}} JSON 信封、无
 /// vendor id/api_base 内部字段）、0 个 [DONE]、已收内容不重放。
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -476,7 +476,7 @@ async fn mid_stream_break_single_json_error_frame_no_done_no_replay() {
     );
 }
 
-///：断流触发该 vendor 冷却 —— 后续请求
+/// ：断流触发该 vendor 冷却 —— 后续请求
 /// 立即可观测 Throttled（不再触达该上游）；冷却 TTL（此处取
 /// circuit_open_timeout_ms=300 短窗）到期后惰性恢复 Available，流量
 /// 重新可达。
@@ -549,7 +549,7 @@ fn error_frame_payload(body: &str) -> &str {
         .unwrap_or_default()
 }
 
-///（转换路径 · Anthropic 出站）：openai 型
+/// （转换路径 · Anthropic 出站）：openai 型
 /// 上游断流前先发一帧可映射内容，/v1/messages 的转换流以恰一个网关
 /// 错误帧终止——错误帧后不得补 message_stop 等收尾事件（客户端可分辨
 /// 失败），已收内容不重放，帧内无内部拓扑。
@@ -605,7 +605,7 @@ async fn converted_anthropic_stream_break_single_error_frame_no_trailing_stop() 
     );
 }
 
-///（转换路径 · OpenAI 出站）：anthropic 型
+/// （转换路径 · OpenAI 出站）：anthropic 型
 /// 上游断流前先发一帧可映射内容，/v1/chat/completions 的转换流以恰一个
 /// 网关错误帧终止、不补 [DONE]、已收内容不重放。
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

@@ -21,7 +21,7 @@ pub enum ClassifierError {
 }
 
 /// 难度分类器：输出 P(high) ∈ \[0,1\]。实现方为潜在阻塞推理
-///（laya），调用方以 `spawn_blocking` + 超时包裹（见 vecboost_engine）
+/// （laya），调用方以 `spawn_blocking` + 超时包裹（见 vecboost_engine）
 pub trait DifficultyClassifier: Send + Sync {
     fn p_high(&self, features: &RuleFeatures) -> Result<f64, ClassifierError>;
 }

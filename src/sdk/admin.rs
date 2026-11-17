@@ -86,7 +86,7 @@ pub struct ModelCatalogUpsert {
 }
 
 /// vendor 运行时状态 — 对齐网关 `GET /admin/vendors` 真实形状
-///（{id,status,queue_length} + key_pool；旧 {id,name,enabled} 为
+/// （{id,status,queue_length} + key_pool；旧 {id,name,enabled} 为
 /// 配置面形状，运行面不存在）。
 #[derive(Debug, Clone, Deserialize)]
 pub struct VendorStatusInfo {
@@ -121,7 +121,7 @@ pub struct HealthStatus {
 }
 
 /// 配额账本条目 — 对齐网关 `GET /admin/quota/ledger` 的 `rows[]`
-///（quota-aware-routing：多窗预算账本读侧）。
+/// （quota-aware-routing：多窗预算账本读侧）。
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct QuotaLedgerInfo {
     /// 租户摘要 / `__global__` / `__vendor__:{id}`
@@ -165,7 +165,7 @@ pub struct VendorBudgetsResponse {
 }
 
 /// 目录同步 diff 条目 — 对齐网关 `POST /admin/catalog/sync` 的 `entries[]`
-///（`price_source: "fallback"` 标注该条目至少一档价格回退 catalog 默认 0 价）。
+/// （`price_source: "fallback"` 标注该条目至少一档价格回退 catalog 默认 0 价）。
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct CatalogSyncEntry {
     pub vendor_id: String,

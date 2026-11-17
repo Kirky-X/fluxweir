@@ -538,7 +538,7 @@ mod tests {
     }
 
     /// 已绑定分支按命中续期：不覆盖绑定 vendor，但把 TTL 刷回一个完整周期
-    ///（活跃会话粘住语义不因切到库侧原子面而丢失）。
+    /// （活跃会话粘住语义不因切到库侧原子面而丢失）。
     #[tokio::test]
     async fn bind_if_absent_renews_ttl_when_already_bound() {
         let table = AffinityTable::with_memory_backend(Duration::from_millis(600));

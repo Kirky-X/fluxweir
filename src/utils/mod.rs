@@ -14,7 +14,8 @@ pub mod state_file;
 // 均为 web-server 面的直接依赖——随 web-server 门控，避免精简组合拉入缺席依赖。
 #[cfg(feature = "web-server")]
 pub mod tenant;
-// OIDC 短时键别名表（auth-and-masking R-auth-002）：纯 std 单锁表，
+// OIDC 短时键别名表（auth-and-masking）：纯 std 单锁表，
+
 // oidc feature 的验签路径写、api_key_digest/档位解析读。非 OIDC 构建
 // 不编译本模块，调用点在 cfg 下直接走静态摘要路径（零全局锁）。
 #[cfg(feature = "oidc")]
@@ -38,7 +39,7 @@ pub mod replay;
 #[cfg(feature = "otlp")]
 pub mod otlp;
 
-// OTLP 尝试级追踪（usage-observability R-otlp-001/002）：与 otlp.rs（Prometheus
+// OTLP 尝试级追踪（usage-observability）：与 otlp.rs（Prometheus
 // 文本桥）职责分离——本模块是 trace 面（span），otlp.rs 是 metrics 面。
 #[cfg(feature = "otlp")]
 pub mod otlp_export;

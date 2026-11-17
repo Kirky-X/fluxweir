@@ -27,7 +27,7 @@ use crate::sdk::chat::{
 use crate::sdk::error::FluxweirSdkError;
 
 /// 流式工具调用片段 — 对齐网关出站 `delta.tool_calls[]` 元素
-///（index 为多片段交错聚合的槽位；id/name 仅首片段携带）。
+/// （index 为多片段交错聚合的槽位；id/name 仅首片段携带）。
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct ChatToolCallDelta {
     /// 交错槽位（同一轮多工具调用按 index 区分）

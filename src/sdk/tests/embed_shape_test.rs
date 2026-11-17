@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! Embeddings 形状测试（R-sdk-client-006）：`EmbedInput` 四形状 wire 与
+//! Embeddings 形状测试：`EmbedInput` 四形状 wire 与
 //! untagged 判别、`dimensions/encoding_format/user` 序列化、
 //! `EmbeddingValue` 双形态解析（f32 数组 / base64 字符串保真）。
 

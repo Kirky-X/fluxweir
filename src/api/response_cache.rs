@@ -562,7 +562,7 @@ impl ResponseCache {
     }
 
     /// 以最终路由维度写完整键并返回该键。TTL 与 [`Self::store`] 同口径
-    ///（Null 短窗口；非 Null 三段式 + 配置抖动）；存取失败静默降级。
+    /// （Null 短窗口；非 Null 三段式 + 配置抖动）；存取失败静默降级。
     async fn write_final_key<R: FinalRoute>(
         &self,
         api_key_hash: &str,

@@ -313,7 +313,8 @@ impl ProtocolConverter for OpenAIConverter {
         }
         // F1/：vendor_extensions 顶层透传，denylist = 本协议 known_keys
         // 反用——协议键（stream/reasoning_effort 等）永不由扩展表补入/覆写，
-        // 非协议键仍透传（D2 语义；跨协议严格上游 400 风险为显式 opt-in，D7）
+        // 非协议键仍透传（语义；跨协议严格上游 400 风险为显式 opt-in）
+
         merge_vendor_extensions(&mut body, &vendor_extensions, OPENAI_KNOWN_KEYS);
 
         Ok(body)
@@ -1597,7 +1598,7 @@ fn arguments_as_string(value: Option<&Value>) -> Option<String> {
     }
 }
 
-/// 解析 OpenAI 格式的工具定义（M1 / D7.14 闭环：parameters 原样
+/// 解析 OpenAI 格式的工具定义（M1 闭环：parameters 原样
 /// `serde_json::Value` 保真透传——不做结构化升降级，嵌套 schema / items /
 /// anyOf / $ref / 缺 type 属性等全量无损）。
 fn parse_openai_tool(json: &Value) -> Option<Tool> {

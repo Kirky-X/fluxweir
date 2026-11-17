@@ -205,8 +205,8 @@ pub fn amplification(r: f64, f: f64) -> Option<f64> {
 
 /// 临界失败率 `f_c = (C − λ)/(r·C)` — 失败率超过 f_c 时
 /// 重试放大把系统推入亚稳态（C=全网并发上限，λ=入站速率）。r ≤ 0
-///（无重试放大）或 C ≤ 0 → None（无从收紧）；C < λ（容量饱和）→ 0.0
-///（任何失败率都超临界）。纯函数。
+/// （无重试放大）或 C ≤ 0 → None（无从收紧）；C < λ（容量饱和）→ 0.0
+/// （任何失败率都超临界）。纯函数。
 pub fn critical_failure_fraction(r: f64, c: f64, lambda: f64) -> Option<f64> {
     if r <= 0.0 || c <= 0.0 {
         return None;

@@ -12,7 +12,7 @@ pub(crate) mod gate;
 pub use gate::GateError;
 
 /// 错误双轨：`#[error]` Display 恒英文规范串（日志/错误链），HTTP 展示走 `user_message`
-///（FTL，随 locale）；`Gate` 变体 `transparent` 透传英文规范串。
+/// （FTL，随 locale）；`Gate` 变体 `transparent` 透传英文规范串。
 /// `Database.message` 存语言中性锚点（`"<ftl键>"` 或 `"<ftl键>|{json}"`），
 /// 或来自底层库的原始英文串（走 `error-database` 通用模板回退），见 `app.rs`。
 #[derive(Error, Debug)]

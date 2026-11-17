@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 #![cfg(feature = "web-server")]
 
-//! /admin/logs 透出面回归（magpie 吸收审计 D4）：`upstream_key_fingerprint`
+//! /admin/logs 透出面回归（magpie 吸收审计）：`upstream_key_fingerprint`
 //! 必须出现在响应 JSON——透出当前由 `RequestLog` derive Serialize 结构性
 //! 保证，本断言防未来响应字段白名单化时静默消失（API_REFERENCE 已承诺
 //! 该字段与 NULL 语义）。

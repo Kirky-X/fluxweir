@@ -76,7 +76,8 @@ pub async fn route_explain(
                 item["selection"] = json!(a
                     .selection
                     .unwrap_or_else(|| panic!("{}", t("api-explain-no-selection"))));
-                // quota views 块（R-budget-002）：平局打破生效者与降档档位，
+                // quota views 块：平局打破生效者与降档档位，
+
                 // 与生产路由同快照单点（quota_factor_scores）
                 item["quota"] = json!({
                     "tie_break": a.quota_tie_break.unwrap_or(false),
@@ -90,7 +91,7 @@ pub async fn route_explain(
     Ok(Json(json!({
         "model": model,
         "candidates": candidates,
-        // 亲和决策块（R-affinity-004）：解释点只读，不续期不改状态
+        // 亲和决策块：解释点只读，不续期不改状态
         "affinity": crate::api::routing_hints::affinity_decision_block(
             &state, session_id, tenant
         )

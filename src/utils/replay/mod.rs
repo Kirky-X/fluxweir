@@ -45,7 +45,7 @@ pub const DEFAULT_MAX_ROWS: u64 = 1_000_000;
 /// 回放行——`request_logs` 的时间窗投影（装载与回放共用的中间契约）。
 ///
 /// `session_key` 为 `None` 表示该请求无会话语义：回放时**每行自成会话**
-///（见 [`session_key_of`]），历史无缓存收益。
+/// （见 [`session_key_of`]），历史无缓存收益。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReplayRow {
     /// Unix 秒（`request_logs.timestamp`）。

@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! Embedding：一次请求两条文本，打印每条向量维度与 token 用量
-//!（`EmbedInput` 多形态与 `EmbeddingValue` 双编码展示）。
-
+//! （`EmbedInput` 多形态与 `EmbeddingValue` 双编码展示）。
 use fluxweir::sdk::{
     EmbedInput, EmbedRequest, EmbeddingValue, FluxweirClientBuilder, FluxweirSdkError,
     RequestConfig,

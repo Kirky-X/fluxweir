@@ -617,7 +617,7 @@ concurrency = { requests_per_second = 10 }
         assert!((entry.output_per_1k_tokens - 0.075).abs() < f64::EPSILON);
     }
 
-    // [vendors] D8 新键校验（validate_config）
+    // [vendors] 新键校验（validate_config）
 
     /// anthropic_version 格式校验：非空且 YYYY-MM-DD；缺省 None 合法
     /// （出站回退 "2023-06-01"）。
@@ -749,7 +749,7 @@ concurrency = { requests_per_second = 10 }
     // 价格/空白 id/条目上限校验
 
     /// 五个价格字段（含 rerank 按文档计价）必须有限（拒 NaN/Inf）且 ≥ 0
-    ///（加载与热更新两路同拒）。
+    /// （加载与热更新两路同拒）。
     #[test]
     fn catalog_rejects_non_finite_and_negative_prices() {
         let cases: Vec<(&str, f64)> = vec![
@@ -854,7 +854,7 @@ concurrency = { requests_per_second = 10 }
     }
 
     // ---- [vendors] validate_vendor_entries 拒绝臂特征化 ----
-    // （codenexus-audit-remediation T006：拆分前置行为网；validate_difficulty
+    // （拆分前置行为网；validate_difficulty
     // 各臂已由 loader.rs 内置 #[cfg(test)] 直测覆盖，不在此重复）
 
     /// 断言 validate_config 拒绝并返回 Config 错误；needles 为必须点名的插值
@@ -973,7 +973,7 @@ concurrency = { requests_per_second = 10 }
     }
 }
 
-/// `[otlp]` 段：缺省值与边界校验（usage-observability T004）
+/// `[otlp]` 段：缺省值与边界校验
 #[cfg(test)]
 mod otlp_config {
     use crate::common;
@@ -1127,7 +1127,7 @@ mod quota_windows_config {
     use fluxweir::config::{QuotaSection, QuotaWindowConfig};
 
     /// 只配旧字段（无 `[[quota.windows]]`）：生效窗口编译为 `id="default"`
-    /// 的 rolling 窗，行为与历史逐位一致（R-quota-001 兼容验收）。
+    /// 的 rolling 窗，行为与历史逐位一致（兼容验收）。
     #[test]
     fn test_legacy_single_window_maps_to_default() {
         let mut config = common::test_config(vec![]);
@@ -1145,7 +1145,7 @@ mod quota_windows_config {
     }
 
     /// 两形态并存：`[[quota.windows]]` 优先、旧 `window_secs` 忽略
-    ///（加载期 WARN，这里断言生效集为数组原样）。
+    /// （加载期 WARN，这里断言生效集为数组原样）。
     #[test]
     fn test_windows_array_takes_precedence_over_legacy_fields() {
         let mut config = common::test_config(vec![]);
@@ -1428,7 +1428,7 @@ mod quota_windows_config {
         }
     }
 
-    /// `[routing.quota_factor]` 配额时钟补全（R-budget-002）：ε/阈值/乘数
+    /// `[routing.quota_factor]` 配额时钟补全：ε/阈值/乘数
     /// 数值域与档序校验；缺省全绿（平局打破 ε=0.05、降档启用）。
     #[test]
     fn test_quota_factor_clock_fields_validation() {
@@ -1540,7 +1540,7 @@ mod quota_windows_config {
     }
 }
 
-/// `[auth.oidc_rules]`（R-auth-001）：claims 通配/前缀意图硬拦、母键必须
+/// `[auth.oidc_rules]`：claims 通配/前缀意图硬拦、母键必须
 /// 存在、ttl 越界拒绝、合法规则放行；无段/无规则整体关闭。
 #[cfg(test)]
 mod oidc_rules_config {
@@ -1714,7 +1714,7 @@ mod catalog_sync_config {
 
     /// enabled=false 完全旁路不校验（与「缺段」同语义，difficulty 先例）；
     /// enabled=true 时非 HTTPS 公网源拒绝、HTTPS 放行、loopback http 放行
-    ///（嵌入式上游测试面）、非法 URL 拒绝。
+    /// （嵌入式上游测试面）、非法 URL 拒绝。
     #[test]
     fn test_catalog_sync_source_url_validation() {
         // 旁路：disabled 不校验 URL

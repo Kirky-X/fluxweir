@@ -4,7 +4,7 @@
 //! OTLP 尝试级追踪（feature `otlp`；与 Prometheus 文本桥 `utils/otlp.rs`
 //! 职责分离——桥是 metrics 面，本模块是 trace 面）。
 //!
-//! 语义（delta spec R-otlp-001/002）：
+//! 语义：
 //! - 请求入站解析 W3C `traceparent`（无/非法 → 新建 root span）；
 //! - 每个 vendor attempt 一个子 span，属性：`vendor`/`model`/`attempt`/
 //!   `status_code`/`error_class`/`cost_details.estimate_usd`；fallback 实际
@@ -16,14 +16,14 @@
 //!
 //! 装配：bootstrap 在 metrics 桥装配点旁挂 [`trace_from_section`] →
 //! [`install`]；shutdown 经 teardown coordinator flush + [`uninstall`]
-//!（best-effort：flush 失败只告警不阻塞停机，不承诺零丢失）。
+//! （best-effort：flush 失败只告警不阻塞停机，不承诺零丢失）。
 //!
 //! 采样口径：`TraceIdRatioBased` 按 trace id 确定性判定——对远端父上下文
 //! 同样按本地比例重判（不跟随上游采样决策；本地确定性优先，避免
 //! `sample_ratio=0.0` 时远端 sampled trace 仍产生 span）。
 //!
 //! 覆盖面：attempt 级 span 挂 converter 非流式（重试循环）与两条流式
-//!（`dispatch_stream_once` 共用段）与透传非流式发送点；request root span
+//! （`dispatch_stream_once` 共用段）与透传非流式发送点；request root span
 //! 由 api 层 fallback 循环创建（跨 vendor 共享同一 trace），无循环路径由
 //! manager 派发入口懒建。
 
@@ -204,7 +204,7 @@ pub enum EstimateInput {
 }
 
 /// 请求域追踪句柄：root span + 派生父上下文 + 尝试估算面。Arc 共享
-///（options.trace 与 fallback 循环/派发入口同源），任一持有者在请求终点
+/// （options.trace 与 fallback 循环/派发入口同源），任一持有者在请求终点
 /// 调 [`RequestTrace::end`]（Mutex 承载 end 幂等：先到先终结）。
 pub struct RequestTrace {
     root: std::sync::Mutex<opentelemetry_sdk::trace::Span>,
@@ -410,7 +410,7 @@ mod tests {
         exporter.get_finished_spans().expect("spans")
     }
 
-    /// R-otlp-001 验收：单请求 N 次 fallback → N+1（root+attempt）个 span
+    /// 单请求 N 次 fallback → N+1（root+attempt）个 span
     /// 且共享同一 trace id；served 属性只在最终成功者上。
     #[test]
     fn fallback_n_attempts_share_root_trace_and_served_only_final() {
@@ -472,7 +472,7 @@ mod tests {
         uninstall();
     }
 
-    /// R-otlp-001/002 验收：sample_ratio=0.0（默认）零 span 产生。
+    /// sample_ratio=0.0（默认）零 span 产生。
     #[test]
     fn default_ratio_zero_produces_no_spans() {
         let _guard = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
@@ -486,7 +486,7 @@ mod tests {
         uninstall();
     }
 
-    /// R-otlp-002 验收：enabled=false 装配裁决 Disabled（不建任何资源）。
+    /// enabled=false 装配裁决 Disabled（不建任何资源）。
     #[test]
     fn disabled_section_yields_disabled_spawn() {
         let section = OtlpTracingSection {

@@ -144,7 +144,7 @@ pub fn apply_aliases(
 }
 
 /// 进程内单飞标记：admin 触发与周期任务共享，重入得 [`SyncError::InFlight`]
-///（design：并发防重入 AtomicBool）。
+/// （design：并发防重入 AtomicBool）。
 static SYNC_IN_FLIGHT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// 上游 ETag 缓存（进程内）：成功 Body 后回存，下次请求作 If-None-Match；
@@ -367,7 +367,7 @@ struct SourceLimit {
     output: Option<u64>,
 }
 
-/// 响应体大小上限：8MB（R-catalog-001；超限拒绝不搬运，admin 侧映射 413）
+/// 响应体大小上限：8MB（超限拒绝不搬运，admin 侧映射 413）
 pub const MAX_SOURCE_BODY_BYTES: usize = 8 * 1024 * 1024;
 
 /// 单次拉取结果：304 短路（上游未变化）或携带 body + ETag 的完整响应
@@ -531,7 +531,7 @@ pub struct SyncPlan {
 /// 键口径：`ModelCatalogEntry` 主键是 `model_id`（`validate_config` 强制
 /// 目录去重、条目不携带 vendor 维度），故「已存在」按 `model_id` 判定——
 /// 多 provider 重复收录同一模型名时只保留首条草稿，正是只增不改在
-/// 现有目录模型上的保守化（specs R-catalog-003 的 (vendor, model) 键在
+/// 现有目录模型上的保守化（(vendor, model) 键在
 /// 单键目录上退化为 model_id，语义覆盖见测试 `merge_adds_missing_
 /// never_touches_existing` 的同 model_id 异 vendor 用例）。
 pub fn merge(existing: &[ModelCatalogEntry], drafts: Vec<CatalogEntryDraft>) -> SyncPlan {
@@ -569,7 +569,7 @@ mod tests {
         "/tests/config/fixtures/models_dev.json"
     ));
 
-    /// fixture 解析与单位换算（R-catalog-002）：2026-10-28 实测 api.json
+    /// fixture 解析与单位换算：2026-10-28 实测 api.json
     /// 裁剪落盘——四档齐全 / 缺 cache_write 回退 / 无 cost 跳过三形态，
     /// 换算数值精确断言 + alias 生效 + 跳过计数。
     #[test]
@@ -653,7 +653,7 @@ mod tests {
         assert!(parse_source(b"not json").is_empty());
     }
 
-    /// 409 in-flight 断言钉（R-catalog-004 验收）：进程内单飞标记置位时
+    /// 409 in-flight 断言钉：进程内单飞标记置位时
     /// plan_from_source 必须拒绝重入（admin 映射 409）。
     #[tokio::test]
     async fn plan_from_source_rejects_reentrant_sync_with_in_flight() {
@@ -678,8 +678,8 @@ mod tests {
         );
     }
 
-    /// 只增不改合并（R-catalog-003）：既有 (vendor, model) 零改动
-    ///（byte 不变）、缺失条目新增、重复草稿去重（先到先得）。
+    /// 只增不改合并：既有 (vendor, model) 零改动
+    /// （byte 不变）、缺失条目新增、重复草稿去重（先到先得）。
     #[test]
     fn merge_adds_missing_never_touches_existing() {
         let existing = vec![ModelCatalogEntry {

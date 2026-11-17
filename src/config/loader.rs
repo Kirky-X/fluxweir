@@ -380,7 +380,7 @@ fn validate_masking(config: &Config) -> Result<(), GateError> {
 }
 
 /// `[routing.difficulty]` 段校验（V1-V7）：enabled=false 完全旁路不校验
-///（与「缺段」同语义）；enabled=true 时全部规则刚性执行。加载与热更
+/// （与「缺段」同语义）；enabled=true 时全部规则刚性执行。加载与热更
 /// 共用本入口（manager 更新路径同样走 validate_config），热更失败保持旧配置
 fn validate_difficulty(config: &Config) -> Result<(), GateError> {
     use super::{DifficultySection, Tier};
@@ -605,7 +605,7 @@ fn validate_difficulty_scoring(d: &DifficultySection) -> Result<(), GateError> {
 }
 
 /// 单档校验：空名拒绝（V6 前置）+ model_id 撞名拒绝（V5）+ 无 enabled 候选拒绝
-///（V6/V7）。候选匹配语义与 Router::collect_abstract_candidates 一致：
+/// （V6/V7）。候选匹配语义与 Router::collect_abstract_candidates 一致：
 /// enabled vendor × enabled model × (model_id | abstract_id) CI 折叠
 fn validate_tier_name(
     config: &Config,
@@ -700,9 +700,9 @@ fn warn_identical_difficulty_tiers(config: &Config) {
 /// 约束，confers::validator 的字段级规则无法表达，保留手写）。
 /// 去重按 ASCII 大小写不敏感：请求边界 ID 匹配（get_vendor_ci / 直连 /
 /// cb_model）均 CI 折叠，仅差大小写的重复条目会让请求侧无法寻址意图项
-///（get_vendor_ci 取声明序首个），故在配置面拒绝。
+/// （get_vendor_ci 取声明序首个），故在配置面拒绝。
 /// 路由查找键（vendor id / model_id / 声明的 abstract_id）先行空白拒绝
-///（trim 为空），空白检查先于去重（空白非「重复」语义）。
+/// （trim 为空），空白检查先于去重（空白非「重复」语义）。
 fn validate_vendor_entries(config: &Config) -> Result<(), GateError> {
     let mut vendor_ids = std::collections::HashSet::new();
     for vendor in &config.vendors {
@@ -1097,7 +1097,7 @@ impl Default for crate::config::OidcRuleConfig {
     }
 }
 
-/// `[auth.oidc_rules]` 校验（R-auth-001）：issuer 仅 https（loopback 放行
+/// `[auth.oidc_rules]` 校验：issuer 仅 https（loopback 放行
 /// http，口径同 validate_catalog_sync）、audience 非空、claims 表**精确
 /// 匹配红线**——任何键/值含 `*` 或 `?`（通配/前缀意图）硬拦、bind_key_hash
 /// 必须是 64 位小写 hex 且存在于既有 `[auth]` api_keys/keys（短时键继承其
@@ -1305,7 +1305,7 @@ impl crate::config::QuotaFactorMode {
 /// 生效配额窗口集（热读单点）：`[[quota.windows]]` 非空时原样返回（旧
 /// `window_secs` 忽略），为空时把旧单窗字段编译为 `id="default"` 的
 /// rolling 窗——旧配置行为逐位不变。两处并存时由调用方在加载期 WARN
-///（`warn_quota_window_fields_conflict`）。
+/// （`warn_quota_window_fields_conflict`）。
 pub fn effective_quota_windows(
     quota: &crate::config::QuotaSection,
 ) -> Vec<crate::config::QuotaWindowConfig> {
@@ -2185,7 +2185,7 @@ fn validate_quota_factor(config: &Config) -> Result<(), GateError> {
             ),
         });
     }
-    // 配额时钟补全数值域（R-budget-002）：ε ∈ [0,1]（0 = 关闭平局打破）、
+    // 配额时钟补全数值域：ε ∈ [0,1]（0 = 关闭平局打破）、
     // 阈值 ∈ (0,1]、乘数 ∈ (0,1]（>1 会变成升档，语义不允许）、档一阈值
     // 必须严格小于档二（嵌套先判紧档；相等让档二永不可达）
     if !section.tie_epsilon.is_finite() || !(0.0..=1.0).contains(&section.tie_epsilon) {
@@ -2505,7 +2505,7 @@ concurrency = { requests_per_second = 1 }
     // [routing.difficulty] 校验（V1-V8）
 
     /// 组装含 [[vendors]] 与 [routing.difficulty] 的完整配置并解析
-    ///（parse_config_content 解析即校验，难度校验错误在 Err 消息中点名字段）
+    /// （parse_config_content 解析即校验，难度校验错误在 Err 消息中点名字段）
     fn parse_difficulty_toml(vendors: &str, difficulty: &str) -> Result<Config, GateError> {
         // Config.vendors 无 serde default：空厂商场景必须显式 `vendors = []`；
         // 顶层键须在任何 [table] 头之前，否则落进 [database]

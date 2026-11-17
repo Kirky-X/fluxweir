@@ -1393,7 +1393,7 @@ fn resolve_item_references(items: &mut [Value]) -> Result<(), HistoryError> {
 }
 
 /// `truncation="auto"`：按目录 context_window 粗粒度丢弃最旧 items
-///（字符/4 估算；未登记模型不裁剪）。
+/// （字符/4 估算；未登记模型不裁剪）。
 fn truncate_for_context(state: &Arc<ApiState>, model: &str, items: &mut Vec<Value>) {
     let context_window = state
         .config

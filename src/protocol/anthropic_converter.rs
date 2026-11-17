@@ -375,7 +375,8 @@ impl ProtocolConverter for AnthropicConverter {
                 }
             }
         }
-        // thinking_config → thinking 块（D3 四变体）：Enabled{budget>0} 写原生
+        // thinking_config → thinking 块（四变体）：Enabled{budget>0} 写原生
+
         // enabled（budget_tokens 必需）；Enabled{budget:0}/Adaptive →
         // adaptive；BetweenTools → between_tools；Disabled 省略字段
         //（Anthropic 缺省即关闭；显式 disabled 会把默认语义反转，故不写）；
@@ -639,7 +640,7 @@ impl ProtocolConverter for AnthropicConverter {
             .and_then(|v| v.get("cache_creation_input_tokens"))
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
-        // 1h/5m 写档拆分（magpie-absorb-r1 R-catalog-002 计费消费前提）：
+        // 1h/5m 写档拆分（magpie-absorb-r1 计费消费前提）：
         // 聚合 cache_creation_input_tokens 不分档，拆分只在嵌套
         // cache_creation 对象里；缺失（旧上游/非 Anthropic 形状）时 1h 档
         // 为 0，计费整体走基础写价
@@ -1241,7 +1242,7 @@ impl AnthropicStreamEncoder {
     /// 文本增量编码：思考块未闭合时先闭再开文本块（块不混流）；
     /// finish_reason 到达即闭合当前 content block（message_delta 由
     /// Usage 帧或 finish 兜底发出）。闭合即递增序号——后开块序号唯一
-    ///（Anthropic 块序号语义）。
+    /// （Anthropic 块序号语义）。
     fn encode_text_delta(&mut self, text: String, finish_reason: Option<String>) -> Vec<String> {
         if let Some(reason) = finish_reason {
             self.stop_reason = Some(reason);
@@ -1500,7 +1501,7 @@ fn parse_anthropic_message(json: &Value) -> Result<Message, GateError> {
 /// Anthropic assistant content 块数组 → IR MessageContent（响应解析与多轮
 /// 消息历史共用）。
 ///
-/// 规则（D3/R-007）：text 按序全量拼接（`\n` 连接）；thinking（含
+/// 规则：text 按序全量拼接（`\n` 连接）；thinking（含
 /// signature）→ reasoning；tool_use/server_tool_use → ToolCall；
 /// redacted_thinking 与未知块显性丢弃（debug 可检索）。组合规则：
 /// text+calls → TextWithToolCalls{text,calls,reasoning}；仅 calls →
@@ -1778,7 +1779,7 @@ fn parse_anthropic_image_block(json: &Value) -> Option<ContentBlock> {
 }
 
 /// document 块：base64 与 url 两种 source 形态；url 形态不携带 media_type
-///（Anthropic wire 定义），取缺省 document MIME 保 IR 槽完整；未知形态不猜变体。
+/// （Anthropic wire 定义），取缺省 document MIME 保 IR 槽完整；未知形态不猜变体。
 fn parse_anthropic_document_block(json: &Value) -> Option<ContentBlock> {
     let source = json.get("source")?.as_object()?;
     let (source, media_type) = match source.get("type").and_then(|v| v.as_str())? {
@@ -1919,7 +1920,7 @@ fn message_to_anthropic(msg: &Message) -> Value {
             tool_calls,
             reasoning,
         } => {
-            // D3：thinking 块先行（reasoning 有值时）；空 text 不写块
+            // thinking 块先行（reasoning 有值时）；空 text 不写块
             //（Anthropic 文本块要求非空）；tool_use 随后
             let mut arr: Vec<Value> = Vec::new();
             if let Some(reasoning) = reasoning {
@@ -1945,7 +1946,7 @@ fn message_to_anthropic(msg: &Message) -> Value {
             json!(arr)
         }
         MessageContent::Reasoning { text, signature } => {
-            // D3：思考内容出站为原生 thinking 块（signature 存在时原样回写）
+            // 思考内容出站为原生 thinking 块（signature 存在时原样回写）
             let mut block = json!({
                 "type": "thinking",
                 "thinking": text,
@@ -2004,7 +2005,7 @@ fn parse_anthropic_output_format(format: &Value) -> Option<Value> {
 }
 
 /// Anthropic `tool_choice` → IR ToolChoice：原生形状 any/tool/auto/none 直读
-///（any 即「必须用工具」，映射 IR required）；OpenAI function 对象形状保留
+/// （any 即「必须用工具」，映射 IR required）；OpenAI function 对象形状保留
 /// 容错；标量兜底 auto。
 fn parse_anthropic_tool_choice(tc: &Value) -> ToolChoice {
     match tc {
@@ -2108,7 +2109,7 @@ fn parse_anthropic_tool(json: &Value) -> Option<Tool> {
         .unwrap_or("")
         .to_string();
 
-    // 解析输入模式（M1 / D7.14 闭环：input_schema 原样 Value 保真
+    // 解析输入模式（M1 闭环：input_schema 原样 Value 保真
     // 透传——嵌套 schema / items / anyOf / $ref / 缺 type 属性全量无损）
     let parameters = obj.get("input_schema").cloned().unwrap_or(Value::Null);
 
@@ -3112,7 +3113,7 @@ mod tests {
         assert!(body["stop_sequence"].is_null());
     }
 
-    /// 非流式 usage 解析带出 1h/5m 写档拆分（R-catalog-002 计费消费前提）；
+    /// 非流式 usage 解析带出 1h/5m 写档拆分（计费消费前提）；
     /// 嵌套对象缺失（旧上游/混合代理）时 1h 档为 0、聚合不受影响
     #[test]
     fn usage_parses_one_hour_cache_creation_split() {

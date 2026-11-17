@@ -335,7 +335,7 @@ async fn spawn_slow_admin_server(delay: Duration) -> String {
 }
 
 /// admin 请求族必须有总时长上界：服务器停滞（500ms）超过客户端总超时
-///（100ms）时，三个 admin 方法都应 promptly 报 `Timeout`（`is_timeout`
+/// （100ms）时，三个 admin 方法都应 promptly 报 `Timeout`（`is_timeout`
 /// 分流），而不是无限悬挂。流式请求不受总超时约束（由 read_timeout
 /// 看护），admin / chat / embed 非流式逐请求携带总超时。
 #[tokio::test]

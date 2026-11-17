@@ -824,7 +824,7 @@ mod cover_all_paths {
 
     /// ⑤ direct 路由（"fb-a.gpt-4"）不做 get_status 预过滤（router.rs
     /// try_direct_route）→ 初始候选即熔断中的 A：派发层 CB 必须直接拒绝
-    ///（无第 6 次 HTTP），证明一期 CB 包裹真实接入透传路径。
+    /// （无第 6 次 HTTP），证明一期 CB 包裹真实接入透传路径。
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn cb_open_rejects_passthrough_http_before_dispatch() {
         let mut server_a = mockito::Server::new_async().await;

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 启动恢复的锁定测试（R-affinity-003）：过期行不恢复、超第 512 行不恢复、
+//! 启动恢复的锁定测试：过期行不恢复、超第 512 行不恢复、
 //! legacy/off 模式不恢复。
 
 use super::{restore_affinity_sticks, RESTORE_LIMIT};

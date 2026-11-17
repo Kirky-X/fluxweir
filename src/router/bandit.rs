@@ -236,7 +236,7 @@ pub fn linucb_arm_update(a: &mut [f64], b: &mut [f64], x: &[f64], r: f64, d: usi
 }
 
 /// LinUCB 状态：臂表键 = `(abstract_model, vendor_id)`，臂按需惰性创建
-///（先验 = 正则初值）；per-臂 Mutex + 臂表 RwLock。
+/// （先验 = 正则初值）；per-臂 Mutex + 臂表 RwLock。
 pub struct BanditState {
     arms: RwLock<ArmMap>,
     /// 正则初值（max(α², 1)·I；构造期定死，热更 α 只影响探索半径）

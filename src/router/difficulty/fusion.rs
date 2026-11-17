@@ -4,7 +4,7 @@
 //! 定档纯函数：规则计分 `r`、融合 `S = (w_clf·p + w_rule·r)/(w_clf+w_rule)`、
 //! 三档切分与中带策略。全部确定性、无 IO 无锁（规则7：阈值与切分是
 //! 确定性逻辑，模型只产出概率）。契约：阈值/权重已过 `validate_difficulty`
-//!（score_low < score_high、权重不全零、计分项数值域合法），本层不重复
+//! （score_low < score_high、权重不全零、计分项数值域合法），本层不重复
 //! 校验、只做有限性防御。
 
 use crate::config::{DifficultyScoringSection, Tier};

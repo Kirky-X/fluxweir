@@ -4,13 +4,12 @@
 //! 配额账本落盘管道（`quota_ledger` 表的 write-behind 前沿，quota-aware-routing）。
 //!
 //! 与 `AffinityPersister` 同构：结算点 `write` 入队即返回，通道满丢弃并计数
-//!（预算是约束不是计费——落盘误差显性披露，不阻塞请求路径），消费侧批量
+//! （预算是约束不是计费——落盘误差显性披露，不阻塞请求路径），消费侧批量
 //! UPSERT；另承载 30s 周期全量 flush 的写入面（快照生产方在 bootstrap）。
 //! 失败只计数 + warn，不重试、不上浮——内存态始终权威。
 //!
 //! 崩溃一致性窗口 ≤ 一个 flush 周期（30s）：重启后已用量最多回退 30s
-//!（USER_GUIDE 披露）。
-
+//! （USER_GUIDE 披露）。
 use crate::database::quota_ledger::QuotaLedgerRow;
 use crate::database::Repository;
 use crate::error::GateError;
@@ -277,7 +276,7 @@ mod tests {
         }
     }
 
-    /// 结算落库 + 启动恢复（quota-aware-routing T005）：write 入队 → 后台
+    /// 结算落库 + 启动恢复：write 入队 → 后台
     /// 落库；`__global__` / `__vendor__:{id}` 作用域行同表同路；恢复只取
     /// 未过期窗（活动期由 QuotaState 按配置周期解释）。
     #[tokio::test]
@@ -363,7 +362,7 @@ mod tests {
         let _ = config;
     }
 
-    /// flush 失败计数不阻塞（quota-aware-routing T005）：表被删 → UPSERT
+    /// flush 失败计数不阻塞：表被删 → UPSERT
     /// 失败 → 计数递增；write 路径不 panic 不上浮（内存态权威）。
     #[tokio::test]
     async fn flush_fail_counted_not_blocking() {

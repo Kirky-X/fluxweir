@@ -3,7 +3,7 @@
 
 //! 缓存经济学亲和的 settle 决策与粘性记账。
 //!
-//! 「值不值得粘」的判定（R-affinity-002）与落盘契约（R-affinity-003）同居：
+//! 「值不值得粘」的判定与落盘契约同居：
 //! `AffinityWriter::settle` 是 api 层响应 usage 结算点的唯一入口，四模式
 //! 语义与粘性记账都在本文件，`affinity.rs` 只留表本身（规则14）。
 //!
@@ -310,7 +310,7 @@ impl AffinityWriter {
     }
 
     /// 通道满丢弃的实时累计（未接线 = 0）。/admin/metrics 的精确读数出口
-    ///（metrics 快照里的 `affinity_persist_drop_total` 是 settle 采样近似）。
+    /// （metrics 快照里的 `affinity_persist_drop_total` 是 settle 采样近似）。
     pub fn dropped_sticks(&self) -> u64 {
         self.sink.as_ref().map(|s| s.dropped_sticks()).unwrap_or(0)
     }

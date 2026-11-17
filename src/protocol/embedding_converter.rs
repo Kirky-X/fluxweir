@@ -56,7 +56,8 @@ pub fn embedding_request_to_openai(body: Value) -> Result<Value, GateError> {
         "input": input,
     });
 
-    // encoding_format（float/base64）字符串原样透传（D4；base64 响应由
+    // encoding_format（float/base64）字符串原样透传（base64 响应由
+
     // 上游返回字符串，SDK 侧兼容）
     if let Some(encoding_format) = body.get("encoding_format").and_then(|v| v.as_str()) {
         result["encoding_format"] = json!(encoding_format);

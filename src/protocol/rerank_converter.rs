@@ -156,7 +156,7 @@ pub fn to_upstream_request(request: &RerankRequest, upstream_model: &str) -> Val
 }
 
 /// 解析上游响应：index 越界/重复、分数非有限、缺 results 一律 502
-///（防止客户端按 index 取文档时数组越界，或 NaN 进入排序）。
+/// （防止客户端按 index 取文档时数组越界，或 NaN 进入排序）。
 pub fn parse_rerank_response(
     body: &Value,
     request: &RerankRequest,

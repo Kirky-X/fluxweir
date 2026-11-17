@@ -277,7 +277,8 @@ impl ProtocolConverter for ResponsesConverter {
                 prompt_tokens: parsed.usage.input_tokens,
                 completion_tokens: parsed.usage.output_tokens,
                 total_tokens: parsed.usage.total_tokens,
-                // details → IR 明细槽（D4）；cached 同时镜像进 legacy
+                // details → IR 明细槽；cached 同时镜像进 legacy
+
                 // cache_read_tokens（跨协议载体，与 OpenAI 面策略一致）
                 cache_read_tokens: parsed
                     .usage

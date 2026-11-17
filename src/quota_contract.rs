@@ -57,7 +57,7 @@ pub struct VendorBudgetView {
 }
 
 impl VendorBudgetView {
-    /// 预算耗尽：任一已判维度 used ≥ limit（R-vbr-002 摘除判据）
+    /// 预算耗尽：任一已判维度 used ≥ limit（摘除判据）
     pub fn depleted(&self) -> bool {
         (self.tokens_limit > 0 && self.tokens_used >= self.tokens_limit)
             || (self.cost_limit > 0 && self.cost_used >= self.cost_limit)
@@ -73,7 +73,7 @@ impl VendorBudgetView {
     }
 
     /// pace 消耗率比 = max_维度 (used/elapsed) / (limit/period)：>1.1 超带、
-    /// <0.9 欠带（R-vbr-003）。elapsed=0（窗首秒/未起算）→ 0.0（满额待花）。
+    /// <0.9 欠带。elapsed=0（窗首秒/未起算）→ 0.0（满额待花）。
     pub fn pace_ratio(&self) -> f64 {
         if self.elapsed_secs == 0 {
             return 0.0;
@@ -169,7 +169,7 @@ pub enum ReserveOutcome {
     Unavailable,
 }
 
-/// 网关键预算写侧端口（R-budget-001）：auth 识别 key 后、路由前 `reserve`
+/// 网关键预算写侧端口：auth 识别 key 后、路由前 `reserve`
 /// 预扣估成本，响应后 `settle` 按实际结算回冲；`view` 为运维读侧。实现方
 /// 只允许读 `config.key_budgets`（同 [`VendorBudgetSource`] 的整份快照
 /// 同代钉住语义）。

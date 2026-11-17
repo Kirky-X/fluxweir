@@ -83,7 +83,7 @@ fn test_middleware_module_available() {
 }
 
 /// 依赖链验证：web-server 开启时，database/vendor 必须也可用
-///（database 自 N1 feature 重切起由 web-server 显式携带）
+/// （database 自 N1 feature 重切起由 web-server 显式携带）
 #[cfg(feature = "web-server")]
 #[test]
 fn test_web_server_dependency_chain() {
@@ -102,7 +102,7 @@ fn test_router_dependency_chain() {
 }
 
 /// 依赖链验证：database 开启时 logging 与 dep:trait-kit 必须也可用
-///（async_logger 无条件消费 inklog；脱敏面自 inklog rc.12 起消费
+/// （async_logger 无条件消费 inklog；脱敏面自 inklog rc.12 起消费
 /// trait-kit 的 MaskError/SecretScanGate，故 database→trait-kit 亦为编译前提）
 #[cfg(feature = "database")]
 #[test]
@@ -122,7 +122,7 @@ fn test_database_logging_chain() {
 }
 
 /// 依赖链验证：web-server 开启时 infrastructure 必须也可用
-///（server/shutdown 使用 trait-kit 协调器，web-server→infrastructure 为编译前提）
+/// （server/shutdown 使用 trait-kit 协调器，web-server→infrastructure 为编译前提）
 #[cfg(feature = "web-server")]
 #[test]
 fn test_web_server_infrastructure_chain() {

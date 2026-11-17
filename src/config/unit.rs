@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! 定价单位换算单点 — 外部源口径与 fluxweir 计价口径的换算常量集中处
-//!（catalog-sync 映射与后续 cost-replay 共享本模块；design：换算单位
+//! （catalog-sync 映射与后续 cost-replay 共享本模块；design：换算单位
 //! 错误风险集中在单点 + 对照测试钉死）。
 //!
 //! 口径对照：
@@ -12,7 +12,7 @@
 //!   （`src/config/model_catalog.rs`）。
 //!
 //! 数值等价性：`1 currency / 1M tokens ≡ 1 micro-currency / token`
-//!（10⁻⁶），故两口径的**数值**恒等——`source_price_to_catalog_price`
+//! （10⁻⁶），故两口径的**数值**恒等——`source_price_to_catalog_price`
 //! 是该恒等映射的唯一裁决点，测试钉死「3.0 USD/1M ≡ 3.0 μ$/token」；
 //! 任一口径未来单独漂移（如 catalog 改 per-token 微单位）时此处先行变红。
 

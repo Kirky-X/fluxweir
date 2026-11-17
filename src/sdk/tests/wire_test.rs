@@ -298,7 +298,7 @@ fn chat_response_parses_multi_choice() {
 }
 
 /// 工具面 wire：function 工具补 `type` 键（缺省读兼容旧 wire）、
-/// custom 工具原对象保真、allowed_tools 形状（D7）。
+/// custom 工具原对象保真、allowed_tools 形状。
 #[test]
 fn chat_tool_wire_shapes() {
     // function 工具：type 键补全 + parameters 原样

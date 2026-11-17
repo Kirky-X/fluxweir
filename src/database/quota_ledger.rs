@@ -80,7 +80,7 @@ pub fn read_quota_ledger_sql(_backend: DatabaseBackend) -> &'static str {
 }
 
 /// 保留清理语句（纯函数）：删除 `window_start` 早于 `?` 下界的过期周期行
-///（下界 = now − 配置最长窗，宁多留一行不误删活动行）。行模型按周期实例
+/// （下界 = now − 配置最长窗，宁多留一行不误删活动行）。行模型按周期实例
 /// 增长，无清理路径则日窗每租户每天一行、永久累积。
 pub fn purge_expired_quota_ledger_sql(_backend: DatabaseBackend) -> &'static str {
     r#"

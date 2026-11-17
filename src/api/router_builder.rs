@@ -34,13 +34,13 @@ use crate::utils::tenant::api_key_digest;
 
 /// G5：入站限流中间件状态 — per-endpoint 限流表与准入状态。
 /// 全局规则不再经常量 Governor 判定，改由 tower 层
-///（`GlobalRateLimitLayer`，`create_router` 装配）承担。
+/// （`GlobalRateLimitLayer`，`create_router` 装配）承担。
 pub struct InboundLimitState {
     /// per-endpoint 限流表（path 前缀规则；在此挂载准入维度）
     endpoint_table: EndpointLimitTable,
     /// 拥塞感知优先级准入状态 — 判定在限流之后、handler 之前
-    ///（[admission].enabled 热读；默认 false 时判定旁路
-    ///）。健康检查白名单（函数头部）先于本判定，永不卸载。
+    /// （[admission].enabled 热读；默认 false 时判定旁路
+    /// ）。健康检查白名单（函数头部）先于本判定，永不卸载。
     admission: Arc<AdmissionState>,
     /// 认证上下文缓存（与 auth 中间件同一实例）：档位判定复用同一代
     /// ApiAuthState，避免每请求重建 key 摘要表。
@@ -49,7 +49,7 @@ pub struct InboundLimitState {
 
 /// 配额豁免路径（tower 键提取器与端点中间件共用同一判定，行为单点一致）。
 /// 健康探针（/health、/healthz、/ready、/api/v1/health、/readyz）、指标抓取
-///（/metrics）与文档面（/api-docs/*、/swagger-ui/*）不消耗限流配额。
+/// （/metrics）与文档面（/api-docs/*、/swagger-ui/*）不消耗限流配额。
 /// 注意：/healthz 与 /readyz 由 sdforge 的 build_with_config 在认证层之后挂载
 /// （免认证免限流），此处豁免只为与白名单口径单点一致；/health 与 /ready 无
 /// 对应注册路由（历史遗留路径），保留豁免使误配探针不烧配额（404 本就不计费）。
@@ -71,7 +71,7 @@ fn is_quota_exempt_path(path: &str) -> bool {
 pub(crate) struct TenantDigest(pub String);
 
 /// 租户摘要键提取器 — 键 = 已验证 API key 的 SHA256 摘要
-///（`api_key_digest`，无 key 归入固定 anonymous 桶；关闭 auth 时
+/// （`api_key_digest`，无 key 归入固定 anonymous 桶；关闭 auth 时
 /// 伪造 key 的摘要各异，高基数由 QuotaLimiter 1 万 key 上限约束）。
 /// 健康白名单路径返回 `None`（tower 层直通不限流）。
 /// `per_tenant=false` 的规则用固定空串键（规则级共享桶，旧 Governor
@@ -314,7 +314,7 @@ fn global_rate_limit_layer(
 }
 
 /// per-endpoint 限流表 — Matcher 六变体无 path 维度
-///（limiteron src/config/types/rule.rs），端点自筛在中间件内按 path 前缀
+/// （limiteron src/config/types/rule.rs），端点自筛在中间件内按 path 前缀
 /// 完成；每 `(rule, tenant)` 一只 limiter 惰性创建（limiteron 原语直接
 /// 实例化，复用 vendor/rate_limiter.rs 的 wrapper 模式）。
 /// 租户数受 auth.api_keys 枚举约束（有界），匿名租户单条；[auth] 缺失或
@@ -327,7 +327,7 @@ struct EndpointLimitTable {
     rules: Vec<EndpointRuleSpec>,
     /// 惰性 limiter 池：键 `rule_id \0 tenant`（per_tenant=false 时 tenant
     /// 恒为空串，即规则级单桶）。std Mutex + HashMap：条目数有硬上限
-    ///（见 [`MAX_ENDPOINT_LIMITERS`]），锁竞争与 DashMap 无异。
+    /// （见 [`MAX_ENDPOINT_LIMITERS`]），锁竞争与 DashMap 无异。
     limiters: Mutex<HashMap<String, Arc<ShardedSlidingWindowLimiter>>>,
     /// 条目上限（生产取 [`MAX_ENDPOINT_LIMITERS`]；测试注入小值驱动溢出）
     max_entries: usize,
@@ -734,13 +734,13 @@ fn build_inbound_limits(
 /// 层次（外→内）：Context（请求追踪）→ Trace → 认证 → 端点限流 →
 /// 全局 tower 限流 → 准入 → handler。
 /// 认证中间件的 state 是 `Arc<ConfigManager>`：每请求从热配置现读 `[auth]` 段
-///（SHA256 摘要存储），key 吊销/轮换与 enabled 开关热更新立即生效；
+/// （SHA256 摘要存储），key 吊销/轮换与 enabled 开关热更新立即生效；
 /// 段缺失时 `enabled=false` 放行（旧配置兼容）。
 /// 限流判定件在 Router 构造期从 `[rate_limit]` 段构建
-///（restart-required，热下发列二期）：端点表 + 准入进 from_fn state，
+/// （restart-required，热下发列二期）：端点表 + 准入进 from_fn state，
 /// 全局规则进 tower 层（一规则一层）。
 /// 注意：健康检查由 sdforge `#[forge(version="v1")]` 注册为 /api/v1/health
-///（api/health.rs，宏加版本前缀），此处不重复注册，避免 merge 时
+/// （api/health.rs，宏加版本前缀），此处不重复注册，避免 merge 时
 /// axum duplicate-route panic。
 pub async fn create_router(state: Arc<ApiState>) -> Router {
     // forge 端点描述翻译注册进 sdforge（建站期一次性；见 health.rs）
@@ -1010,7 +1010,7 @@ mod tests {
     /// 健康检查白名单锁定。
     ///
     /// 断言空洞背景：axum 0.8 的 `layer` 只作用于已有路由
-    ///（"the middleware is only
+    /// （"the middleware is only
     /// applied to existing routes"）：create_router 之后
     /// 再 `.route` 的路径不经过中间件。
     ///

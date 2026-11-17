@@ -18,7 +18,7 @@
 //! pepper 无关）。降级为进程内随机时确定性不成立，warn 显性披露。
 //!
 //! 方向性：**value → placeholder 是进程内纯函数**；存储的反向映射
-//!（placeholder → value）仅存内存，LRU 逐出（缺省 10k 条，测试可注入
+//! （placeholder → value）仅存内存，LRU 逐出（缺省 10k 条，测试可注入
 //! 容量）+ TTL 24h，进程退出即弃，任何落盘路径不得包含原值。逐出后同值
 //! 重掩码可再生同占位符并重建映射——进程内确定性使逐出不产生正确性风险。
 //!
@@ -489,7 +489,7 @@ mod tests {
     }
 
     /// 同 pepper 文件两次初始化：读回同值，占位符跨初始化一致
-    ///（R-masking-001 验收：跨重启/多副本稳定性的核心语义）。
+    /// （跨重启/多副本稳定性的核心语义）。
     #[test]
     fn same_pepper_file_two_inits_same_placeholder() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -523,7 +523,7 @@ mod tests {
         );
     }
 
-    /// 随机创建的 pepper 文件权限 0600（R-masking-001 验收）。
+    /// 随机创建的 pepper 文件权限 0600。
     #[test]
     fn generated_pepper_file_is_0600() {
         let dir = tempfile::tempdir().expect("tempdir");

@@ -699,7 +699,7 @@ fn stream_vendor(id: &str, api_base: impl Into<String>) -> VendorConfig {
 
 /// cap=1 端点规则下：首个流式请求放行且在途（上游发完首帧后停闸），
 /// 此时窗口已耗尽（第二个请求入口 429）；随后放闸，在途流仍完整收束
-///（两段内容 + [DONE]、无错误帧）——限流裁决不存在流生命周期内的
+/// （两段内容 + [DONE]、无错误帧）——限流裁决不存在流生命周期内的
 /// 检查点。
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn admitted_stream_completes_while_entry_quota_exhausted() {

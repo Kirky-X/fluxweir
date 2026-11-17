@@ -117,7 +117,7 @@ impl ApiAuthState {
     /// key 档位 — 现场摘要后与 `[auth]`.keys 表做常量时间比较；未声明 → 缺省档
     /// elastic，认证关闭时表为空 → 恒 elastic。
     /// OIDC 短时凭据经别名表解析到母键摘要后按母键查档（tier 继承，
-    /// R-auth-002）；调用点在认证中间件内侧，重放凭据到不了这里。
+    /// tier 继承）；调用点在认证中间件内侧，重放凭据到不了这里。
     pub fn tier_for_key(&self, key: &str) -> AuthTier {
         #[cfg(feature = "oidc")]
         if let Some(mother) = crate::utils::oidc_keys::resolve_mother(key) {
@@ -146,7 +146,7 @@ pub(crate) struct CachedAuthContext {
     pub(crate) generation: Arc<crate::config::Config>,
     pub(crate) state: Arc<ApiAuthState>,
     /// OIDC 规则面（oidc feature 门控）：有规则才携带整段 auth
-    ///（验签路径要读 api_keys/keys 做母键在位校验）；无段/无规则 = 关闭
+    /// （验签路径要读 api_keys/keys 做母键在位校验）；无段/无规则 = 关闭
     pub(crate) oidc: Option<AuthSection>,
 }
 
@@ -241,7 +241,7 @@ pub async fn api_auth_middleware(
 /// API Key 认证中间件（OIDC 兜底形态）：静态校验失败且凭证呈 JWT 形态且
 /// 规则存在时进入验签路径（`oidc` feature）；通过后改写 Authorization 为
 /// 短时凭据——下游 `api_key_digest` 经别名表解析到母键摘要，租户/配额/
-/// 亲和与母键同视角。无规则/feature 缺位时行为与今日逐字节一致（R-auth-001）。
+/// 亲和与母键同视角。无规则/feature 缺位时行为与今日逐字节一致。
 async fn api_auth_middleware_with_oidc(
     mut request: Request<Body>,
     next: Next,
@@ -276,7 +276,7 @@ async fn api_auth_middleware_with_oidc(
         return Ok(next.run(request).await);
     }
 
-    // 可信代理身份直传（D10）：开关热读缺省 false——关闭时该分支整体不
+    // 可信代理身份直传：开关热读缺省 false——关闭时该分支整体不
     // 生效，行为与今日逐字节一致；开启且有 TrustedIdentity extension →
     // is_admin=false 拒绝 /admin/*，否则放行（数据面与管理面按位收窄）。
     if auth_state.trusted_proxy {
@@ -385,7 +385,7 @@ fn percent_decode(value: &str) -> String {
 }
 
 /// 认证失败：Gemini 路径返回其原生错误体，其它路径保持历史形状。
-/// 可信代理注入的进程内身份（嵌入宿主形态，D10）。
+/// 可信代理注入的进程内身份（嵌入宿主形态）。
 ///
 /// 宿主完成团队/API-Key 校验后经 request extensions 注入；extension 由
 /// 服务端中间件写入（无网络边界，客户端不可伪造）。`is_admin=false` 时
@@ -507,7 +507,7 @@ mod tests {
         assert!(constant_time_eq(KNOWN_HASH, KNOWN_HASH));
     }
 
-    // ---------- TrustedIdentity（可信代理，D10） ----------
+    // ---------- TrustedIdentity（可信代理） ----------
 
     use tower::ServiceExt;
 

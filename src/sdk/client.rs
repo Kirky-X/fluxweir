@@ -390,7 +390,7 @@ impl FluxweirClient {
     }
 
     /// 统一请求头注入：客户端 `default_headers` → 请求级 `extra_headers`
-    ///（覆盖同名，大小写不敏感）→ typed 路由头（X-Vendor / X-Model /
+    /// （覆盖同名，大小写不敏感）→ typed 路由头（X-Vendor / X-Model /
     /// X-Session-Id / X-Batch / X-Weight）。受限头（`authorization` /
     /// `host` / `content-length`）忽略并 debug。
     pub(crate) fn apply_request_headers(

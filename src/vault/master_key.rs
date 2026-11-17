@@ -15,7 +15,7 @@ pub const MASTER_KEY_ENV: &str = "FLUXWEIR_MASTER_KEY";
 
 /// 主钥文件路径环境变量名（覆盖默认 `~/.fluxweir/vault_master.key`）：
 /// 容器部署应指向持久卷，否则容器重建时重新生成主钥，柜内密文全部不可解
-///（启动期 reveal 失败即 fail-fast 重启循环）。
+/// （启动期 reveal 失败即 fail-fast 重启循环）。
 pub const MASTER_KEY_FILE_ENV: &str = "FLUXWEIR_MASTER_KEY_FILE";
 
 /// hex 编码后 64 字符（32 字节）。
@@ -207,7 +207,7 @@ mod tests {
     }
 
     /// 容器自锁回归：主钥文件落在持久路径时，跨进程重建取回同一主钥
-    ///（同路径二次装载 = 同一把钥 → 柜内密文可解）。
+    /// （同路径二次装载 = 同一把钥 → 柜内密文可解）。
     #[test]
     fn persisted_key_file_survives_process_restart() {
         let dir = tempfile::tempdir().expect("tempdir");

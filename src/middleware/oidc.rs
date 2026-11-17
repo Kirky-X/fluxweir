@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! OIDC 换短时网关键（`oidc` feature 门控，auth-and-masking R-auth-002）。
+//! OIDC 换短时网关键（`oidc` feature 门控，auth-and-masking）。
 //!
 //! Bearer JWT 命中 `[auth.oidc_rules]` issuer 规则时：JWKS 按 kid 验签
 //! （RS256/ES256；缓存 TTL 10 分钟，失败沿用旧缓存至 24h 上限）→
@@ -10,8 +10,7 @@
 //! 不落盘、重启失效），继承母键 tier 与全部限制。短时凭据不出现在任何
 //! 日志（本模块零 tracing 输出凭据值）。
 //!
-//! 无规则时认证中间件不进入本路径（行为与今日逐字节一致，R-auth-001）。
-
+//! 无规则时认证中间件不进入本路径（行为与今日逐字节一致）。
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -27,7 +26,7 @@ const JWKS_STALE_MAX_SECS: u64 = 86_400;
 /// 单次 JWKS 拉取超时。
 const JWKS_FETCH_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// 允许的验签算法闭集（R-auth-002：RS256/ES256；其余一律拒绝）。
+/// 允许的验签算法闭集（RS256/ES256；其余一律拒绝）。
 const ALLOWED_ALGS: &[jsonwebtoken::Algorithm] = &[
     jsonwebtoken::Algorithm::RS256,
     jsonwebtoken::Algorithm::ES256,
@@ -65,7 +64,7 @@ pub fn is_jwt_shape(token: &str) -> bool {
 }
 
 /// issuer 规则匹配单点：未验证 claims 的 iss 与规则 issuer 精确相等
-///（insecure_decode 只做路由预筛，真正的信任边界在验签）。
+/// （insecure_decode 只做路由预筛，真正的信任边界在验签）。
 fn rule_for<'a>(
     token: &str,
     rules: &'a [OidcRuleConfig],
@@ -82,14 +81,14 @@ fn rule_for<'a>(
         .ok_or(OidcRejection::NoRule)
 }
 
-/// 母键在位校验（R-auth-002「母键删除/禁用即失效」每请求现读热配置）。
+/// 母键在位校验（「母键删除/禁用即失效」每请求现读热配置）。
 fn mother_key_present(auth: &AuthSection, hash: &str) -> bool {
     auth.enabled
         && (auth.api_keys.iter().any(|stored| stored.trim() == hash)
             || auth.keys.iter().any(|entry| entry.hash.trim() == hash))
 }
 
-/// claims 精确匹配（R-auth-001 红线运行时半边）：规则声明逐条要求 token
+/// claims 精确匹配（红线运行时半边）：规则声明逐条要求 token
 /// claims 存在同名**字符串**且字面相等；非字符串 claim 一律失配。
 fn claims_exact_match(rule: &OidcRuleConfig, token_claims: &Value) -> bool {
     rule.claims.iter().all(|(key, expected)| {
@@ -361,7 +360,7 @@ mod tests {
     }
 
     /// 验签通过 → 签发短时凭据：别名解析到母键摘要，api_key_digest 与
-    /// 母键同视角（R-auth-002 继承语义的单测面）。
+    /// 母键同视角（继承语义的单测面）。
     #[tokio::test]
     async fn authenticated_jwt_issues_short_key_bound_to_mother() {
         let server = jwks_server().await;

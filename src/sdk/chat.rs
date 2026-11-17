@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! Chat 请求/响应类型 — wire 契约对齐网关真实形状（D2/D7.11 口径）。
+//! wire 契约对齐网关真实形状。
 //!
 //! SDK 零 crate 内依赖（独立客户端契约面）：类型自有、serde 对齐
 //! `crate::protocol` IR 的线上投影——多模态内容件 / 工具调用片段 /
@@ -210,7 +210,7 @@ impl ChatMessage {
 }
 
 /// 工具定义：function 工具的 typed 视图，或 custom / 未知工具类型
-///（如 `{"type":"custom","custom":{…}}`）原对象原样保真——与网关
+/// （如 `{"type":"custom","custom":{…}}`）原对象原样保真——与网关
 /// `Tool.raw` 同源语义，同协议出站原样回写。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -436,7 +436,7 @@ impl<'de> Deserialize<'de> for ChatUsage {
 /// vendor_extensions 保留键 denylist —— ChatPayload 已序列化的 typed 键
 /// 全集（model/messages + OpenAiParams 视图 + 工具面）。与网关侧
 /// OPENAI_KNOWN_KEYS 同源同步：任一侧新增 typed 键必须同步本表
-///（denylist 漏项 = 扩展键覆写 typed 字段的请求骨架注入面）。
+/// （denylist 漏项 = 扩展键覆写 typed 字段的请求骨架注入面）。
 pub const RESERVED_KEYS: &[&str] = &[
     "model",
     "messages",
@@ -511,7 +511,7 @@ impl ChatRequest {
     }
 
     /// 透传 vendor 扩展（顶层键）：key 不得与已序列化的 typed 键冲突
-    ///（flatten 合并时扩展键会覆写结构体字段）；RESERVED_KEYS 与网关侧
+    /// （flatten 合并时扩展键会覆写结构体字段）；RESERVED_KEYS 与网关侧
     /// OPENAI_KNOWN_KEYS 同源，任一侧新增须同步
     pub fn with_vendor_extension(
         mut self,

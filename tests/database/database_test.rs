@@ -759,7 +759,7 @@ mod batch_tx {
     }
 
     /// tests ①：批量 100 条单事务写入 → query_logs 恰 100 条
-    ///（N 次 INSERT 一次 commit：不丢条、不留半批）。
+    /// （N 次 INSERT 一次 commit：不丢条、不留半批）。
     #[tokio::test]
     async fn test_log_requests_batch_atomic_100() {
         let pool = create_test_pool().await;
@@ -2366,7 +2366,8 @@ mod quota_ledger_server {
     }
 }
 
-// V9 上游键归因列（magpie-absorb-r1 R-usage-001）：列存在（迁移链落
+// V9 上游键归因列（magpie-absorb-r1）：列存在（迁移链落
+
 // 地）+ Some/None 两态往返无损。
 #[cfg(test)]
 mod v9_key_attribution {

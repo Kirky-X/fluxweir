@@ -3,14 +3,14 @@
 
 //! fail-closed 掩码门：`[masking]` enabled（热读）+ feature `masking`
 //! 双门控。检测/掩码/还原任一步 Err 或 panic → [`MaskError::Unavailable`]
-//!（调用方映射 503 `masking-unavailable` 拒发），绝不原文出站；Block 动作
+//! （调用方映射 503 `masking-unavailable` 拒发），绝不原文出站；Block 动作
 //! → [`MaskError::Blocked`]（400 `masking-blocked`）。
 //!
 //! 策略面热语义：检测器 + 动作映射（actions/kinds/allow）按整段配置指纹
 //! 惰性重建（配置段相等性比较，快路径零克隆）；测试可 `with_detector`
 //! 注入固定检测器（只替换检测器，动作面仍按配置缓存）。占位符注册表
 //! 进程级单实例；回程还原只认本请求 [`MaskTicket`] 登记过的占位符
-//!（TTL 24h 覆盖单请求生命周期）。
+//! （TTL 24h 覆盖单请求生命周期）。
 //!
 //! 统计窗：最近 24h 命中元数据（种类 + 值长度）滚动保留，供
 //! `GET /admin/masking/stats` 输出（不含值本身）。
@@ -168,7 +168,7 @@ impl MaskGate {
     }
 
     /// 非流式整量还原（响应回程）：enabled=false 直通；`ticket` 为空
-    ///（本请求零登记）整体跳过遍历；panic 折叠 `Unavailable`（fail-closed：
+    /// （本请求零登记）整体跳过遍历；panic 折叠 `Unavailable`（fail-closed：
     /// 还原不可用宁 503 不吐占位符）。回填数入 `masking_restore_total`。
     pub fn restore_body(&self, body: &mut Value, ticket: &MaskTicket) -> Result<(), MaskError> {
         if !self.enabled() || ticket.is_empty() {

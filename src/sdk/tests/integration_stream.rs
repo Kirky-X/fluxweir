@@ -155,7 +155,7 @@ async fn stream_survives_beyond_total_timeout() {
 }
 
 /// read_timeout 停滞看护的负向锁定：帧间停滞（1s）远超 read_timeout
-///（200ms）时，流必须报错终止而不是无限悬挂。总超时不约束流式（上一
+/// （200ms）时，流必须报错终止而不是无限悬挂。总超时不约束流式（上一
 /// 条测试），「连接停滞被切断」的承诺由 read_timeout 承担。
 #[tokio::test]
 async fn stream_errors_when_stall_exceeds_read_timeout() {
@@ -214,7 +214,7 @@ async fn heartbeat_frame_is_filtered() {
 }
 
 /// 多片段聚合：content/reasoning 拼接、tool_calls 按 index 槽位累积
-///（id/name 取首个非空、arguments 拼接）、finish_reason/usage 取末尾值。
+/// （id/name 取首个非空、arguments 拼接）、finish_reason/usage 取末尾值。
 #[tokio::test]
 async fn finalize_aggregates_multi_fragment_stream() {
     let frames = [
