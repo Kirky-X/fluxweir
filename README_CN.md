@@ -136,6 +136,51 @@ curl -X POST http://127.0.0.1:8080/v1/chat/completions \
 
 > 提示：裸 `/health` 未注册路由（会 404），但已加入认证与限流白名单；Anthropic 消息、模型列表、Token 计数等其余端点的参数、响应与错误码见 [📘 API 参考](docs/cn/API_REFERENCE.md)。
 
+### 🩺 安全姿态体检（`fluxweir doctor`）
+
+`fluxweir doctor` 是静态姿态检查：一条命令报告当前构建的 feature 编译面 + 配置快照——不发起网络请求、不连数据库、不启动服务器。
+
+<details>
+<summary>📄 代码 · bash</summary>
+
+```bash
+# 全量报告（安全 + 基础项）；--config 缺省 config.toml
+cargo run -p fluxweir --features full,db-sqlite -- doctor --config config.example.toml
+
+# 只输出安全项
+cargo run -p fluxweir --features full,db-sqlite -- doctor --security --config config.example.toml
+```
+
+</details>
+
+退出码：`0` 无 Fail 项 · `1` 存在 Fail 项 · `2` 用法错误或配置装载失败（只走 stderr，不产报告）。
+
+| 检查项 id | 判定 |
+|---|---|
+| `vault-encryption` | `vault` feature 关 → Fail；开时探测主钥来源——env `FLUXWEIR_MASTER_KEY` 优先，其次主钥文件（`FLUXWEIR_MASTER_KEY_FILE` 或 `~/.fluxweir/vault_master.key`）；双缺 → Fail（容器重建会重新生成主钥，柜内密文全部不可解） |
+| `vault-backend` | `database` feature 开 → DbKeyStore；vault 开而 database 关 → Warn（FileKeyStore 回落，SDK 嵌入形态）；vault 关 → 跳过 |
+| `quota-reserve` | `[key_budgets].rules` 非空 → Pass（N 条规则）；空/缺段 → Warn（配额预留整体跳过） |
+| `quota-fail-open` | `fail_open=true` 的规则逐条 Warn（key 摘要前 8 字符，预算源不可用时请求放行）；全 fail-closed → 单条 Pass |
+| `auth-http` | `[auth].enabled` → Pass（SHA256 摘要）；关 → Fail（网关接受未认证请求） |
+| `auth-grpc` | `grpc` feature 未编入 → Warn；编入且认证开 → Pass；编入而认证关 → Fail |
+| `masking` | feature `masking` + `[masking].enabled` 双开 → Pass；其余 → Warn（合规敏感，默认不进产物） |
+| `logging` | 仅全量模式：`logging` feature → Pass，否则 Warn |
+
+示例输出（全量模式，`full,db-sqlite` 构建，主钥来自 env——`--security` 不含最后一行）：
+
+```
+✓ vault-encryption: master key: env
+✓ vault-backend: DbKeyStore
+! quota-reserve: quota reservation skipped (no [key_budgets].rules)
+✓ quota-fail-open: all rules fail-closed
+✓ auth-http: SHA256 digest
+! auth-grpc: not compiled in (feature grpc)
+! masking: disabled — compliance-sensitive feature ships off (needs feature masking + [masking].enabled)
+✓ logging: compiled in (feature logging)
+```
+
+doctor 是静态检查：反映本次构建的 feature 编译面与这份配置快照，不证明运行期行为（如主钥确实可解密既有密文）。doctor 子命令在 `full` 构建内恒可用（bin 的 `required-features`）；库形态自选 feature 组合的用户按上表自查。
+
 ---
 
 ## ⚙️ 配置概览

@@ -138,6 +138,51 @@ curl -X POST http://127.0.0.1:8080/v1/chat/completions \
 
 > Note: the bare `/health` path is not a registered route (it 404s) but is included in the auth and rate-limit whitelists. For the remaining entry points (Anthropic messages, model list, token counting) and every endpoint's parameters, responses and error codes, see the [📘 API Reference](docs/en/API_REFERENCE.md).
 
+### 🩺 Security posture check (`fluxweir doctor`)
+
+`fluxweir doctor` is a static posture check: it reports the compiled feature face plus the config snapshot in one run — no network requests, no DB connections, no server start.
+
+<details>
+<summary>📄 Code · bash</summary>
+
+```bash
+# Full report (security + basic items); --config defaults to config.toml
+cargo run -p fluxweir --features full,db-sqlite -- doctor --config config.example.toml
+
+# Security items only
+cargo run -p fluxweir --features full,db-sqlite -- doctor --security --config config.example.toml
+```
+
+</details>
+
+Exit codes: `0` no failing item · `1` at least one Fail · `2` usage error or config load failure (stderr only, no report).
+
+| Item id | Verdict |
+|---|---|
+| `vault-encryption` | Fail if the `vault` feature is off; otherwise probes the master key source — env `FLUXWEIR_MASTER_KEY`, then the key file (`FLUXWEIR_MASTER_KEY_FILE` or `~/.fluxweir/vault_master.key`); both missing → Fail (a container rebuild regenerates the key and the vault becomes undecryptable) |
+| `vault-backend` | `database` feature → DbKeyStore; vault on without database → Warn (FileKeyStore fallback, SDK-embed form); vault off → skipped |
+| `quota-reserve` | `[key_budgets].rules` non-empty → Pass (N rules); empty/absent → Warn (quota reservation skipped) |
+| `quota-fail-open` | one Warn line per rule with `fail_open=true` (key digest prefix, requests pass when the budget source is unavailable); all fail-closed → single Pass |
+| `auth-http` | `[auth].enabled` → Pass (SHA256 digest); off → Fail (gateway accepts unauthenticated requests) |
+| `auth-grpc` | `grpc` feature not compiled → Warn; compiled + auth on → Pass; compiled + auth off → Fail |
+| `masking` | feature `masking` + `[masking].enabled` both on → Pass; otherwise Warn (compliance-sensitive, ships off) |
+| `logging` | full mode only: `logging` feature → Pass, else Warn |
+
+Example output (full mode, `full,db-sqlite` build, master key via env — `--security` omits the last line):
+
+```
+✓ vault-encryption: master key: env
+✓ vault-backend: DbKeyStore
+! quota-reserve: quota reservation skipped (no [key_budgets].rules)
+✓ quota-fail-open: all rules fail-closed
+✓ auth-http: SHA256 digest
+! auth-grpc: not compiled in (feature grpc)
+! masking: disabled — compliance-sensitive feature ships off (needs feature masking + [masking].enabled)
+✓ logging: compiled in (feature logging)
+```
+
+Doctor is a static check: it reflects this build's feature face and this config snapshot; it does not prove runtime behavior (e.g. that the master key actually decrypts existing ciphertext). The doctor subcommand is always available in `full` builds (the bin's `required-features`); library consumers with custom feature sets use the item table above for self-audit.
+
 ---
 
 ## ⚙️ Configuration Overview
