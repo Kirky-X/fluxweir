@@ -225,10 +225,45 @@ fn check_auth_http(config: &Config) -> CheckItem {
     }
 }
 
+/// auth-grpc：gRPC 面认证姿态。grpc feature 未编入 → Warn（grpc 不进
+/// full，需显式 --features；面不存在不等于安全）；编入且 [auth] 启用 →
+/// Pass；编入而认证关 → Fail（gRPC 面裸奔）。与 HTTP 面共用 [auth] 段
+///（src/server/grpc.rs 同源语义）。
+fn check_auth_grpc(config: &Config) -> CheckItem {
+    auth_grpc_item(
+        cfg!(feature = "grpc"),
+        config.auth.as_ref().is_some_and(|auth| auth.enabled),
+    )
+}
+
+/// auth-grpc 判定核心（编译面与认证开关注入，覆盖四分支测试）。
+fn auth_grpc_item(grpc_compiled: bool, auth_enabled: bool) -> CheckItem {
+    if !grpc_compiled {
+        return CheckItem {
+            id: "auth-grpc",
+            status: CheckStatus::Warn,
+            detail: "not compiled in (feature grpc)".to_string(),
+        };
+    }
+    if auth_enabled {
+        CheckItem {
+            id: "auth-grpc",
+            status: CheckStatus::Pass,
+            detail: "enabled (shared [auth])".to_string(),
+        }
+    } else {
+        CheckItem {
+            id: "auth-grpc",
+            status: CheckStatus::Fail,
+            detail: "gRPC face accepts unauthenticated requests".to_string(),
+        }
+    }
+}
+
 /// 收集检查项：`--security` 时只含安全组（vault-*/quota-*/auth-*/masking），
 /// 全量模式另加基础组（logging 等）。项顺序稳定（机器可 diff）。
 fn collect_items(config: &Config, security_only: bool) -> Vec<CheckItem> {
-    // 安全组（Stage 2 逐项扩充：quota-reserve/quota-fail-open/auth-grpc/masking）
+    // 安全组（Stage 2 逐项扩充：masking）
     #[allow(unused_mut)] // 基础组项在 Stage 2 按模式追加
     let mut items = vec![
         check_vault_encryption(),
@@ -237,6 +272,7 @@ fn collect_items(config: &Config, security_only: bool) -> Vec<CheckItem> {
     ];
     items.extend(check_quota_fail_open(config));
     items.push(check_auth_http(config));
+    items.push(check_auth_grpc(config));
     // 基础组：仅全量模式
     if !security_only {
         // Stage 2 T010 接入 logging
@@ -646,5 +682,38 @@ mod tests {
         let items = check_quota_fail_open(&closed);
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].status, CheckStatus::Pass);
+    }
+
+    /// T009 四分支：auth-http 启用/禁用；auth-grpc 未编入 Warn / 编入+
+    /// 启用 Pass / 编入+禁用 Fail（grpc 不在 dev 组合，编译面分支经注入覆盖）。
+    #[test]
+    fn auth_items_cover_four_branches() {
+        let auth_on: Config =
+            toml::from_str("vendors = []\n[server]\n[database]\n[auth]\nenabled = true\n")
+                .expect("parse");
+        let auth_off: Config =
+            toml::from_str("vendors = []\n[server]\n[database]\n[auth]\nenabled = false\n")
+                .expect("parse");
+
+        // auth-http：启用 Pass / 禁用 Fail
+        assert_eq!(check_auth_http(&auth_on).status, CheckStatus::Pass);
+        assert_eq!(check_auth_http(&auth_off).status, CheckStatus::Fail);
+
+        // auth-grpc 判定核心四分支
+        let uncompiled = auth_grpc_item(false, true);
+        assert_eq!(uncompiled.status, CheckStatus::Warn);
+        assert_eq!(uncompiled.detail, "not compiled in (feature grpc)");
+        assert_eq!(auth_grpc_item(true, true).status, CheckStatus::Pass);
+        let bare = auth_grpc_item(true, false);
+        assert_eq!(bare.status, CheckStatus::Fail);
+        assert_eq!(bare.detail, "gRPC face accepts unauthenticated requests");
+
+        // 生产入口与编译面一致（dev 组合 grpc 恒关 → Warn）
+        let item = check_auth_grpc(&auth_on);
+        if cfg!(feature = "grpc") {
+            assert_eq!(item.status, CheckStatus::Pass);
+        } else {
+            assert_eq!(item.status, CheckStatus::Warn);
+        }
     }
 }
