@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 pub mod admission;
+pub mod attribution;
 pub mod auth;
 pub mod key_budget;
 pub mod lexcompress;
