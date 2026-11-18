@@ -127,6 +127,32 @@ fn check_vault_encryption() -> CheckItem {
     }
 }
 
+/// vault-backend：柜后端形态。database feature 开 → DbKeyStore（admin 面
+/// 持久化）；vault 开而 database 关 → FileKeyStore 回落（SDK 嵌入形态）；
+/// vault 关 → 跳过（依赖 vault-encryption 的 Fail 已覆盖）。
+fn check_vault_backend() -> CheckItem {
+    if !cfg!(feature = "vault") {
+        return CheckItem {
+            id: "vault-backend",
+            status: CheckStatus::Pass,
+            detail: "skipped: vault disabled".to_string(),
+        };
+    }
+    if cfg!(feature = "database") {
+        CheckItem {
+            id: "vault-backend",
+            status: CheckStatus::Pass,
+            detail: "DbKeyStore".to_string(),
+        }
+    } else {
+        CheckItem {
+            id: "vault-backend",
+            status: CheckStatus::Warn,
+            detail: "FileKeyStore fallback (SDK-embed form)".to_string(),
+        }
+    }
+}
+
 /// auth-http（初版，Stage 2 T009 细化 detail）：`[auth]` 缺段或
 /// enabled=false → Fail（网关裸奔）；启用 → Pass。None 语义与
 /// `ApiAuthState::new(false)` 同口径（缺段 = 认证禁用）。
@@ -149,10 +175,13 @@ fn check_auth_http(config: &Config) -> CheckItem {
 /// 收集检查项：`--security` 时只含安全组（vault-*/quota-*/auth-*/masking），
 /// 全量模式另加基础组（logging 等）。项顺序稳定（机器可 diff）。
 fn collect_items(config: &Config, security_only: bool) -> Vec<CheckItem> {
-    // 安全组（Stage 2 逐项扩充：vault-backend/quota-reserve/quota-fail-open/
-    // auth-grpc/masking）
+    // 安全组（Stage 2 逐项扩充：quota-reserve/quota-fail-open/auth-grpc/masking）
     #[allow(unused_mut)] // 基础组项在 Stage 2 按模式追加
-    let mut items = vec![check_vault_encryption(), check_auth_http(config)];
+    let mut items = vec![
+        check_vault_encryption(),
+        check_vault_backend(),
+        check_auth_http(config),
+    ];
     // 基础组：仅全量模式
     if !security_only {
         // Stage 2 T010 接入 logging
@@ -460,5 +489,28 @@ mod tests {
         assert_eq!(run_doctor_from_args(args(&["--bogus"])), 2);
         assert_eq!(run_doctor_from_args(args(&["--config"])), 2);
         assert_eq!(run_doctor_from_args(args(&["--security", "--oops"])), 2);
+    }
+
+    /// T006：vault-backend 与编译面一致；项集内紧随 vault-encryption。
+    #[test]
+    fn vault_backend_matches_compile_face() {
+        let check = check_vault_backend();
+        if !cfg!(feature = "vault") {
+            assert_eq!(check.status, CheckStatus::Pass);
+            assert_eq!(check.detail, "skipped: vault disabled");
+        } else if cfg!(feature = "database") {
+            assert_eq!(check.status, CheckStatus::Pass);
+            assert_eq!(check.detail, "DbKeyStore");
+        } else {
+            assert_eq!(check.status, CheckStatus::Warn);
+            assert_eq!(check.detail, "FileKeyStore fallback (SDK-embed form)");
+        }
+        let config: Config = toml::from_str("vendors = []\n[server]\n[database]\n").expect("parse");
+        let ids: Vec<&str> = collect_items(&config, true)
+            .into_iter()
+            .map(|item| item.id)
+            .collect();
+        assert_eq!(ids[0], "vault-encryption");
+        assert_eq!(ids[1], "vault-backend");
     }
 }
