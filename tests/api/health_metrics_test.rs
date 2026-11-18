@@ -24,6 +24,7 @@ use tower::ServiceExt;
 fn make_config() -> Config {
     Config {
         masking: Default::default(),
+        vault: Default::default(),
         web_search: Default::default(),
         vendor_budgets: Vec::new(),
         key_budgets: Default::default(),

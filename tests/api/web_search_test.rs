@@ -77,6 +77,7 @@ fn make_config_with(section: fluxweir::config::WebSearchSection) -> Config {
         subscription_accounts: Vec::new(),
         metrics: Default::default(),
         masking: Default::default(),
+        vault: Default::default(),
         web_search: section,
     }
 }

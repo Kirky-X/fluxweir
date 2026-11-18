@@ -78,6 +78,7 @@ fn section(mode: &str) -> AffinitySection {
 async fn build_writer(mode: &str) -> (AffinityWriter, Arc<AffinityTable>) {
     let config = crate::config::Config {
         masking: Default::default(),
+        vault: Default::default(),
         web_search: Default::default(),
         rate_limit: Default::default(),
         server: crate::config::ServerConfig {
@@ -467,6 +468,7 @@ async fn auto_settle_ttl_survives_route_lookup() {
 async fn legacy_settle_respects_tenant_scoped_first_binding() {
     let config = crate::config::Config {
         masking: Default::default(),
+        vault: Default::default(),
         web_search: Default::default(),
         rate_limit: Default::default(),
         server: crate::config::ServerConfig {
@@ -588,6 +590,7 @@ async fn sink_receives_sticks_for_auto_and_turn_only() {
         let counter = Arc::new(AtomicUsize::new(0));
         let config = crate::config::Config {
             masking: Default::default(),
+            vault: Default::default(),
             web_search: Default::default(),
             rate_limit: Default::default(),
             server: crate::config::ServerConfig {

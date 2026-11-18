@@ -82,6 +82,7 @@ mod vendor_fallback_integration {
     fn make_config(vendors: Vec<VendorConfig>) -> Config {
         Config {
             masking: Default::default(),
+            vault: Default::default(),
             subscription: Default::default(),
             subscription_accounts: Vec::new(),
             web_search: Default::default(),

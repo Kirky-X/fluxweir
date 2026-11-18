@@ -69,6 +69,7 @@ fn collector() -> &'static SpanCollector {
 fn make_config() -> Config {
     Config {
         masking: Default::default(),
+        vault: Default::default(),
         subscription: Default::default(),
         subscription_accounts: Vec::new(),
         web_search: Default::default(),

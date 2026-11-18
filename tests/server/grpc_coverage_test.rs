@@ -116,6 +116,7 @@ fn test_config(grpc_port: u16) -> Config {
         subscription: Default::default(),
         subscription_accounts: Vec::new(),
         masking: Default::default(),
+        vault: Default::default(),
         web_search: Default::default(),
         metrics: Default::default(),
     }

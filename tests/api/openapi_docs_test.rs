@@ -21,6 +21,7 @@ use tower::ServiceExt;
 fn make_config(docs_enabled: bool) -> Config {
     Config {
         masking: Default::default(),
+        vault: Default::default(),
         web_search: Default::default(),
         server: fluxweir::config::ServerConfig {
             host: "0.0.0.0".into(),

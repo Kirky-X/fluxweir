@@ -277,6 +277,7 @@ mod tests {
 
         let disabled_config = Config {
             masking: Default::default(),
+            vault: Default::default(),
             subscription: Default::default(),
             subscription_accounts: Vec::new(),
             web_search: Default::default(),
@@ -325,6 +326,7 @@ mod tests {
 
         let disabled_config = Config {
             masking: Default::default(),
+            vault: Default::default(),
             subscription: Default::default(),
             subscription_accounts: Vec::new(),
             web_search: Default::default(),

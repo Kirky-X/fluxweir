@@ -267,6 +267,7 @@ mod build_fallback_chain {
     fn make_manager(vendors: Vec<VendorConfig>) -> Router {
         let config = Config {
             masking: Default::default(),
+            vault: Default::default(),
             subscription: Default::default(),
             subscription_accounts: Vec::new(),
             web_search: Default::default(),
@@ -444,6 +445,7 @@ mod cover_all_paths {
     fn make_config(vendors: Vec<VendorConfig>, cover_all_paths: bool) -> Config {
         Config {
             masking: Default::default(),
+            vault: Default::default(),
             subscription: Default::default(),
             subscription_accounts: Vec::new(),
             web_search: Default::default(),

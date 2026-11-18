@@ -289,6 +289,7 @@ pub fn routing_config() -> Config {
         subscription: Default::default(),
         subscription_accounts: Vec::new(),
         masking: Default::default(),
+        vault: Default::default(),
     }
 }
 

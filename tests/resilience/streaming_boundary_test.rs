@@ -102,6 +102,7 @@ fn make_anthropic_vendor(id: &str, api_base: impl Into<String>) -> VendorConfig 
 fn make_config(vendors: Vec<VendorConfig>, circuit_open_timeout_ms: u64) -> Config {
     Config {
         masking: Default::default(),
+        vault: Default::default(),
         subscription: Default::default(),
         subscription_accounts: Vec::new(),
         web_search: Default::default(),

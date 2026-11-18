@@ -2290,6 +2290,7 @@ mod token_weighted_tickets {
         common::ensure_test_api_key();
         let config = fluxweir::config::Config {
             masking: Default::default(),
+            vault: Default::default(),
             subscription: Default::default(),
             subscription_accounts: Vec::new(),
             web_search: Default::default(),

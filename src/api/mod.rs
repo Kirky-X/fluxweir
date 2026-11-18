@@ -872,6 +872,7 @@ mod fallback_guard_tests {
     async fn make_state(vendors: Vec<VendorConfig>, retry: RetrySection) -> Arc<ApiState> {
         let config = Config {
             masking: Default::default(),
+            vault: Default::default(),
             web_search: Default::default(),
             rate_limit: Default::default(),
             otlp: Default::default(),
@@ -1214,6 +1215,7 @@ mod cooldown_retry_after {
     ) -> Arc<ApiState> {
         let config = Config {
             masking: Default::default(),
+            vault: Default::default(),
             web_search: Default::default(),
             rate_limit: Default::default(),
             otlp: Default::default(),

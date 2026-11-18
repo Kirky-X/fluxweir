@@ -237,6 +237,7 @@ mod tests {
     fn create_test_config() -> Config {
         Config {
             masking: Default::default(),
+            vault: Default::default(),
             web_search: Default::default(),
             rate_limit: Default::default(),
             server: ServerConfig {
@@ -615,6 +616,32 @@ concurrency = { requests_per_second = 10 }
         assert_eq!(entry.model_id, "claude-3-opus");
         assert!((entry.input_per_1k_tokens - 0.015).abs() < f64::EPSILON);
         assert!((entry.output_per_1k_tokens - 0.075).abs() < f64::EPSILON);
+    }
+
+    // [vault] 段校验（vault-reveal-audit-and-key-rotation T012）
+
+    /// 缺省 rotation_grace_secs = 86400；0 被 loader 拒绝。
+    #[test]
+    fn vault_grace_defaults_and_zero_rejected() {
+        let base = create_test_config();
+        assert_eq!(base.vault.rotation_grace_secs, 86_400, "缺省 24h 双活窗");
+        assert!(validate_config(&base).is_ok(), "缺省值必须合法");
+
+        let mut config = create_test_config();
+        config.vault.rotation_grace_secs = 0;
+        let err = validate_config(&config).expect_err("grace=0 必须拒绝");
+        match err {
+            GateError::Config { message } => {
+                assert!(
+                    message.contains("config-vault-grace-zero"),
+                    "错误锚点键：{message}"
+                );
+            }
+            other => panic!("expected Config error, got {:?}", other),
+        }
+
+        config.vault.rotation_grace_secs = 1;
+        assert!(validate_config(&config).is_ok(), "任意正值合法");
     }
 
     // [vendors] 新键校验（validate_config）

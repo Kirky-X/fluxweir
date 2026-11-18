@@ -879,6 +879,16 @@ max_connections = 1000
 http2_keepalive_interval_secs = 30
 http2_keepalive_timeout_secs = 10
 
+# ✅ 热生效 —— 保密柜轮换参数（key-vault）。缺省整段可省（全默认）：
+# rotation_grace_secs = 86400（24 小时双活窗口）——POST /admin/vault/keys/{id}/rotate
+# 轮换后，旧代密钥在该窗口内仍注入 inline key pool（新旧并存，401/403 自动
+# 切换，与 api_key_envs 多 key 池同语义）；过窗后旧版不再注入。回滚旧密钥
+# = 把旧条目 superseded_at_ms 置回 NULL（恢复 active），不是重新录明文。
+# 0 非法（旧代即刻失效会让在飞请求 401；要立即废旧代请直接 DELETE 旧条目）。
+# env 兜底语义不变：柜空时该段无效果（vendor 回退 api_key_env 读取）。
+[vault]
+rotation_grace_secs = 86400
+
 # ❌ 需重启 —— OpenAPI/Swagger UI 出口。enabled = false（默认）时 /api-docs
 # 与 Swagger UI 路由不存在（404）；运维显式打开后可达（静态文档面，免认证
 # 免限流——开关本身即访问门）。路由建站期固化，改动触发热重载拒绝。

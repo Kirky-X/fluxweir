@@ -251,6 +251,7 @@ mod tests {
         // 最小合法配置：空 vendors + 默认段。
         Config {
             masking: Default::default(),
+            vault: Default::default(),
             web_search: Default::default(),
             server: crate::config::ServerConfig {
                 host: "127.0.0.1".into(),

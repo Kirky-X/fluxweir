@@ -130,5 +130,6 @@ pub fn test_config(vendors: Vec<VendorConfig>) -> Config {
         subscription_accounts: Vec::new(),
         metrics: Default::default(),
         masking: Default::default(),
+        vault: Default::default(),
     }
 }

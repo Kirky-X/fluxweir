@@ -484,6 +484,7 @@ mod tests {
     fn sample_config(vendor_id: &str) -> Config {
         Config {
             masking: Default::default(),
+            vault: Default::default(),
             web_search: Default::default(),
             rate_limit: Default::default(),
             otlp: Default::default(),

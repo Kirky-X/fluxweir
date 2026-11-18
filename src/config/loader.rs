@@ -200,6 +200,36 @@ impl Default for super::WebSearchSection {
     }
 }
 
+/// `[vault]` 段 serde 缺省单源（rotation_grace_secs = 86400 = 24h 双活窗）。
+/// Default 实现落 loader（规则 14）。
+impl Default for super::VaultSection {
+    fn default() -> Self {
+        Self {
+            rotation_grace_secs: default_rotation_grace_secs(),
+        }
+    }
+}
+
+/// `[vault].rotation_grace_secs` 缺省 86400（24 小时：厂商密钥吊销传播的
+/// 常见上界，窗口内新旧双活）。
+pub(crate) fn default_rotation_grace_secs() -> u64 {
+    86_400
+}
+
+/// `[vault]` 段校验：rotation_grace_secs 必须 > 0（0 = 旧代轮换即刻失效，
+/// 在飞请求 401——要关双活直接删旧条目，不留 0 值歧义）。
+fn validate_vault(config: &Config) -> Result<(), GateError> {
+    if config.vault.rotation_grace_secs == 0 {
+        return Err(GateError::Config {
+            message: format!(
+                "config-vault-grace-zero|{}",
+                serde_json::json!({ "rotation_grace_secs": 0u64 })
+            ),
+        });
+    }
+    Ok(())
+}
+
 /// `[masking]` 段 serde 缺省单源（enabled=false 零行为、kinds/actions 空 =
 /// 全启用 + 缺省 mask）。Default 实现落 loader（规则 14）。
 impl Default for super::MaskingSection {
@@ -268,6 +298,7 @@ pub fn validate_config(config: &Config) -> Result<(), GateError> {
     validate_subscription(config)?;
     validate_masking(config)?;
     validate_web_search(config)?;
+    validate_vault(config)?;
     Ok(())
 }
 
@@ -2385,6 +2416,7 @@ mod tests {
     fn config_with(quota_enabled: bool, auth: Option<crate::config::AuthSection>) -> Config {
         Config {
             masking: Default::default(),
+            vault: Default::default(),
             web_search: Default::default(),
             rate_limit: Default::default(),
             otlp: Default::default(),

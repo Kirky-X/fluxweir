@@ -411,6 +411,7 @@ mod tests {
     fn test_quota_config() -> crate::config::Config {
         crate::config::Config {
             masking: Default::default(),
+            vault: Default::default(),
             web_search: Default::default(),
             rate_limit: Default::default(),
             otlp: Default::default(),

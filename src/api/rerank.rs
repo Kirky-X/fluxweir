@@ -527,6 +527,7 @@ mod rerank_cost_db_tests {
     async fn make_state() -> (Arc<ApiState>, Arc<Repository>) {
         let config = Config {
             masking: Default::default(),
+            vault: Default::default(),
             web_search: Default::default(),
             rate_limit: Default::default(),
             otlp: Default::default(),

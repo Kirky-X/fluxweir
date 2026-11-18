@@ -96,6 +96,7 @@ fn make_config(rules: Vec<RateLimitRule>) -> Config {
 fn make_config_with(rules: Vec<RateLimitRule>, vendors: Vec<VendorConfig>) -> Config {
     Config {
         masking: Default::default(),
+        vault: Default::default(),
         subscription: Default::default(),
         subscription_accounts: Vec::new(),
         web_search: Default::default(),

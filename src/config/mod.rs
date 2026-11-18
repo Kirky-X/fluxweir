@@ -1487,6 +1487,21 @@ pub struct Config {
     /// [`MaskingSection`]。
     #[serde(default)]
     pub masking: MaskingSection,
+    /// `[vault]` 段 — 保密柜运行参数（缺段全默认，字段语义见
+    /// [`VaultSection`]）。
+    #[serde(default)]
+    pub vault: VaultSection,
+}
+
+/// `[vault]` 段：保密柜运行参数。缺段 = 全默认（rotation_grace_secs 86400），
+/// 行为与历史逐字节一致；消费面见 `vault::bootstrap::inject_vendor_keys_with_grace`
+///（admin 轮换重注读 `[vault].rotation_grace_secs`）。
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct VaultSection {
+    /// 轮换双活窗口秒数：窗口内 superseded 旧代仍注入 inline key pool
+    /// （401/403 自动切换语义），过窗后旧版不再注入。0 非法（loader 拒绝）。
+    #[serde(default = "loader::default_rotation_grace_secs")]
+    pub rotation_grace_secs: u64,
 }
 
 /// `[masking]` 段：出站请求掩码（feature `masking`，不进 `full`）。
