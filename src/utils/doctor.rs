@@ -172,6 +172,40 @@ fn check_quota_reserve(config: &Config) -> CheckItem {
     }
 }
 
+/// quota-fail-open：逐规则一行——`fail_open=true` 的规则各产一条 Warn
+///（key 摘要前 8 字符 + 预算源不可用时放行语义）；无放行规则 → 单条 Pass
+///（fail-closed 姿态）。空 rules 段同样单条 Pass（功能关闭，无旁路面）。
+fn check_quota_fail_open(config: &Config) -> Vec<CheckItem> {
+    let warns: Vec<CheckItem> = config
+        .key_budgets
+        .rules
+        .iter()
+        .filter(|rule| rule.fail_open)
+        .map(|rule| CheckItem {
+            id: "quota-fail-open",
+            status: CheckStatus::Warn,
+            detail: format!(
+                "rule for key {} has fail_open=true — requests pass when budget source unavailable",
+                key_digest_prefix(&rule.api_key_hash)
+            ),
+        })
+        .collect();
+    if warns.is_empty() {
+        vec![CheckItem {
+            id: "quota-fail-open",
+            status: CheckStatus::Pass,
+            detail: "all rules fail-closed".to_string(),
+        }]
+    } else {
+        warns
+    }
+}
+
+/// key 摘要前 8 字符（不足 8 取全串；报告锚点用，非安全边界）。
+fn key_digest_prefix(hash: &str) -> &str {
+    &hash[..hash.len().min(8)]
+}
+
 /// auth-http（初版，Stage 2 T009 细化 detail）：`[auth]` 缺段或
 /// enabled=false → Fail（网关裸奔）；启用 → Pass。None 语义与
 /// `ApiAuthState::new(false)` 同口径（缺段 = 认证禁用）。
@@ -200,8 +234,9 @@ fn collect_items(config: &Config, security_only: bool) -> Vec<CheckItem> {
         check_vault_encryption(),
         check_vault_backend(),
         check_quota_reserve(config),
-        check_auth_http(config),
     ];
+    items.extend(check_quota_fail_open(config));
+    items.push(check_auth_http(config));
     // 基础组：仅全量模式
     if !security_only {
         // Stage 2 T010 接入 logging
@@ -556,5 +591,60 @@ mod tests {
         let item = check_quota_reserve(&with_rules);
         assert_eq!(item.status, CheckStatus::Pass);
         assert_eq!(item.detail, "1 rules");
+    }
+
+    /// T008 混合规则集：fail_open=true 逐条 Warn（行数 = 放行规则数，
+    /// detail 含 key 摘要前 8 字符与放行语义）；全 false → 单条 Pass。
+    #[test]
+    fn quota_fail_open_items_mixed_rules() {
+        let mixed: Config = toml::from_str(
+            "vendors = []\n[server]\n[database]\n\
+             [[key_budgets.rules]]\n\
+             api_key_hash = \"a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90\"\n\
+             cost_limit_millicents = 1000\n\
+             window = \"daily\"\n\
+             fail_open = true\n\
+             [[key_budgets.rules]]\n\
+             api_key_hash = \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n\
+             cost_limit_millicents = 2000\n\
+             window = \"daily\"\n\
+             [[key_budgets.rules]]\n\
+             api_key_hash = \"11b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90\"\n\
+             cost_limit_millicents = 3000\n\
+             window = \"monthly\"\n\
+             fail_open = true\n",
+        )
+        .expect("parse mixed rules");
+        let items = check_quota_fail_open(&mixed);
+        assert_eq!(items.len(), 2, "两放行规则各一行");
+        assert!(items.iter().all(|item| item.id == "quota-fail-open"));
+        assert!(items.iter().all(|item| item.status == CheckStatus::Warn));
+        assert!(
+            items[0]
+                .detail
+                .contains("rule for key a1b2c3d4 has fail_open=true"),
+            "{}",
+            items[0].detail
+        );
+        assert!(
+            items[0]
+                .detail
+                .contains("requests pass when budget source unavailable"),
+            "{}",
+            items[0].detail
+        );
+        assert!(items[1].detail.contains("11b2c3d4"), "{}", items[1].detail);
+
+        // 全 false：单条 Pass
+        let closed: Config = toml::from_str(
+            "vendors = []\n[server]\n[database]\n\
+             [[key_budgets.rules]]\n\
+             api_key_hash = \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n\
+             cost_limit_millicents = 1000\n",
+        )
+        .expect("parse closed rules");
+        let items = check_quota_fail_open(&closed);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].status, CheckStatus::Pass);
     }
 }
