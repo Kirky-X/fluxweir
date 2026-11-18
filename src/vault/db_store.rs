@@ -188,13 +188,70 @@ impl KeyStore for DbKeyStore {
 
     async fn rotate(
         &self,
-        _vendor_id: &str,
-        _label: Option<&str>,
-        _plaintext: &SecretString,
+        vendor_id: &str,
+        label: Option<&str>,
+        plaintext: &SecretString,
     ) -> Result<SecretKeyRecord, VaultError> {
-        // T009 Red 桩（T010 Green 落地单连接两语句轮换）
-        Err(VaultError::Storage {
-            message: "vault-rotate-not-implemented".to_string(),
+        // 单连接三语句（设计 §5：db 后端单连接完成；会话内顺序一致）：
+        // ① 取 max(version) ② 旧 active 全部置 superseded ③ 插入新代。
+        // 同指纹明文重录会撞 (vendor_id, fingerprint) 唯一索引 → Storage
+        // 错误（回滚旧密钥 = 直接把旧条目 superseded 置回 NULL，不走 rotate）。
+        let session = self.pool.get_session("admin").await.map_err(db_err)?;
+        let conn = session.connection().map_err(db_err)?;
+        let backend = conn.get_database_backend();
+        let fingerprint = crypto::fingerprint(plaintext.expose_secret());
+        let mask = crypto::mask_key(plaintext.expose_secret());
+        let now = crypto::now_ms();
+        let blob = crypto::seal(&self.master_key, plaintext)?;
+        let id = crypto::new_id();
+
+        let stmt = raw_statement(
+            backend,
+            "SELECT COALESCE(MAX(version), 0) AS max_version FROM vault_keys WHERE vendor_id = ?",
+            [vendor_id.into()],
+        );
+        let rows = conn.query_all_raw(stmt).await.map_err(db_err)?;
+        let max_version: i32 = rows
+            .first()
+            .and_then(|row| row.try_get::<i32>("", "max_version").ok())
+            .unwrap_or(0);
+
+        let stmt = raw_statement(
+            backend,
+            "UPDATE vault_keys SET superseded_at_ms = ? WHERE vendor_id = ? AND superseded_at_ms IS NULL",
+            [now.into(), vendor_id.into()],
+        );
+        conn.execute_raw(stmt).await.map_err(db_err)?;
+
+        let insert = "INSERT INTO vault_keys (id, vendor_id, label, payload, mask, fingerprint, created_at, updated_at, version, superseded_at_ms) \
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)";
+        let stmt = raw_statement(
+            backend,
+            insert,
+            [
+                id.clone().into(),
+                vendor_id.into(),
+                label.map(str::to_string).into(),
+                Value::Bytes(Some(blob)),
+                mask.clone().into(),
+                fingerprint.clone().into(),
+                now.into(),
+                now.into(),
+                (max_version + 1).into(),
+            ],
+        );
+        conn.execute_raw(stmt).await.map_err(db_err)?;
+
+        Ok(SecretKeyRecord {
+            id,
+            vendor_id: vendor_id.to_string(),
+            label: label.map(str::to_string),
+            mask,
+            fingerprint,
+            created_at_ms: now,
+            updated_at_ms: now,
+            version: (max_version + 1).max(1) as u32,
+            superseded_at_ms: None,
         })
     }
 }

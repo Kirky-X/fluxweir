@@ -270,14 +270,46 @@ impl KeyStore for FileKeyStore {
 
     async fn rotate(
         &self,
-        _vendor_id: &str,
-        _label: Option<&str>,
-        _plaintext: &SecretString,
+        vendor_id: &str,
+        label: Option<&str>,
+        plaintext: &SecretString,
     ) -> Result<SecretKeyRecord, VaultError> {
-        // T009 Red 桩（T010 Green 落地内存态同步轮换）
-        Err(VaultError::Storage {
-            message: "vault-rotate-not-implemented".to_string(),
-        })
+        // 内存态同步换：max(version)+1 新代插入 + 旧 active 全部置 superseded，
+        // 一次 persist 落盘（整柜序列化，原子 rename 替换）。
+        let mut entries = self.entries.lock().expect("vault lock poisoned");
+        let fingerprint = crypto::fingerprint(plaintext.expose_secret());
+        let now = crypto::now_ms();
+        let max_version = entries
+            .values()
+            .filter(|e| e.vendor_id == vendor_id)
+            .map(|e| e.version)
+            .max()
+            .unwrap_or(0);
+        for entry in entries.values_mut() {
+            if entry.vendor_id == vendor_id && entry.superseded_at_ms.is_none() {
+                entry.superseded_at_ms = Some(now);
+                entry.updated_at_ms = now;
+            }
+        }
+        let id = crypto::new_id();
+        let blob = crypto::seal(&self.master_key, plaintext)?;
+        let mask = crypto::mask_key(plaintext.expose_secret());
+        entries.insert(
+            id.clone(),
+            StoredEntry {
+                vendor_id: vendor_id.to_string(),
+                label: label.map(str::to_string),
+                blob,
+                mask,
+                fingerprint: fingerprint.clone(),
+                created_at_ms: now,
+                updated_at_ms: now,
+                version: max_version + 1,
+                superseded_at_ms: None,
+            },
+        );
+        self.persist(&entries)?;
+        Ok(Self::record(&id, &entries[&id]))
     }
 }
 
@@ -386,6 +418,59 @@ mod tests {
         assert_eq!(first.id, second.id);
         assert_eq!(second.label.as_deref(), Some("renamed"));
         assert_eq!(store.list(Some("openai")).await.expect("list").len(), 1);
+    }
+
+    /// T010：文件柜轮换——version 递增、旧代 superseded、重开后状态保持。
+    #[tokio::test]
+    async fn rotate_bumps_version_and_persists() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("vault.bin");
+        let master = vec![7u8; 32];
+        let store = FileKeyStore::open(master.clone(), &path).expect("open");
+        put_key(&store, "openai", Some("gen-1"), "sk-file-rotate-g1-001").await;
+        let gen2 = store
+            .rotate(
+                "openai",
+                Some("gen-2"),
+                &SecretString::new("sk-file-rotate-g2-002".into()),
+            )
+            .await
+            .expect("rotate");
+        assert_eq!(gen2.version, 2);
+        assert_eq!(gen2.superseded_at_ms, None);
+        let listed = store.list(Some("openai")).await.expect("list");
+        assert_eq!(listed.len(), 2);
+        assert_eq!(
+            listed
+                .iter()
+                .filter(|r| r.superseded_at_ms.is_none())
+                .count(),
+            1,
+            "仅新代 active"
+        );
+        // 重开（文件柜持久性）：代数与 superseded 状态保持
+        drop(store);
+        let reopened = FileKeyStore::open(master, &path).expect("reopen");
+        let listed = reopened
+            .list(Some("openai"))
+            .await
+            .expect("list after reopen");
+        assert_eq!(listed.len(), 2);
+        assert_eq!(
+            listed
+                .iter()
+                .filter(|r| r.superseded_at_ms.is_none())
+                .count(),
+            1
+        );
+        assert_eq!(
+            listed
+                .iter()
+                .find(|r| r.superseded_at_ms.is_none())
+                .expect("active")
+                .version,
+            2
+        );
     }
 
     /// T008：旧 vault.bin 条目 JSON（无 version/superseded 字段）反序列化
