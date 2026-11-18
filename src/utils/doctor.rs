@@ -273,11 +273,51 @@ fn collect_items(config: &Config, security_only: bool) -> Vec<CheckItem> {
     items.extend(check_quota_fail_open(config));
     items.push(check_auth_http(config));
     items.push(check_auth_grpc(config));
+    items.push(check_masking(config));
     // 基础组：仅全量模式
     if !security_only {
-        // Stage 2 T010 接入 logging
+        items.push(check_logging());
     }
     items
+}
+
+/// masking：出站掩码双门判定（feature `masking` 编译面 + `[masking].enabled`
+/// 运行时门）。双开 → Pass；其余 → Warn（合规敏感能力默认不进 full、
+/// 配置缺省关——姿态项只提示，不判 Fail：关闭是合法选择，需部署方知情）。
+fn check_masking(config: &Config) -> CheckItem {
+    if cfg!(feature = "masking") && config.masking.enabled {
+        CheckItem {
+            id: "masking",
+            status: CheckStatus::Pass,
+            detail: "enabled".to_string(),
+        }
+    } else {
+        CheckItem {
+            id: "masking",
+            status: CheckStatus::Warn,
+            detail: "disabled — compliance-sensitive feature ships off \
+                     (needs feature masking + [masking].enabled)"
+                .to_string(),
+        }
+    }
+}
+
+/// logging：DB 日志面编译姿态（feature `logging`，进 full）。信息项，
+/// 关闭 → Warn（无落库观测面）。
+fn check_logging() -> CheckItem {
+    if cfg!(feature = "logging") {
+        CheckItem {
+            id: "logging",
+            status: CheckStatus::Pass,
+            detail: "compiled in (feature logging)".to_string(),
+        }
+    } else {
+        CheckItem {
+            id: "logging",
+            status: CheckStatus::Warn,
+            detail: "not compiled in (feature logging)".to_string(),
+        }
+    }
 }
 
 /// 装载配置并跑全部检查；返回进程退出码（0=无 Fail，1=存在 Fail，
@@ -714,6 +754,45 @@ mod tests {
             assert_eq!(item.status, CheckStatus::Pass);
         } else {
             assert_eq!(item.status, CheckStatus::Warn);
+        }
+    }
+
+    /// T010：masking 双门判定 + logging 编译面姿态（dev 组合两 feature 均
+    /// 可注入断言；masking 不在 full → 本组合恒 Warn，注入核心覆盖 Pass）。
+    #[test]
+    fn masking_and_logging_items_match_gates() {
+        let masking_off: Config =
+            toml::from_str("vendors = []\n[server]\n[database]\n").expect("parse");
+        let item = check_masking(&masking_off);
+        assert_eq!(item.status, CheckStatus::Warn);
+        assert!(
+            item.detail.contains("compliance-sensitive"),
+            "{}",
+            item.detail
+        );
+
+        let masking_on: Config =
+            toml::from_str("vendors = []\n[server]\n[database]\n[masking]\nenabled = true\n")
+                .expect("parse");
+        let item = check_masking(&masking_on);
+        let expected = if cfg!(feature = "masking") {
+            (CheckStatus::Pass, "enabled")
+        } else {
+            (CheckStatus::Warn, "disabled — compliance-sensitive feature ships off (needs feature masking + [masking].enabled)")
+        };
+        assert_eq!((item.status, item.detail.as_str()), expected);
+
+        let log = check_logging();
+        if cfg!(feature = "logging") {
+            assert_eq!(
+                (log.status, log.detail.as_str()),
+                (CheckStatus::Pass, "compiled in (feature logging)")
+            );
+        } else {
+            assert_eq!(
+                (log.status, log.detail.as_str()),
+                (CheckStatus::Warn, "not compiled in (feature logging)")
+            );
         }
     }
 }
