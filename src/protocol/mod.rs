@@ -40,7 +40,7 @@ pub use unified::{
     UnifiedRequest, UnifiedResponse, Verbosity, MAX_TOOL_SCHEMA_BYTES, MAX_TOOL_SCHEMA_DEPTH,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
 pub enum Protocol {
     OpenAI,
     Anthropic,

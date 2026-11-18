@@ -126,7 +126,14 @@ async fn embed_2xx_non_json_is_protocol_error() {
         .expect_err("2xx 非 JSON 必须失败");
     match err {
         FluxweirSdkError::Protocol { message } => {
-            assert!(message.contains("invalid JSON"), "{message}");
+            // 期望值由 i18n 目录生成，与生产同键，避免写死英文文案：
+            // en "invalid JSON in response body" / zh "响应体 JSON 非法"
+            // 整串相等断言强于原来的 contains，且对 locale 中立。
+            assert_eq!(
+                message,
+                crate::i18n::t("sdk-invalid-json-response"),
+                "2xx 非 JSON 必须给出 JSON 非法原因: {message}"
+            );
         }
         other => panic!("2xx 非 JSON 必须归 Protocol，实际 {other:?}"),
     }

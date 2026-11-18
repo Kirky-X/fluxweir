@@ -61,8 +61,13 @@ async fn stream_propagates_parse_error() {
 
     match result {
         Err(crate::sdk::error::FluxweirSdkError::Stream { message }) => {
+            // 期望值由 i18n 目录生成，与生产同键，避免写死英文文案：
+            // en "JSON parse error: …" / zh "JSON 解析错误: …"
+            // 占位符传空串即得到前缀，保留原断言「归 Stream 且保留原因」的强度。
+            let expected_prefix =
+                crate::i18n::t_args("sdk-json-parse", &[("error", String::new())]);
             assert!(
-                message.starts_with("JSON parse error"),
+                message.starts_with(&expected_prefix),
                 "解析失败必须归 Stream 变体并保留原因: {message}"
             );
         }
