@@ -163,7 +163,7 @@ impl KeyStore for DbKeyStore {
         // 行内元数据随密文一并取出：解密成功后组装审计记录（零明文）。
         let stmt = raw_statement(
             conn.get_database_backend(),
-            "SELECT payload, vendor_id, fingerprint FROM vault_keys WHERE id = ?",
+            "SELECT payload, vendor_id, fingerprint, version FROM vault_keys WHERE id = ?",
             [id.into()],
         );
         let rows = conn.query_all_raw(stmt).await.map_err(db_err)?;
@@ -173,12 +173,11 @@ impl KeyStore for DbKeyStore {
         let blob: Vec<u8> = row.try_get("", "payload").map_err(db_err)?;
         let plaintext = crypto::open(&self.master_key, &blob)?;
         // best-effort 双写：解密成功才记录（失败不产审计噪声）；记录动作
-        // 不可失败（buffer 满淘汰属正常语义）。key_version 恒 1 直到 v10
-        // 版本列落地（T008 起自行读出）。
+        // 不可失败（buffer 满淘汰属正常语义）。
         crate::vault::record_reveal(crate::vault::RevealAuditRecord {
             key_id: id.to_string(),
             vendor_id: row.try_get::<String>("", "vendor_id").map_err(db_err)?,
-            key_version: 1,
+            key_version: row.try_get::<i32>("", "version").map_err(db_err)?.max(1) as u32,
             fingerprint: row.try_get::<String>("", "fingerprint").map_err(db_err)?,
             reason,
             timestamp_ms: crypto::now_ms(),

@@ -255,12 +255,12 @@ impl KeyStore for FileKeyStore {
             .get(id)
             .ok_or_else(|| VaultError::NotFound(id.to_string()))?;
         let plaintext = crypto::open(&self.master_key, &entry.blob)?;
-        // best-effort 双写（与 DbKeyStore 同语义）；key_version 恒 1 直到
-        // StoredEntry 版本字段落地（T008）。
+        // best-effort 双写（与 DbKeyStore 同语义）；key_version 自条目
+        // 版本字段读出（旧文件柜条目 serde default 1）。
         crate::vault::record_reveal(crate::vault::RevealAuditRecord {
             key_id: id.to_string(),
             vendor_id: entry.vendor_id.clone(),
-            key_version: 1,
+            key_version: entry.version,
             fingerprint: entry.fingerprint.clone(),
             reason,
             timestamp_ms: crypto::now_ms(),

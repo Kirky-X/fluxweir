@@ -44,7 +44,7 @@ pub struct RevealAuditRecord {
     pub timestamp_ms: i64,
 }
 
-/// 生产缓冲容量（≈4096 × 250B ≈ 1MB 常驻，design.md 预算）。
+/// 生产缓冲容量（≈4096 × 250B ≈ 1MB 常驻，容量预算见变更规格）。
 const REVEAL_BUFFER_CAPACITY: usize = 4096;
 
 static REVEAL_AUDIT: OnceLock<AuditRingBuffer<RevealAuditRecord>> = OnceLock::new();
