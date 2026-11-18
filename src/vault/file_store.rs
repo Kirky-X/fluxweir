@@ -267,6 +267,18 @@ impl KeyStore for FileKeyStore {
         });
         Ok(plaintext)
     }
+
+    async fn rotate(
+        &self,
+        _vendor_id: &str,
+        _label: Option<&str>,
+        _plaintext: &SecretString,
+    ) -> Result<SecretKeyRecord, VaultError> {
+        // T009 Red 桩（T010 Green 落地内存态同步轮换）
+        Err(VaultError::Storage {
+            message: "vault-rotate-not-implemented".to_string(),
+        })
+    }
 }
 
 #[cfg(test)]

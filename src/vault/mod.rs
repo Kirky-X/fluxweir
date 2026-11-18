@@ -71,6 +71,14 @@ pub trait KeyStore: Send + Sync {
     async fn remove(&self, id: &str) -> Result<bool, VaultError>;
     /// 唯一明文出口：reason 进审计链（vault::audit），调用方即用即弃。
     async fn reveal(&self, id: &str, reason: RevealReason) -> Result<SecretString, VaultError>;
+    /// 同 vendor 轮换：新条目 version = max(version)+1 插入；旧 active 条目
+    /// 置 superseded_at_ms = now（事务语义，db 后端单连接两语句）。
+    async fn rotate(
+        &self,
+        vendor_id: &str,
+        label: Option<&str>,
+        plaintext: &SecretString,
+    ) -> Result<SecretKeyRecord, VaultError>;
 }
 
 /// 保密柜错误：Display 恒英文规范串（对齐 error 双轨惯例），HTTP 映射在 api 层。

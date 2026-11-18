@@ -185,6 +185,18 @@ impl KeyStore for DbKeyStore {
         });
         Ok(plaintext)
     }
+
+    async fn rotate(
+        &self,
+        _vendor_id: &str,
+        _label: Option<&str>,
+        _plaintext: &SecretString,
+    ) -> Result<SecretKeyRecord, VaultError> {
+        // T009 Red 桩（T010 Green 落地单连接两语句轮换）
+        Err(VaultError::Storage {
+            message: "vault-rotate-not-implemented".to_string(),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -293,6 +305,67 @@ mod tests {
         b.expect("put b");
         let listed = store.list(Some("openai")).await.expect("list");
         assert_eq!(listed.len(), 1, "并发同键 put 不得产生第二行");
+    }
+
+    /// T009（Red）：轮换两代——version 序列 1→2→3，仅最新条目 active，
+    /// 旧两代 superseded；轮换用不同指纹明文，不撞 (vendor_id, fingerprint)
+    /// 唯一索引。
+    #[tokio::test]
+    async fn rotate_bumps_version_and_supersedes_active() {
+        let store = open_store().await;
+        let initial = store
+            .put(
+                "openai",
+                Some("gen-1"),
+                &SecretString::new("sk-rotate-gen1-000001".into()),
+            )
+            .await
+            .expect("put gen-1");
+        assert_eq!(initial.version, 1);
+        assert_eq!(initial.superseded_at_ms, None);
+
+        let gen2 = store
+            .rotate(
+                "openai",
+                Some("gen-2"),
+                &SecretString::new("sk-rotate-gen2-000002".into()),
+            )
+            .await
+            .expect("rotate gen-2");
+        assert_eq!(gen2.version, 2, "新代 = max(version)+1");
+        assert_eq!(gen2.superseded_at_ms, None, "新代 active");
+
+        let gen3 = store
+            .rotate(
+                "openai",
+                Some("gen-3"),
+                &SecretString::new("sk-rotate-gen3-000003".into()),
+            )
+            .await
+            .expect("rotate gen-3");
+        assert_eq!(gen3.version, 3);
+        assert_eq!(gen3.superseded_at_ms, None);
+
+        // 列表核对：三代共存，仅 gen3 active，gen1/gen2 已 superseded
+        let listed = store.list(Some("openai")).await.expect("list");
+        assert_eq!(listed.len(), 3, "轮换不删旧代（回滚与双活窗口）");
+        let active: Vec<&SecretKeyRecord> = listed
+            .iter()
+            .filter(|r| r.superseded_at_ms.is_none())
+            .collect();
+        assert_eq!(active.len(), 1, "仅一代 active");
+        assert_eq!(active[0].fingerprint, gen3.fingerprint);
+        assert_eq!(active[0].version, 3);
+        for superseded in listed.iter().filter(|r| r.superseded_at_ms.is_some()) {
+            assert!(superseded.version < 3, "旧代版本号低于最新代");
+            assert!(superseded.superseded_at_ms.unwrap() > 0);
+        }
+        // 新代可 reveal（密文与元数据一致）
+        let revealed = store
+            .reveal(&gen3.id, crate::vault::RevealReason::AdminRotation)
+            .await
+            .expect("reveal gen-3");
+        assert_eq!(revealed.expose_secret(), "sk-rotate-gen3-000003");
     }
 
     /// T008：不含新字段的旧 JSON 反序列化 → version==1 且 superseded==None
