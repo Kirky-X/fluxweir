@@ -153,6 +153,25 @@ fn check_vault_backend() -> CheckItem {
     }
 }
 
+/// quota-reserve：`[key_budgets].rules` 非空 → Pass（N 条规则）；空/缺段
+/// → Warn（配额预留整体跳过——空段 = 功能关闭，与现状逐字节一致语义）。
+fn check_quota_reserve(config: &Config) -> CheckItem {
+    let rules = config.key_budgets.rules.len();
+    if rules > 0 {
+        CheckItem {
+            id: "quota-reserve",
+            status: CheckStatus::Pass,
+            detail: format!("{rules} rules"),
+        }
+    } else {
+        CheckItem {
+            id: "quota-reserve",
+            status: CheckStatus::Warn,
+            detail: "quota reservation skipped (no [key_budgets].rules)".to_string(),
+        }
+    }
+}
+
 /// auth-http（初版，Stage 2 T009 细化 detail）：`[auth]` 缺段或
 /// enabled=false → Fail（网关裸奔）；启用 → Pass。None 语义与
 /// `ApiAuthState::new(false)` 同口径（缺段 = 认证禁用）。
@@ -180,6 +199,7 @@ fn collect_items(config: &Config, security_only: bool) -> Vec<CheckItem> {
     let mut items = vec![
         check_vault_encryption(),
         check_vault_backend(),
+        check_quota_reserve(config),
         check_auth_http(config),
     ];
     // 基础组：仅全量模式
@@ -512,5 +532,29 @@ mod tests {
             .collect();
         assert_eq!(ids[0], "vault-encryption");
         assert_eq!(ids[1], "vault-backend");
+    }
+
+    /// T007 两分支：rules 非空 → Pass("N rules")；空/缺段 → Warn。
+    #[test]
+    fn quota_reserve_item_two_branches() {
+        let empty: Config = toml::from_str("vendors = []\n[server]\n[database]\n").expect("parse");
+        let item = check_quota_reserve(&empty);
+        assert_eq!(item.status, CheckStatus::Warn);
+        assert_eq!(
+            item.detail,
+            "quota reservation skipped (no [key_budgets].rules)"
+        );
+
+        let with_rules: Config = toml::from_str(
+            "vendors = []\n[server]\n[database]\n\
+             [[key_budgets.rules]]\n\
+             api_key_hash = \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n\
+             cost_limit_millicents = 1000\n\
+             window = \"daily\"\n",
+        )
+        .expect("parse rules");
+        let item = check_quota_reserve(&with_rules);
+        assert_eq!(item.status, CheckStatus::Pass);
+        assert_eq!(item.detail, "1 rules");
     }
 }
