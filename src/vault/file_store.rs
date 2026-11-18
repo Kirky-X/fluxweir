@@ -234,13 +234,24 @@ impl KeyStore for FileKeyStore {
     async fn reveal(
         &self,
         id: &str,
-        _reason: crate::vault::RevealReason,
+        reason: crate::vault::RevealReason,
     ) -> Result<SecretString, VaultError> {
         let entries = self.entries.lock().expect("vault lock poisoned");
         let entry = entries
             .get(id)
             .ok_or_else(|| VaultError::NotFound(id.to_string()))?;
-        crypto::open(&self.master_key, &entry.blob)
+        let plaintext = crypto::open(&self.master_key, &entry.blob)?;
+        // best-effort 双写（与 DbKeyStore 同语义）；key_version 恒 1 直到
+        // StoredEntry 版本字段落地（T008）。
+        crate::vault::record_reveal(crate::vault::RevealAuditRecord {
+            key_id: id.to_string(),
+            vendor_id: entry.vendor_id.clone(),
+            key_version: 1,
+            fingerprint: entry.fingerprint.clone(),
+            reason,
+            timestamp_ms: crypto::now_ms(),
+        });
+        Ok(plaintext)
     }
 }
 
@@ -349,6 +360,30 @@ mod tests {
         assert_eq!(first.id, second.id);
         assert_eq!(second.label.as_deref(), Some("renamed"));
         assert_eq!(store.list(Some("openai")).await.expect("list").len(), 1);
+    }
+
+    /// T005：reveal 成功后审计缓冲含该条记录，字段零明文。
+    #[tokio::test]
+    async fn reveal_records_audit_entry_without_plaintext() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = open_store(dir.path());
+        let record = put_key(&store, "openai", Some("audit"), "sk-file-audit-321").await;
+        store
+            .reveal(&record.id, crate::vault::RevealReason::BootstrapAssembly)
+            .await
+            .expect("reveal");
+        let snapshot = crate::vault::reveal_snapshot(8);
+        let audited = snapshot
+            .iter()
+            .find(|rec| rec.key_id == record.id && rec.reason.as_str() == "bootstrap_assembly")
+            .expect("审计缓冲含该条记录");
+        assert_eq!(audited.vendor_id, "openai");
+        assert_eq!(audited.fingerprint.len(), 16);
+        assert!(
+            audited.fingerprint.chars().all(|c| c.is_ascii_hexdigit()),
+            "fingerprint 为 16 hex 字符"
+        );
+        assert!(!audited.fingerprint.contains("sk-file-audit"));
     }
 
     #[test]

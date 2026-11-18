@@ -151,13 +151,14 @@ impl KeyStore for DbKeyStore {
     async fn reveal(
         &self,
         id: &str,
-        _reason: crate::vault::RevealReason,
+        reason: crate::vault::RevealReason,
     ) -> Result<SecretString, VaultError> {
         let session = self.pool.get_session("admin").await.map_err(db_err)?;
         let conn = session.connection().map_err(db_err)?;
+        // 行内元数据随密文一并取出：解密成功后组装审计记录（零明文）。
         let stmt = raw_statement(
             conn.get_database_backend(),
-            "SELECT payload FROM vault_keys WHERE id = ?",
+            "SELECT payload, vendor_id, fingerprint FROM vault_keys WHERE id = ?",
             [id.into()],
         );
         let rows = conn.query_all_raw(stmt).await.map_err(db_err)?;
@@ -165,7 +166,19 @@ impl KeyStore for DbKeyStore {
             .first()
             .ok_or_else(|| VaultError::NotFound(id.to_string()))?;
         let blob: Vec<u8> = row.try_get("", "payload").map_err(db_err)?;
-        crypto::open(&self.master_key, &blob)
+        let plaintext = crypto::open(&self.master_key, &blob)?;
+        // best-effort 双写：解密成功才记录（失败不产审计噪声）；记录动作
+        // 不可失败（buffer 满淘汰属正常语义）。key_version 恒 1 直到 v10
+        // 版本列落地（T008 起自行读出）。
+        crate::vault::record_reveal(crate::vault::RevealAuditRecord {
+            key_id: id.to_string(),
+            vendor_id: row.try_get::<String>("", "vendor_id").map_err(db_err)?,
+            key_version: 1,
+            fingerprint: row.try_get::<String>("", "fingerprint").map_err(db_err)?,
+            reason,
+            timestamp_ms: crypto::now_ms(),
+        });
+        Ok(plaintext)
     }
 }
 
@@ -275,6 +288,56 @@ mod tests {
         b.expect("put b");
         let listed = store.list(Some("openai")).await.expect("list");
         assert_eq!(listed.len(), 1, "并发同键 put 不得产生第二行");
+    }
+
+    /// T005：reveal 成功后审计缓冲含该条记录，字段零明文（fingerprint
+    /// 16 hex；key_id/vendor_id 为标识符）。解密失败（NotFound）不产记录。
+    #[tokio::test]
+    async fn reveal_records_audit_entry_without_plaintext() {
+        let store = open_store().await;
+        let plaintext = SecretString::new("sk-audit-probe-987654".into());
+        let record = store
+            .put("openai", Some("audit"), &plaintext)
+            .await
+            .expect("put");
+        store
+            .reveal(&record.id, crate::vault::RevealReason::AdminRotation)
+            .await
+            .expect("reveal");
+        let snapshot = crate::vault::reveal_snapshot(8);
+        let audited = snapshot
+            .iter()
+            .find(|rec| rec.key_id == record.id && rec.reason.as_str() == "admin_rotation")
+            .expect("审计缓冲含该条记录");
+        assert_eq!(audited.vendor_id, "openai");
+        assert_eq!(audited.key_version, 1);
+        assert_eq!(audited.fingerprint.len(), 16);
+        assert!(
+            audited.fingerprint.chars().all(|c| c.is_ascii_hexdigit()),
+            "fingerprint 为 16 hex 字符"
+        );
+        assert!(audited.timestamp_ms > 0);
+        // 记录三字段均不含明文子串
+        assert!(!audited.key_id.contains("sk-audit-probe"));
+        assert!(!audited.vendor_id.contains("sk-audit-probe"));
+        assert!(!audited.fingerprint.contains("sk-audit-probe"));
+
+        // NotFound 不产新记录：快照中该 key 的记录数不再增长
+        let before = crate::vault::reveal_snapshot(64)
+            .iter()
+            .filter(|rec| rec.key_id == record.id)
+            .count();
+        assert!(matches!(
+            store
+                .reveal("no-such-id", crate::vault::RevealReason::AdminRotation)
+                .await,
+            Err(VaultError::NotFound(_))
+        ));
+        let after = crate::vault::reveal_snapshot(64)
+            .iter()
+            .filter(|rec| rec.key_id == record.id)
+            .count();
+        assert_eq!(before, after, "解密失败不得产审计噪声");
     }
 
     #[tokio::test]
