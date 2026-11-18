@@ -263,8 +263,7 @@ fn auth_grpc_item(grpc_compiled: bool, auth_enabled: bool) -> CheckItem {
 /// 收集检查项：`--security` 时只含安全组（vault-*/quota-*/auth-*/masking），
 /// 全量模式另加基础组（logging 等）。项顺序稳定（机器可 diff）。
 fn collect_items(config: &Config, security_only: bool) -> Vec<CheckItem> {
-    // 安全组（Stage 2 逐项扩充：masking）
-    #[allow(unused_mut)] // 基础组项在 Stage 2 按模式追加
+    // 安全组：vault-* / quota-* / auth-* / masking（--security 只含本组）
     let mut items = vec![
         check_vault_encryption(),
         check_vault_backend(),
