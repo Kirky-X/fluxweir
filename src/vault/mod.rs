@@ -21,9 +21,9 @@ mod master_key;
 
 pub use audit::{record_reveal, reveal_snapshot, RevealAuditRecord, RevealReason};
 #[cfg(feature = "vendor-management")]
-pub use bootstrap::inject_vendor_keys;
-#[cfg(feature = "vendor-management")]
 pub(crate) use bootstrap::{absorb_env_keys, std_env_lookup};
+#[cfg(feature = "vendor-management")]
+pub use bootstrap::{inject_vendor_keys, inject_vendor_keys_with_grace};
 #[cfg(feature = "database")]
 pub use db_store::DbKeyStore;
 pub use file_store::{home_vault_path, FileKeyStore};
