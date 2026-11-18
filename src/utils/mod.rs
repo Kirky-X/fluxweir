@@ -30,6 +30,10 @@ pub mod netguard;
 #[cfg(feature = "cost-tracking")]
 pub mod cost_tracker;
 
+// 安全姿态体检（security-doctor-cli）：静态检查 feature 编译面与配置快照，
+// CLI 子命令面（doctor）在主 bin 接线；纯 std + config，不设 feature 门。
+pub mod doctor;
+
 // 离线成本回放（cost-replay）：feature 门控的只读分析引擎，随独立 bin 提供。
 #[cfg(feature = "cost-replay")]
 pub mod replay;
