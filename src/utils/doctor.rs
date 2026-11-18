@@ -795,4 +795,59 @@ mod tests {
             );
         }
     }
+
+    /// T011：--security 过滤——security_only 项集含全部安全组（vault-*/
+    /// quota-*/auth-*/masking）且不含 logging；全量模式含 logging；两模式
+    /// 下同构配置的项数与顺序逐字节稳定（机器可 diff 契约）。
+    #[test]
+    fn security_filter_splits_groups_stably() {
+        let config: Config =
+            toml::from_str("vendors = []\n[server]\n[database]\n[auth]\nenabled = true\n")
+                .expect("parse");
+
+        let security_ids: Vec<&str> = collect_items(&config, true)
+            .into_iter()
+            .map(|item| item.id)
+            .collect();
+        assert!(
+            security_ids.iter().all(|id| *id != "logging"),
+            "security 模式不得含 logging：{security_ids:?}"
+        );
+        for prefix in ["vault-", "quota-", "auth-"] {
+            assert!(
+                security_ids.iter().any(|id| id.starts_with(prefix)),
+                "security 模式缺 {prefix}* 项：{security_ids:?}"
+            );
+        }
+        assert!(security_ids.contains(&"masking"), "{security_ids:?}");
+
+        let full_ids: Vec<&str> = collect_items(&config, false)
+            .into_iter()
+            .map(|item| item.id)
+            .collect();
+        assert!(full_ids.contains(&"logging"), "{full_ids:?}");
+        assert_eq!(
+            full_ids.len(),
+            security_ids.len() + 1,
+            "全量模式恰好多一项 logging"
+        );
+
+        // 顺序稳定：两次收集同构配置逐字节一致；且固定顺序契约
+        let again = collect_items(&config, false);
+        assert_eq!(
+            full_ids,
+            again.iter().map(|item| item.id).collect::<Vec<_>>()
+        );
+        let expected = [
+            "vault-encryption",
+            "vault-backend",
+            "quota-reserve",
+            "quota-fail-open",
+            "auth-http",
+            "auth-grpc",
+            "masking",
+            "logging",
+        ];
+        assert_eq!(full_ids, expected, "全量模式项顺序契约");
+    }
 }
