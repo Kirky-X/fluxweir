@@ -57,21 +57,73 @@ pub fn exit_code(items: &[CheckItem]) -> i32 {
     }
 }
 
-/// vault-encryption（初版，Stage 2 T005 补主钥来源探测）：编译面 feature
-/// `vault` 关 → Fail；开 → Pass（detail 由 T005 细化为主钥来源）。
+/// 主钥探测结论（分层与 vault::master_key 同口径：env 优先 →
+/// FLUXWEIR_MASTER_KEY_FILE → 缺省 ~/.fluxweir/vault_master.key）。
+enum MasterKeySource {
+    Env,
+    File(std::path::PathBuf),
+    Missing,
+}
+
+/// 探测核心（env 值/文件路径 env/home 注入，便于测试隔离）：只判存在性，
+/// 不读内容不验证可解密（doctor 是静态姿态检查，运行期验证属启动 fail-fast）。
+fn classify_master_key(
+    env_value: Option<&str>,
+    env_file: Option<&str>,
+    home: Option<&std::path::Path>,
+) -> MasterKeySource {
+    if env_value.is_some_and(|value| !value.trim().is_empty()) {
+        return MasterKeySource::Env;
+    }
+    let path = env_file
+        .filter(|value| !value.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .or_else(|| home.map(|home| home.join(".fluxweir").join("vault_master.key")));
+    match path {
+        Some(path) if path.exists() => MasterKeySource::File(path),
+        _ => MasterKeySource::Missing,
+    }
+}
+
+/// 生产探测：读真实 env 与 home。
+fn master_key_source() -> MasterKeySource {
+    classify_master_key(
+        std::env::var("FLUXWEIR_MASTER_KEY").ok().as_deref(),
+        std::env::var("FLUXWEIR_MASTER_KEY_FILE").ok().as_deref(),
+        std::env::home_dir().as_deref(),
+    )
+}
+
+/// vault-encryption：编译面 feature `vault` 关 → Fail；开时探测主钥来源
+/// （env → 文件 → 双缺 Fail，双缺时容器重建即失配——config.example.toml
+/// 主钥注释锚点同语义）。
 fn check_vault_encryption() -> CheckItem {
-    if cfg!(feature = "vault") {
-        CheckItem {
-            id: "vault-encryption",
-            status: CheckStatus::Pass,
-            detail: "vault feature compiled in".to_string(),
-        }
-    } else {
-        CheckItem {
+    if !cfg!(feature = "vault") {
+        return CheckItem {
             id: "vault-encryption",
             status: CheckStatus::Fail,
             detail: "not compiled in (feature vault) — upstream keys fall back to env".to_string(),
-        }
+        };
+    }
+    match master_key_source() {
+        MasterKeySource::Env => CheckItem {
+            id: "vault-encryption",
+            status: CheckStatus::Pass,
+            detail: "master key: env".to_string(),
+        },
+        MasterKeySource::File(path) => CheckItem {
+            id: "vault-encryption",
+            status: CheckStatus::Pass,
+            detail: format!("master key: file {}", path.display()),
+        },
+        MasterKeySource::Missing => CheckItem {
+            id: "vault-encryption",
+            status: CheckStatus::Fail,
+            detail: "master key missing: set FLUXWEIR_MASTER_KEY or mount the key file \
+                     (auto-generated on first boot; a container rebuild loses it and the \
+                     vault becomes undecryptable — see config.example.toml master key notes)"
+                .to_string(),
+        },
     }
 }
 
@@ -160,6 +212,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// FLUXWEIR_MASTER_KEY* env 互斥锁：探测类测试与依赖退出码的测试
+    /// 共享同一进程 env，必须串行改读。
+    static MASTER_KEY_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn item(id: &'static str, status: CheckStatus, detail: &str) -> CheckItem {
         CheckItem {
@@ -241,10 +298,12 @@ mod tests {
     }
 
     /// run_doctor：缺 [auth] 段 = 认证禁用 → auth-http Fail → 退出码 1；
-    /// [auth].enabled=true → 全 Pass → 退出码 0（本测试环境编译面恒含
-    /// vault：单测跑在 dev/default 组合，vault 进 full）。
+    /// [auth].enabled=true + 主钥 env 注入 → 退出码 0（vault 编译面在
+    /// dev/default 组合恒开；主钥经 env 强制 Pass，消除机器态漂移）。
     #[test]
     fn run_doctor_aggregates_auth_state() {
+        let _guard = MASTER_KEY_ENV_LOCK.lock().expect("env lock");
+        std::env::set_var("FLUXWEIR_MASTER_KEY", "unit-test-master-key");
         let no_auth = write_min_config("");
         assert_eq!(
             run_doctor(
@@ -261,6 +320,7 @@ mod tests {
             ),
             if cfg!(feature = "vault") { 0 } else { 1 }
         );
+        std::env::remove_var("FLUXWEIR_MASTER_KEY");
     }
 
     /// collect_items：security_only 只裁基础组不裁安全组；安全组两项恒在。
@@ -288,6 +348,8 @@ mod tests {
     /// 显式指向 fixture → 0/1），用法错误恒 2。
     #[test]
     fn run_doctor_from_args_parses_valid_flags() {
+        let _guard = MASTER_KEY_ENV_LOCK.lock().expect("env lock");
+        std::env::set_var("FLUXWEIR_MASTER_KEY", "unit-test-master-key");
         let dir = write_min_config("[auth]\nenabled = true\n");
         let path = dir.path().join("config.toml");
         let expected = if cfg!(feature = "vault") { 0 } else { 1 };
@@ -308,6 +370,88 @@ mod tests {
             ])),
             expected
         );
+        std::env::remove_var("FLUXWEIR_MASTER_KEY");
+    }
+
+    /// T005 三分支（注入式探测核心，env 值/文件路径/home 全受控）：
+    /// env 优先；文件存在（env 路径或 home 缺省路径）次之；双缺 Missing。
+    #[test]
+    fn master_key_probe_three_branches() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let key_file = dir.path().join("vault_master.key");
+        std::fs::write(&key_file, "hex-key").expect("seed key file");
+        let home = std::path::Path::new("/home/doctor-probe");
+
+        // env 命中（文件也存在时 env 仍优先）
+        assert!(matches!(
+            classify_master_key(Some("64-hex"), Some(key_file.to_str().unwrap()), Some(home)),
+            MasterKeySource::Env
+        ));
+        // 文件命中：FLUXWEIR_MASTER_KEY_FILE 指向存在的文件
+        assert!(matches!(
+            classify_master_key(None, Some(key_file.to_str().unwrap()), Some(home)),
+            MasterKeySource::File(ref path) if path == &key_file
+        ));
+        // 文件命中：env 文件缺省回落 home 拼接路径（临时目录充当 home，
+        // 种子文件按缺省布局 home/.fluxweir/vault_master.key 写入）
+        let home_dir = tempfile::tempdir().expect("tempdir");
+        let default_layout = home_dir.path().join(".fluxweir").join("vault_master.key");
+        std::fs::create_dir_all(default_layout.parent().expect("parent")).expect("mkdir");
+        std::fs::write(&default_layout, "hex-key").expect("seed default key file");
+        assert!(matches!(
+            classify_master_key(None, None, Some(home_dir.path())),
+            MasterKeySource::File(ref path) if path == &default_layout
+        ));
+        // 双缺：env 无、文件路径指向不存在位置
+        assert!(matches!(
+            classify_master_key(None, Some("/nonexistent/doctor-probe.key"), Some(home)),
+            MasterKeySource::Missing
+        ));
+        // 空/空白 env 值视同未设置（与 vault::master_key 同口径）
+        assert!(matches!(
+            classify_master_key(Some("   "), Some(key_file.to_str().unwrap()), Some(home)),
+            MasterKeySource::File(_)
+        ));
+    }
+
+    /// check_vault_encryption：vault 关 → Fail；开 → Pass(detail 标注 env)；
+    /// 主钥双缺 → Fail（detail 含容器重建失配提示与配置文档锚点）。
+    #[test]
+    fn vault_encryption_item_follows_master_key_presence() {
+        let _guard = MASTER_KEY_ENV_LOCK.lock().expect("env lock");
+        if !cfg!(feature = "vault") {
+            let item = check_vault_encryption();
+            assert_eq!(item.status, CheckStatus::Fail);
+            return;
+        }
+        // env 分支
+        std::env::set_var("FLUXWEIR_MASTER_KEY", "64-hex-unit-test");
+        let item = check_vault_encryption();
+        assert_eq!(item.status, CheckStatus::Pass);
+        assert_eq!(item.detail, "master key: env");
+        std::env::remove_var("FLUXWEIR_MASTER_KEY");
+        // 文件分支：FLUXWEIR_MASTER_KEY_FILE 指向临时主钥文件
+        let dir = tempfile::tempdir().expect("tempdir");
+        let key_file = dir.path().join("vault_master.key");
+        std::fs::write(&key_file, "hex-key").expect("seed key file");
+        std::env::set_var("FLUXWEIR_MASTER_KEY_FILE", key_file.to_str().unwrap());
+        let item = check_vault_encryption();
+        assert_eq!(item.status, CheckStatus::Pass);
+        assert_eq!(
+            item.detail,
+            format!("master key: file {}", key_file.display())
+        );
+        // 双缺分支：env 清空、文件路径指向不存在位置
+        std::env::set_var("FLUXWEIR_MASTER_KEY_FILE", "/nonexistent/doctor-probe.key");
+        let item = check_vault_encryption();
+        assert_eq!(item.status, CheckStatus::Fail);
+        assert!(item.detail.contains("container rebuild"), "{}", item.detail);
+        assert!(
+            item.detail.contains("config.example.toml"),
+            "{}",
+            item.detail
+        );
+        std::env::remove_var("FLUXWEIR_MASTER_KEY_FILE");
     }
 
     /// 非法 flag 组合 → 退出码 2：未知 flag、--config 缺值。
