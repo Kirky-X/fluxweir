@@ -10,6 +10,7 @@
 use secrecy::SecretString;
 use serde::Serialize;
 
+mod audit;
 #[cfg(feature = "vendor-management")]
 mod bootstrap;
 mod crypto;
@@ -18,6 +19,7 @@ mod db_store;
 mod file_store;
 mod master_key;
 
+pub use audit::{record_reveal, reveal_snapshot, RevealAuditRecord, RevealReason};
 #[cfg(feature = "vendor-management")]
 pub use bootstrap::inject_vendor_keys;
 #[cfg(feature = "vendor-management")]
