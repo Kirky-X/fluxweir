@@ -1577,6 +1577,16 @@ pub async fn quota_middleware(
                         "{}",
                         t("middleware-key-budget-source-unavailable")
                     );
+                    // 审计伴随（quota-attribution-and-failopen-audit）：放行
+                    // 即落事件（内存缓冲 + tracing 双写），消耗估算随事件留存。
+                    crate::middleware::attribution::record_fail_open(
+                        crate::middleware::attribution::QuotaFailOpenEvent {
+                            key_hash: tenant.clone(),
+                            reason: crate::middleware::attribution::FailOpenReason::BudgetSourceUnavailable,
+                            consumed_estimate_millicents: est,
+                            timestamp_ms: chrono::Utc::now().timestamp_millis(),
+                        },
+                    );
                 } else {
                     // fail-closed：拒绝并带窗重置余量（best-effort）
                     let view = quota_state.key_budgets.view(snapshot, &tenant);
@@ -3766,6 +3776,95 @@ mod tests {
             response.headers().get("retry-after").is_some(),
             "预算拒绝同样带 Retry-After"
         );
+    }
+
+    /// fail_open 放行审计伴随：Unavailable+fail_open 产完整字段事件；
+    /// fail-closed 与 Admitted 不产事件。用唯一 Authorization key 隔离租户
+    /// 摘要（并行测试共享全局审计缓冲，摘要即过滤键）。
+    #[tokio::test]
+    async fn middleware_fail_open_emits_audit_event_scoped_to_tenant() {
+        use axum::http::HeaderMap;
+        use sha2::Digest as _;
+        use tower::ServiceExt as _;
+
+        let unique_key = "sk-failopen-audit-probe-unique-2601";
+        let digest = hex::encode(sha2::Sha256::digest(unique_key.as_bytes()));
+        let config_with_rule = |fail_open: bool| {
+            let mut config = quota_enabled_config(false);
+            config.key_budgets.rules = vec![crate::config::KeyBudgetRule {
+                api_key_hash: digest.clone(),
+                cost_limit_millicents: 1_000_000,
+                window: "daily".into(),
+                fail_open,
+            }];
+            config
+        };
+        let post_with_key = |router: axum::Router, body: Vec<u8>| async move {
+            let _ = HeaderMap::new();
+            router
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method("POST")
+                        .uri("/v1/chat/completions")
+                        .header("content-type", "application/json")
+                        .header("authorization", format!("Bearer {unique_key}"))
+                        .body(axum::body::Body::from(body))
+                        .expect("request"),
+                )
+                .await
+                .expect("router response")
+        };
+        let events_of = || {
+            crate::middleware::attribution::fail_open_snapshot(256)
+                .iter()
+                .filter(|evt| evt.key_hash == digest)
+                .count()
+        };
+
+        // Unavailable + fail_open=true：放行 + 事件字段完整
+        let mut state = QuotaState::new();
+        state.key_budgets = crate::middleware::key_budget::KeyBudgetLedger::with_capacity(0);
+        let quota = Arc::new(state);
+        let gate = middleware_gate(config_with_rule(true), Some(quota), None);
+        let body = serde_json::to_vec(&chat_body("hello!", 10)).expect("serialize");
+        let response = post_with_key(middleware_router(gate), body.clone()).await;
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::OK,
+            "fail_open 放行"
+        );
+        let snapshot = crate::middleware::attribution::fail_open_snapshot(256);
+        let event = snapshot
+            .iter()
+            .find(|evt| evt.key_hash == digest)
+            .expect("放行事件可读回");
+        assert_eq!(
+            event.reason,
+            crate::middleware::attribution::FailOpenReason::BudgetSourceUnavailable
+        );
+        assert!(
+            event.consumed_estimate_millicents > 0,
+            "消耗估算随事件留存: {}",
+            event.consumed_estimate_millicents
+        );
+        assert!(event.timestamp_ms > 0);
+        let emitted = events_of();
+
+        // Unavailable + fail-closed：拒绝且不产事件
+        let mut state = QuotaState::new();
+        state.key_budgets = crate::middleware::key_budget::KeyBudgetLedger::with_capacity(0);
+        let quota = Arc::new(state);
+        let gate = middleware_gate(config_with_rule(false), Some(quota), None);
+        let response = post_with_key(middleware_router(gate), body.clone()).await;
+        assert_eq!(response.status(), axum::http::StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(events_of(), emitted, "fail-closed 不产事件");
+
+        // Admitted：正常放行不产事件
+        let quota = Arc::new(QuotaState::new());
+        let gate = middleware_gate(config_with_rule(true), Some(quota), None);
+        let response = post_with_key(middleware_router(gate), body).await;
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        assert_eq!(events_of(), emitted, "Admitted 不产事件");
     }
 
     /// 预算源不可用：fail_open 放行；fail_closed 拒绝。
