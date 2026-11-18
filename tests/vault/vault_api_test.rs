@@ -24,7 +24,10 @@ use axum::{
 use fluxweir::{
     api::{
         create_router,
-        vault::{delete_key, list_keys, put_key, ListKeysQuery, PutKeyRequest},
+        vault::{
+            delete_key, list_keys, list_reveals, put_key, ListKeysQuery, PutKeyRequest,
+            RevealsQuery,
+        },
     },
     config::ConfigManager,
     vault::{DbKeyStore, FileKeyStore, KeyStore, VaultError},
@@ -319,4 +322,45 @@ async fn unauthorized_request_is_rejected_401() {
         .await
         .expect("oneshot");
     assert_eq!(response.status(), 401);
+}
+
+/// T006：GET /admin/vault/reveals——reveal 后查询返回审计记录（零明文），
+/// limit 生效（最新在前）。
+#[tokio::test]
+async fn reveals_endpoint_returns_audit_records_with_limit() {
+    let (store, _, _, _state) = setup(false).await;
+    let record = store
+        .put(
+            "openai",
+            Some("audit-it"),
+            &SecretString::new(FIXTURE_KEY.into()),
+        )
+        .await
+        .expect("put");
+    store
+        .reveal(&record.id, fluxweir::vault::RevealReason::AdminRotation)
+        .await
+        .expect("reveal");
+
+    let reveals = list_reveals(axum::extract::Query(RevealsQuery { limit: None }))
+        .await
+        .expect("reveals ok")
+        .0;
+    let audited = reveals
+        .iter()
+        .find(|rec| {
+            rec.key_id == record.id && rec.reason == fluxweir::vault::RevealReason::AdminRotation
+        })
+        .expect("审计记录可查");
+    assert_eq!(audited.vendor_id, "openai");
+    assert_eq!(audited.fingerprint.len(), 16);
+    let body = serde_json::to_string(&reveals).expect("serialize");
+    assert!(!body.contains(FIXTURE_KEY), "响应零明文");
+
+    // limit=1：只回最新一条（本条或更新的并发记录，但至多 1 条）
+    let capped = list_reveals(axum::extract::Query(RevealsQuery { limit: Some(1) }))
+        .await
+        .expect("reveals capped")
+        .0;
+    assert_eq!(capped.len(), 1, "limit=1 只回 1 条");
 }

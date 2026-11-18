@@ -12,7 +12,8 @@ use std::sync::{Arc, OnceLock};
 use crate::utils::audit_buffer::AuditRingBuffer;
 
 /// reveal 触发面：启动装配 / admin 轮换重注 / inline 池重注。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RevealReason {
     BootstrapAssembly,
     AdminRotation,
@@ -30,8 +31,8 @@ impl RevealReason {
     }
 }
 
-/// 单次 reveal 审计记录（零明文）。
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// 单次 reveal 审计记录（零明文；Serialize 供 admin 查询面直接出 JSON）。
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct RevealAuditRecord {
     pub key_id: String,
     pub vendor_id: String,

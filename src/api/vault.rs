@@ -130,3 +130,20 @@ pub async fn delete_key(
 pub struct DeleteKeyResponse {
     pub removed: bool,
 }
+
+/// GET /admin/vault/reveals?limit=：reveal 审计快照（最新在前），零明文字段。
+/// limit 缺省 64、上限 4096（超限截到 4096——审计面不因滥用参数报错）。
+pub async fn list_reveals(
+    axum::extract::Query(query): axum::extract::Query<RevealsQuery>,
+) -> Result<Json<Vec<crate::vault::RevealAuditRecord>>, FluxweirError> {
+    let limit = query.limit.unwrap_or(64).clamp(1, 4096) as usize;
+    let snapshot = crate::vault::reveal_snapshot(limit);
+    Ok(Json(
+        snapshot.iter().map(|rec| rec.as_ref().clone()).collect(),
+    ))
+}
+
+#[derive(Deserialize)]
+pub struct RevealsQuery {
+    pub limit: Option<u64>,
+}
