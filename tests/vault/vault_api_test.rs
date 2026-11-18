@@ -25,8 +25,8 @@ use fluxweir::{
     api::{
         create_router,
         vault::{
-            delete_key, list_keys, list_reveals, put_key, ListKeysQuery, PutKeyRequest,
-            RevealsQuery,
+            delete_key, list_keys, list_reveals, put_key, rotate_key, ListKeysQuery, PutKeyRequest,
+            RevealsQuery, RotateKeyRequest,
         },
     },
     config::ConfigManager,
@@ -363,4 +363,87 @@ async fn reveals_endpoint_returns_audit_records_with_limit() {
         .expect("reveals capped")
         .0;
     assert_eq!(capped.len(), 1, "limit=1 只回 1 条");
+}
+
+/// T013：POST /admin/vault/keys/{id}/rotate——轮换后列表新条目 active、
+/// 旧条目 superseded；reveals 审计含 reason=admin_rotation 记录。
+#[tokio::test]
+async fn rotate_endpoint_supersedes_old_and_audits() {
+    let (store, vendor_manager, _, state) = setup(false).await;
+    let initial = store
+        .put(
+            "openai",
+            Some("gen-1"),
+            &SecretString::new(FIXTURE_KEY.into()),
+        )
+        .await
+        .expect("put");
+
+    let (status, rotated) = rotate_key(
+        State(state.clone()),
+        axum::extract::Path(initial.id.clone()),
+        Json(RotateKeyRequest {
+            secret: "sk-rotated-it-222333".into(),
+            label: Some("gen-2".into()),
+        }),
+    )
+    .await
+    .expect("rotate ok");
+    assert_eq!(status, axum::http::StatusCode::CREATED);
+    assert_eq!(rotated.version, 2, "新代 = 旧代 version+1");
+    assert_eq!(rotated.superseded_at_ms, None);
+    assert_eq!(rotated.mask, "sk-***2333");
+
+    // 列表：新条目 active、旧条目 superseded
+    let listed = list_keys(
+        State(state.clone()),
+        axum::extract::Query(ListKeysQuery {
+            vendor_id: Some("openai".into()),
+        }),
+    )
+    .await
+    .expect("list ok")
+    .0;
+    assert_eq!(listed.keys.len(), 2, "轮换不删旧代");
+    let active: Vec<&fluxweir::vault::SecretKeyRecord> = listed
+        .keys
+        .iter()
+        .filter(|key| key.superseded_at_ms.is_none())
+        .collect();
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].id, rotated.id);
+    let superseded = listed
+        .keys
+        .iter()
+        .find(|key| key.id == initial.id)
+        .expect("旧条目仍在");
+    assert!(superseded.superseded_at_ms.is_some(), "旧条目已 superseded");
+    assert_eq!(superseded.version, 1);
+
+    // 双活重注：grace 缺省 86400s，新旧两代都在池内
+    let info = vendor_manager.key_pool_info("openai").expect("pool info");
+    assert_eq!(info.size, 2, "双活窗口两代并存");
+
+    // 审计：rotate 触发的 reveal 以 admin_rotation 落审计链
+    let reveals = list_reveals(axum::extract::Query(RevealsQuery { limit: None }))
+        .await
+        .expect("reveals ok")
+        .0;
+    assert!(
+        reveals.iter().any(|rec| rec.key_id == rotated.id
+            && rec.reason == fluxweir::vault::RevealReason::AdminRotation),
+        "reveals 含 admin_rotation 记录"
+    );
+
+    // 空 secret → 400 Validation
+    let err = rotate_key(
+        State(state.clone()),
+        axum::extract::Path(rotated.id.clone()),
+        Json(RotateKeyRequest {
+            secret: "  ".into(),
+            label: None,
+        }),
+    )
+    .await;
+    assert!(err.is_err(), "空 secret 必须拒绝");
 }

@@ -147,3 +147,48 @@ pub async fn list_reveals(
 pub struct RevealsQuery {
     pub limit: Option<u64>,
 }
+
+#[derive(Deserialize)]
+pub struct RotateKeyRequest {
+    pub secret: String,
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
+/// POST /admin/vault/keys/{id}/rotate：密钥轮换——新代 version=max+1 插入、
+/// 旧 active 置 superseded；随后按 `[vault].rotation_grace_secs` 双活重注
+/// inline pool（窗口内新旧并存，过窗旧版退出）。响应 201 形态（掩码面）。
+pub async fn rotate_key(
+    State(state): State<Arc<ApiState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Json(body): Json<RotateKeyRequest>,
+) -> Result<(axum::http::StatusCode, Json<SecretKeyRecord>), FluxweirError> {
+    let store = store_of(&state)?;
+    if body.secret.trim().is_empty() {
+        return Err(FluxweirError::Gate(GateError::Validation {
+            field: "secret".to_string(),
+        }));
+    }
+    // 依 id 定位 vendor（rotate 需要 vendor 维度；未知 id → NotFound）
+    let vendor_id = store
+        .list(None)
+        .await?
+        .into_iter()
+        .find(|record| record.id == id)
+        .map(|record| record.vendor_id)
+        .ok_or_else(|| FluxweirError::Vault(VaultError::NotFound(id.clone())))?;
+    let plaintext = SecretString::new(body.secret.into());
+    let record = store
+        .rotate(&vendor_id, body.label.as_deref(), &plaintext)
+        .await?;
+    let grace_secs = state.config.read().vault.rotation_grace_secs;
+    crate::vault::inject_vendor_keys_with_grace(
+        store.as_ref(),
+        &state.vendor_manager,
+        &vendor_id,
+        grace_secs,
+        crate::vault::RevealReason::AdminRotation,
+    )
+    .await?;
+    Ok((axum::http::StatusCode::CREATED, Json(record)))
+}
