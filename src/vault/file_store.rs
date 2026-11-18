@@ -231,7 +231,11 @@ impl KeyStore for FileKeyStore {
         Ok(removed)
     }
 
-    async fn reveal(&self, id: &str) -> Result<SecretString, VaultError> {
+    async fn reveal(
+        &self,
+        id: &str,
+        _reason: crate::vault::RevealReason,
+    ) -> Result<SecretString, VaultError> {
         let entries = self.entries.lock().expect("vault lock poisoned");
         let entry = entries
             .get(id)
@@ -272,11 +276,16 @@ mod tests {
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].id, record.id);
         assert_eq!(listed[0].mask, "sk-***f123");
-        let revealed = store.reveal(&record.id).await.expect("reveal");
+        let revealed = store
+            .reveal(&record.id, crate::vault::RevealReason::BootstrapAssembly)
+            .await
+            .expect("reveal");
         assert_eq!(revealed.expose_secret(), "sk-live-abcdef123");
         assert!(store.remove(&record.id).await.expect("remove"));
         assert!(matches!(
-            store.reveal(&record.id).await,
+            store
+                .reveal(&record.id, crate::vault::RevealReason::BootstrapAssembly)
+                .await,
             Err(VaultError::NotFound(_))
         ));
         assert!(!store.remove(&record.id).await.expect("remove again"));
@@ -300,7 +309,7 @@ mod tests {
         assert_eq!(listed[0].id, record.id);
         assert_eq!(
             reopened
-                .reveal(&record.id)
+                .reveal(&record.id, crate::vault::RevealReason::BootstrapAssembly)
                 .await
                 .expect("reveal")
                 .expose_secret(),
@@ -323,7 +332,7 @@ mod tests {
         );
         assert_eq!(
             reopened
-                .reveal(&record.id)
+                .reveal(&record.id, crate::vault::RevealReason::BootstrapAssembly)
                 .await
                 .expect("reveal")
                 .expose_secret(),

@@ -58,8 +58,8 @@ pub trait KeyStore: Send + Sync {
     async fn list(&self, vendor_id: Option<&str>) -> Result<Vec<SecretKeyRecord>, VaultError>;
     /// 删除；返回是否确有删除。
     async fn remove(&self, id: &str) -> Result<bool, VaultError>;
-    /// 唯一明文出口：注入 inline key pool 时消费，调用方即用即弃。
-    async fn reveal(&self, id: &str) -> Result<SecretString, VaultError>;
+    /// 唯一明文出口：reason 进审计链（vault::audit），调用方即用即弃。
+    async fn reveal(&self, id: &str, reason: RevealReason) -> Result<SecretString, VaultError>;
 }
 
 /// 保密柜错误：Display 恒英文规范串（对齐 error 双轨惯例），HTTP 映射在 api 层。

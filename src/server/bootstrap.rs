@@ -323,8 +323,13 @@ pub(crate) async fn assemble_with_database(
         vendor_manager.set_vault(store.clone());
         for vendor in &vendors {
             if vendor.enabled {
-                crate::vault::inject_vendor_keys(store.as_ref(), &vendor_manager, &vendor.id)
-                    .await?;
+                crate::vault::inject_vendor_keys(
+                    store.as_ref(),
+                    &vendor_manager,
+                    &vendor.id,
+                    crate::vault::RevealReason::BootstrapAssembly,
+                )
+                .await?;
             }
         }
         store

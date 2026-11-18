@@ -148,7 +148,11 @@ impl KeyStore for DbKeyStore {
         Ok(res.rows_affected() > 0)
     }
 
-    async fn reveal(&self, id: &str) -> Result<SecretString, VaultError> {
+    async fn reveal(
+        &self,
+        id: &str,
+        _reason: crate::vault::RevealReason,
+    ) -> Result<SecretString, VaultError> {
         let session = self.pool.get_session("admin").await.map_err(db_err)?;
         let conn = session.connection().map_err(db_err)?;
         let stmt = raw_statement(
@@ -218,7 +222,7 @@ mod tests {
             .is_empty());
         assert_eq!(
             store
-                .reveal(&record.id)
+                .reveal(&record.id, crate::vault::RevealReason::BootstrapAssembly)
                 .await
                 .expect("reveal")
                 .expose_secret(),
@@ -226,7 +230,9 @@ mod tests {
         );
         assert!(store.remove(&record.id).await.expect("remove"));
         assert!(matches!(
-            store.reveal(&record.id).await,
+            store
+                .reveal(&record.id, crate::vault::RevealReason::BootstrapAssembly)
+                .await,
             Err(VaultError::NotFound(_))
         ));
         assert!(!store.remove(&record.id).await.expect("remove again"));

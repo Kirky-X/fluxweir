@@ -962,16 +962,15 @@ async fn resolve_key(
             match vault {
                 Some(store) => {
                     use secrecy::ExposeSecret as _;
-                    let secret =
-                        store
-                            .reveal(id)
-                            .await
-                            .map_err(|e| SearchError::KeyUnavailable {
-                                // VaultError 的 Display 带类型前缀且载荷是锚点：
-                                // 原样进 502 会把键名/内部文本带出站。只取可解
-                                // 锚的载荷，其余变体给固定安全文案。
-                                message: vault_failure_reason(&e),
-                            })?;
+                    let secret = store
+                        .reveal(id, crate::vault::RevealReason::InlinePoolReinjection)
+                        .await
+                        .map_err(|e| SearchError::KeyUnavailable {
+                            // VaultError 的 Display 带类型前缀且载荷是锚点：
+                            // 原样进 502 会把键名/内部文本带出站。只取可解
+                            // 锚的载荷，其余变体给固定安全文案。
+                            message: vault_failure_reason(&e),
+                        })?;
                     Ok(secret.expose_secret().to_string())
                 }
                 None => Err(SearchError::KeyUnavailable {

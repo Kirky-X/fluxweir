@@ -76,7 +76,9 @@ pub(crate) async fn load_refresh_token(
         .into_iter()
         .next_back()
         .ok_or_else(|| VaultError::NotFound(vault_key(account_id)))?;
-    store.reveal(&entry.id).await
+    store
+        .reveal(&entry.id, crate::vault::RevealReason::InlinePoolReinjection)
+        .await
 }
 
 /// 吊销：删除账号名下全部 vault 条目，返回删除数。

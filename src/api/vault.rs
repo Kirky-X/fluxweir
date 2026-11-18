@@ -63,8 +63,13 @@ pub async fn put_key(
     let record = store
         .put(&body.vendor_id, body.label.as_deref(), &plaintext)
         .await?;
-    crate::vault::inject_vendor_keys(store.as_ref(), &state.vendor_manager, &body.vendor_id)
-        .await?;
+    crate::vault::inject_vendor_keys(
+        store.as_ref(),
+        &state.vendor_manager,
+        &body.vendor_id,
+        crate::vault::RevealReason::InlinePoolReinjection,
+    )
+    .await?;
     Ok(Json(record))
 }
 
@@ -106,9 +111,13 @@ pub async fn delete_key(
     let removed = store.remove(&id).await?;
     if removed {
         if let Some(vendor_id) = target_vendor {
-            let injected =
-                crate::vault::inject_vendor_keys(store.as_ref(), &state.vendor_manager, &vendor_id)
-                    .await?;
+            let injected = crate::vault::inject_vendor_keys(
+                store.as_ref(),
+                &state.vendor_manager,
+                &vendor_id,
+                crate::vault::RevealReason::InlinePoolReinjection,
+            )
+            .await?;
             if !injected {
                 state.vendor_manager.clear_inline_key_pool(&vendor_id);
             }

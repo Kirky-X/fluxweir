@@ -11,6 +11,7 @@ use secrecy::{ExposeSecret, SecretString};
 use crate::config::VendorConfig;
 use crate::vault::crypto;
 use crate::vault::KeyStore;
+use crate::vault::RevealReason;
 use crate::vault::VaultError;
 use crate::vendor::VendorManager;
 
@@ -61,6 +62,7 @@ pub async fn inject_vendor_keys(
     store: &dyn KeyStore,
     manager: &VendorManager,
     vendor_id: &str,
+    reason: RevealReason,
 ) -> Result<bool, VaultError> {
     let records = store.list(Some(vendor_id)).await?;
     if records.is_empty() {
@@ -68,7 +70,13 @@ pub async fn inject_vendor_keys(
     }
     let mut keys = Vec::with_capacity(records.len());
     for record in &records {
-        keys.push(store.reveal(&record.id).await?.expose_secret().to_string());
+        keys.push(
+            store
+                .reveal(&record.id, reason)
+                .await?
+                .expose_secret()
+                .to_string(),
+        );
     }
     manager.set_inline_key_pool(vendor_id, crate::vendor::PoolSnapshot::from_keys(keys));
     Ok(true)

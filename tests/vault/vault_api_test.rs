@@ -230,7 +230,7 @@ async fn restart_with_same_master_key_recovers_reveal() {
     };
     let reopened = DbKeyStore::new(master_key(), pool);
     let revealed = reopened
-        .reveal(&record.id)
+        .reveal(&record.id, fluxweir::vault::RevealReason::BootstrapAssembly)
         .await
         .expect("reveal after restart");
     assert_eq!(revealed.expose_secret(), FIXTURE_KEY);
