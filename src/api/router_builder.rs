@@ -606,6 +606,8 @@ fn metrics_route_label(path: &str) -> &'static str {
         {
             table.push("/admin/vault/keys");
             table.push("/admin/vault/keys/{id}");
+            table.push("/admin/vault/keys/{id}/rotate");
+            table.push("/admin/vault/reveals");
         }
         table
     });
@@ -862,7 +864,11 @@ pub async fn create_router(state: Arc<ApiState>) -> Router {
             "/admin/vault/keys/{id}",
             axum::routing::delete(crate::api::vault::delete_key),
         )
-        .route("/admin/vault/reveals", get(crate::api::vault::list_reveals));
+        .route("/admin/vault/reveals", get(crate::api::vault::list_reveals))
+        .route(
+            "/admin/vault/keys/{id}/rotate",
+            post(crate::api::vault::rotate_key),
+        );
     // 订阅账号管理面（subscription-vendor feature 门控；[subscription].enabled
     // 运行时门在 handler 内热读——关时 404），随既有层叠受 auth 保护
     #[cfg(feature = "subscription-vendor")]
