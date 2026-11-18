@@ -124,6 +124,39 @@ pub fn run_doctor(config_path: &str, security_only: bool) -> i32 {
     exit_code(&items)
 }
 
+/// doctor 用法行（未知 flag / 缺参数时打 stderr）。
+const DOCTOR_USAGE: &str =
+    "usage: fluxweir doctor [--security] [--config <path>] (default config: config.toml)";
+
+/// CLI 入口：解析 `--security` 与 `--config <path>`（缺省 "config.toml"，与
+/// main.rs 服务器路径缺省同语义）后调 run_doctor。未知 flag / `--config`
+/// 缺值 → stderr 用法行 + 退出码 2（与 cost-replay 用法错误惯例一致）。
+pub fn run_doctor_from_args<I>(args: I) -> i32
+where
+    I: Iterator<Item = String>,
+{
+    let mut security_only = false;
+    let mut config_path = String::from("config.toml");
+    let mut args = args.peekable();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--security" => security_only = true,
+            "--config" => match args.next() {
+                Some(path) => config_path = path,
+                None => {
+                    eprintln!("doctor: --config requires a path\n{DOCTOR_USAGE}");
+                    return 2;
+                }
+            },
+            other => {
+                eprintln!("doctor: unknown flag: {other}\n{DOCTOR_USAGE}");
+                return 2;
+            }
+        }
+    }
+    run_doctor(&config_path, security_only)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,5 +275,46 @@ mod tests {
             assert!(ids.contains(&"vault-encryption"), "{ids:?}");
             assert!(ids.contains(&"auth-http"), "{ids:?}");
         }
+    }
+
+    fn args<'a>(
+        list: &'a [&'a str],
+    ) -> std::iter::Map<std::slice::Iter<'a, &'a str>, fn(&&'a str) -> String> {
+        list.iter().map(|s| s.to_string())
+    }
+
+    /// 合法 flag 组合：缺省路径 config.toml + 全量模式；--security + --config
+    /// 覆盖。断言以"装载结果"区分（缺省路径在测试 CWD 必装载失败 → 2，
+    /// 显式指向 fixture → 0/1），用法错误恒 2。
+    #[test]
+    fn run_doctor_from_args_parses_valid_flags() {
+        let dir = write_min_config("[auth]\nenabled = true\n");
+        let path = dir.path().join("config.toml");
+        let expected = if cfg!(feature = "vault") { 0 } else { 1 };
+        // 两 flag 任意顺序 + 等价形态
+        assert_eq!(
+            run_doctor_from_args(args(&[
+                "--config",
+                path.to_str().expect("path"),
+                "--security"
+            ])),
+            expected
+        );
+        assert_eq!(
+            run_doctor_from_args(args(&[
+                "--security",
+                "--config",
+                path.to_str().expect("path"),
+            ])),
+            expected
+        );
+    }
+
+    /// 非法 flag 组合 → 退出码 2：未知 flag、--config 缺值。
+    #[test]
+    fn run_doctor_from_args_rejects_invalid_flags() {
+        assert_eq!(run_doctor_from_args(args(&["--bogus"])), 2);
+        assert_eq!(run_doctor_from_args(args(&["--config"])), 2);
+        assert_eq!(run_doctor_from_args(args(&["--security", "--oops"])), 2);
     }
 }
