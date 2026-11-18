@@ -37,13 +37,12 @@ impl<T> AuditRingBuffer<T> {
     }
 
     /// 读侧快照：最新在前，最多 `limit` 条（`Arc` 克隆，零拷贝争用）。
-    /// T001 Red 桩：未实现 limit 截断与最新在前序（T002 Green 落地）。
-    pub fn snapshot(&self, _limit: usize) -> Vec<Arc<T>> {
+    pub fn snapshot(&self, limit: usize) -> Vec<Arc<T>> {
         let queue = self
             .inner
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        queue.iter().cloned().collect()
+        queue.iter().rev().take(limit).cloned().collect()
     }
 }
 
