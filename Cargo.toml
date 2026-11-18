@@ -424,6 +424,10 @@ path = "tests/matrix/gate_feature_matrix.rs"
 [[test]]
 name = "gate_utils_coverage_test"
 path = "tests/utils/gate_utils_coverage_test.rs"
+[[test]]
+name = "doctor_cli_test"
+path = "tests/utils/doctor_cli_test.rs"
+required-features = ["full"]
 
 # ---- replay：离线成本回放引擎与 CLI（feature 门控，不入 full）----
 [[test]]
