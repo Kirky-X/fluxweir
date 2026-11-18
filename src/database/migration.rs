@@ -14,6 +14,8 @@
 //! V8 追加 request_logs 的 (timestamp, id) 稳定序索引（回放装载按该序取窗）。
 //! V9 为 request_logs 补上游键归因列 upstream_key_fingerprint（可空；failover
 //! 后记实际命中键的指纹，历史行 NULL）。
+//! V10 为 vault_keys 补版本化轮换两列：version（轮换代数，历史行 DEFAULT 1）
+//! 与 superseded_at_ms（被轮换取代的时间戳，NULL = active）。
 //! 已发布的迁移常量禁止改动（已部署库的历史行指向它们），新变更走新版本。
 //! 迁移 SQL 正文外置于 `migrations/core/`（`v{n}_{backend}.up.sql` 与
 //! `.down.sql`；三后端共享的 DOWN 无方言后缀），经 `include_str!` 编译期
@@ -29,8 +31,8 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-/// 核心表迁移最新版本（V9：request_logs 上游键归因列 `upstream_key_fingerprint`）。
-pub(crate) const CORE_SCHEMA_VERSION: u32 = 9;
+/// 核心表迁移最新版本（V10：vault_keys 版本化轮换列 `version`/`superseded_at_ms`）。
+pub(crate) const CORE_SCHEMA_VERSION: u32 = 10;
 
 /// V1 UP（sqlite，FROZEN；含 cost 列与 4 索引）。
 const UP_V1_SQLITE: &str = include_str!("migrations/core/v1_sqlite.up.sql");
@@ -181,6 +183,15 @@ const UP_V9_MYSQL: &str = include_str!("migrations/core/v9_mysql.up.sql");
 /// V9 DOWN（三方言同形）：DROP COLUMN（sqlite ≥3.35 / PG / MySQL 均支持）。
 const DOWN_V9: &str = include_str!("migrations/core/v9.down.sql");
 
+/// V10 UP（sqlite）：vault_keys 版本化轮换两列；superseded 可空，缺省 NULL = active。
+const UP_V10_SQLITE: &str = include_str!("migrations/core/v10_sqlite.up.sql");
+/// V10 UP（postgres）：同列集，毫秒时间戳走 BIGINT（与 v3 created_at 同口径）。
+const UP_V10_POSTGRES: &str = include_str!("migrations/core/v10_postgres.up.sql");
+/// V10 UP（mysql）：两列并入单条 ALTER（原子生效，避免半迁移态）。
+const UP_V10_MYSQL: &str = include_str!("migrations/core/v10_mysql.up.sql");
+/// V10 DOWN（三方言同形）：DROP COLUMN 两列（回滚后轮换功能不可用，语义见 design）。
+const DOWN_V10: &str = include_str!("migrations/core/v10.down.sql");
+
 /// V1 DOWN（三后端通用：DROP TABLE 隐式带走索引；`IF EXISTS` 使回滚可重入）。
 const DOWN_V1_COMMON: &str = include_str!("migrations/core/v1.down.sql");
 
@@ -230,6 +241,9 @@ pub(crate) fn core_migration_file(
         (9, DatabaseBackend::Sqlite) => UP_V9_SQLITE,
         (9, DatabaseBackend::Postgres) => UP_V9_POSTGRES,
         (9, DatabaseBackend::MySql) => UP_V9_MYSQL,
+        (10, DatabaseBackend::Sqlite) => UP_V10_SQLITE,
+        (10, DatabaseBackend::Postgres) => UP_V10_POSTGRES,
+        (10, DatabaseBackend::MySql) => UP_V10_MYSQL,
         _ => {
             return Err(DbError::Config(format!(
                 "no core migration v{version} for {label}"
@@ -251,6 +265,7 @@ pub(crate) fn core_migration_file(
             _ => DOWN_V8,
         },
         9 => DOWN_V9,
+        10 => DOWN_V10,
         2 => match backend {
             DatabaseBackend::Sqlite => DOWN_V2_SQLITE,
             DatabaseBackend::Postgres => DOWN_V2_POSTGRES,
@@ -1153,6 +1168,40 @@ mod live_tests {
         assert!(applied_versions(&pool).await.is_empty(), "历史行应删除");
     }
 
+    /// V10 运行时（sqlite）：迁移后 vault_keys 含 version 与 superseded_at_ms
+    /// 两列（存量行 DEFAULT 1 / NULL）。
+    #[tokio::test]
+    async fn vault_keys_gains_version_columns_after_v10() {
+        let pool = memory_pool().await;
+        assert_eq!(
+            apply_core_migrations(&pool).await.expect("apply"),
+            CORE_SCHEMA_VERSION
+        );
+        let session = pool.get_session("admin").await.expect("session");
+        let stmt = Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "PRAGMA table_info(vault_keys)".to_string(),
+        );
+        let rows = session
+            .connection()
+            .expect("conn")
+            .query_all_raw(stmt)
+            .await
+            .expect("pragma");
+        let columns: Vec<String> = rows
+            .iter()
+            .map(|row| row.try_get::<String>("", "name").expect("column name"))
+            .collect();
+        assert!(
+            columns.contains(&"version".to_string()),
+            "缺 version 列：{columns:?}"
+        );
+        assert!(
+            columns.contains(&"superseded_at_ms".to_string()),
+            "缺 superseded_at_ms 列：{columns:?}"
+        );
+    }
+
     /// 只读库上迁移失败必须 fail-fast（Err），禁止静默降级为无库运行。
     #[tokio::test]
     async fn readonly_db_fails_fast() {
@@ -1328,5 +1377,32 @@ mod tests {
             core_migration_file(DatabaseBackend::Sqlite, CORE_SCHEMA_VERSION + 1).is_err(),
             "越界版本必须显式报错"
         );
+    }
+
+    /// V10 三方言正文断言：vault_keys 各得 version（NOT NULL DEFAULT 1）与
+    /// superseded_at_ms（可空）两列（pg/mysql 无本机 live 基建，正文口径 +
+    /// CI server-backend 作业的 env 门控用例补运行时面）。
+    #[test]
+    fn v10_adds_version_columns_in_all_dialects() {
+        for backend in [
+            DatabaseBackend::Sqlite,
+            DatabaseBackend::Postgres,
+            DatabaseBackend::MySql,
+        ] {
+            let file = core_migration_file(backend, 10).expect("v10 可构造");
+            let up = file.content().split("-- DOWN").next().unwrap_or_default();
+            assert!(
+                up.contains("vault_keys"),
+                "{backend:?} v10 须指向 vault_keys"
+            );
+            assert!(
+                up.contains("version INTEGER NOT NULL DEFAULT 1"),
+                "{backend:?} v10 缺 version 列"
+            );
+            assert!(
+                up.contains("superseded_at_ms"),
+                "{backend:?} v10 缺 superseded_at_ms 列"
+            );
+        }
     }
 }

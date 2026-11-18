@@ -2451,3 +2451,61 @@ mod v9_key_attribution {
         );
     }
 }
+
+/// V10（vault_keys 版本化轮换两列）的**服务端方言**运行时验证（postgres /
+/// mysql）——与上方 affinity_sticks_server 同模式：FLUXWEIR_TEST_DB_URL 由
+/// CI server-backend 作业注入，缺省 ignore。迁移到 V10 后 information_schema
+/// 必含 version 与 superseded_at_ms 两列。
+#[tokio::test]
+#[ignore = "需要 FLUXWEIR_TEST_DB_URL 指向 postgres/mysql 实例（CI server-backend 作业注入）"]
+async fn v10_vault_keys_version_columns_on_server_backend() {
+    let url = std::env::var("FLUXWEIR_TEST_DB_URL").expect("FLUXWEIR_TEST_DB_URL");
+    assert!(
+        url.starts_with("postgres://")
+            || url.starts_with("postgresql://")
+            || url.starts_with("mysql://"),
+        "FLUXWEIR_TEST_DB_URL 必须指向 postgres:// 或 mysql://（实际 {url}）"
+    );
+    let pool = dbnexus::DbPool::with_config(dbnexus::DbConfig {
+        url,
+        pool_config: dbnexus::PoolConfig {
+            max_connections: 1,
+            min_connections: 1,
+            ..Default::default()
+        },
+        admin_role: "admin".to_string(),
+        ..Default::default()
+    })
+    .await
+    .expect("连接被测服务端实例");
+    let repo = fluxweir::database::Repository::new(pool.clone());
+    repo.initialize().await.expect("迁移到最新版本（含 V10）");
+
+    use sea_orm::{ConnectionTrait, Statement};
+    let session = pool.get_session("admin").await.expect("session");
+    let conn = session.connection().expect("conn");
+    let backend = conn.get_database_backend();
+    let sql = if matches!(backend, sea_orm::DatabaseBackend::MySql) {
+        "SELECT COLUMN_NAME AS name FROM information_schema.columns \
+         WHERE TABLE_NAME = 'vault_keys' AND TABLE_SCHEMA = DATABASE()"
+    } else {
+        "SELECT column_name AS name FROM information_schema.columns \
+         WHERE table_name = 'vault_keys'"
+    };
+    let rows = conn
+        .query_all_raw(Statement::from_string(backend, sql.to_string()))
+        .await
+        .expect("information_schema");
+    let columns: Vec<String> = rows
+        .iter()
+        .map(|row| row.try_get::<String>("", "name").expect("column name"))
+        .collect();
+    assert!(
+        columns.contains(&"version".to_string()),
+        "缺 version 列：{columns:?}"
+    );
+    assert!(
+        columns.contains(&"superseded_at_ms".to_string()),
+        "缺 superseded_at_ms 列：{columns:?}"
+    );
+}

@@ -1,0 +1,3 @@
+
+ALTER TABLE vault_keys ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE vault_keys ADD COLUMN superseded_at_ms INTEGER;
