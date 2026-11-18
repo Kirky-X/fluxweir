@@ -1787,3 +1787,91 @@ async fn key_budget_absent_section_passes_through() {
 
     mock.assert_async().await;
 }
+
+/// fail_open 端到端（quota-attribution-and-failopen-audit T004）：预算源不可用
+/// + fail_open=true → 请求放行（非 429）且 GET /admin/quota/failopen 返回该
+/// 事件；limit=1 截断生效。
+#[tokio::test]
+async fn failopen_endpoint_returns_admitted_event() {
+    let mut config = quota_config(
+        vec![common::base_vendor("v", "http://127.0.0.1:1".to_string())],
+        1_000_000,
+        3600,
+    );
+    config.key_budgets.rules = vec![fluxweir::config::KeyBudgetRule {
+        api_key_hash: GOOD_KEY_DIGEST.to_string(),
+        cost_limit_millicents: 1_000_000,
+        window: "daily".into(),
+        fail_open: true,
+    }];
+
+    // 本地装配：quota 为容量 0 账本（reserve 恒 Unavailable 注入形态）
+    let config_manager = Arc::new(ConfigManager::new(config));
+    let vendor_manager = Arc::new(VendorManager::new(config_manager.clone()));
+    vendor_manager.initialize().await.expect("vendor init");
+    let pool = dbnexus::DbPool::with_config(dbnexus::DbConfig {
+        url: "sqlite::memory:".to_string(),
+        pool_config: dbnexus::PoolConfig {
+            max_connections: 1,
+            min_connections: 1,
+            ..Default::default()
+        },
+        admin_role: "admin".to_string(),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    let repository = Arc::new(fluxweir::database::Repository::new(pool.clone()));
+    repository.initialize().await.expect("schema init");
+    let mut quota_state = fluxweir::middleware::quota::QuotaState::new();
+    quota_state.key_budgets = fluxweir::middleware::key_budget::KeyBudgetLedger::with_capacity(0);
+    let state = Arc::new(ApiState {
+        affinity_writer: None,
+        auth_cache: std::sync::Arc::new(Default::default()),
+        config: config_manager.clone(),
+        vendor_manager: vendor_manager.clone(),
+        router: Arc::new(NexusRouter::new(
+            config_manager.clone(),
+            vendor_manager.clone(),
+        )),
+        openai_converter: Arc::new(OpenAIConverter::new()),
+        anthropic_converter: Arc::new(AnthropicConverter::new()),
+        database: Arc::new(Database { pool, repository }),
+        logger: None,
+        pre_aggregator: None,
+        affinity: None,
+        response_cache: None,
+        bandit: None,
+        quota: Some(Arc::new(quota_state)),
+        difficulty: None,
+        responses: None,
+        #[cfg(feature = "web-search")]
+        web_search: None,
+    });
+    let app = create_router(state).await;
+
+    // 放行（上游 127.0.0.1:1 不可达 → 5xx，但非 429 = fail_open 生效）
+    let response = post_chat_app(&app, chat_body(false)).await;
+    assert_ne!(
+        response.status(),
+        StatusCode::TOO_MANY_REQUESTS,
+        "fail_open 放行"
+    );
+
+    // 端点返回该事件
+    let (status, body) = read_json(get_app(&app, "/admin/quota/failopen").await).await;
+    assert_eq!(status, StatusCode::OK);
+    let rows = body["rows"].as_array().expect("rows");
+    let event = rows
+        .iter()
+        .find(|row| row["key_hash"] == GOOD_KEY_DIGEST)
+        .expect("fail_open 事件可查");
+    assert_eq!(event["reason"], "budget_source_unavailable");
+    assert!(event["consumed_estimate_millicents"].as_u64().unwrap() > 0);
+    assert!(event["timestamp_ms"].as_i64().unwrap() > 0);
+
+    // limit=1 截断
+    let (status, body) = read_json(get_app(&app, "/admin/quota/failopen?limit=1").await).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["rows"].as_array().expect("rows").len(), 1);
+}

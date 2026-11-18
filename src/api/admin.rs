@@ -285,6 +285,31 @@ pub async fn metrics(State(state): State<Arc<ApiState>>) -> Result<Json<Value>, 
     Ok(Json(value))
 }
 
+/// GET /admin/quota/failopen?limit= — fail_open 放行事件快照（最新在前，
+/// quota-attribution-and-failopen-audit）。limit 缺省 64、上限 4096（超限截
+/// 到 4096——审计面不因滥用参数报错）；零明文（key_hash 为 SHA256 摘要）。
+pub async fn quota_failopen(
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<Value>, FluxweirError> {
+    let limit = params
+        .get("limit")
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(64)
+        .clamp(1, 4096) as usize;
+    let rows: Vec<Value> = crate::middleware::attribution::fail_open_snapshot(limit)
+        .iter()
+        .map(|event| {
+            serde_json::json!({
+                "key_hash": event.key_hash,
+                "reason": event.reason.as_str(),
+                "consumed_estimate_millicents": event.consumed_estimate_millicents,
+                "timestamp_ms": event.timestamp_ms,
+            })
+        })
+        .collect();
+    Ok(Json(serde_json::json!({ "rows": rows })))
+}
+
 /// GET /admin/quota/ledger?key={digest} — 配额账本读侧（quota-aware-routing）：
 /// 逐窗 used/重置时刻/作用域（tenant/global/vendor）。`key` 可选过滤租户
 /// 摘要（脱敏口径：digest 本就是不可逆摘要，无 key 原文）；账本未接线或
