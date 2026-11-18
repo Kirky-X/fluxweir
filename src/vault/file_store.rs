@@ -30,6 +30,8 @@ pub fn home_vault_path() -> Result<PathBuf, VaultError> {
 }
 
 /// 柜内条目：blob 为 `crypto::seal` 产出的 self-contained 密文。
+/// version/superseded 两字段带 serde default——旧 vault.bin 条目缺字段
+/// 落 version=1 / None，无需格式迁移。
 #[derive(Serialize, Deserialize)]
 struct StoredEntry {
     vendor_id: String,
@@ -39,6 +41,14 @@ struct StoredEntry {
     fingerprint: String,
     created_at_ms: i64,
     updated_at_ms: i64,
+    #[serde(default = "default_entry_version")]
+    version: u32,
+    #[serde(default)]
+    superseded_at_ms: Option<i64>,
+}
+
+fn default_entry_version() -> u32 {
+    1
 }
 
 /// 文件柜：整柜常驻内存，每次变更全量落盘（条目量级：个位数到几十条）。
@@ -161,6 +171,8 @@ impl FileKeyStore {
             fingerprint: entry.fingerprint.clone(),
             created_at_ms: entry.created_at_ms,
             updated_at_ms: entry.updated_at_ms,
+            version: entry.version,
+            superseded_at_ms: entry.superseded_at_ms,
         }
     }
 }
@@ -199,6 +211,8 @@ impl KeyStore for FileKeyStore {
                         fingerprint: fingerprint.clone(),
                         created_at_ms: now,
                         updated_at_ms: now,
+                        version: 1,
+                        superseded_at_ms: None,
                     },
                 );
                 id
@@ -360,6 +374,27 @@ mod tests {
         assert_eq!(first.id, second.id);
         assert_eq!(second.label.as_deref(), Some("renamed"));
         assert_eq!(store.list(Some("openai")).await.expect("list").len(), 1);
+    }
+
+    /// T008：旧 vault.bin 条目 JSON（无 version/superseded 字段）反序列化
+    /// → version==1 / superseded==None。
+    #[test]
+    fn legacy_entry_json_defaults_to_active_version_one() {
+        let legacy = serde_json::json!({
+            "vendor_id": "openai",
+            "label": null,
+            "blob": [1, 2, 3],
+            "mask": "sk-***bbbb",
+            "fingerprint": "fedcba9876543210",
+            "created_at_ms": 1,
+            "updated_at_ms": 1
+        });
+        let entry: StoredEntry = serde_json::from_value(legacy).expect("旧条目可反序列化");
+        assert_eq!(entry.version, 1);
+        assert_eq!(entry.superseded_at_ms, None);
+        let record = FileKeyStore::record("legacy-id", &entry);
+        assert_eq!(record.version, 1);
+        assert_eq!(record.superseded_at_ms, None);
     }
 
     /// T005：reveal 成功后审计缓冲含该条记录，字段零明文。

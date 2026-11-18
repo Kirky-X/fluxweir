@@ -34,6 +34,10 @@ impl DbKeyStore {
             fingerprint: row.try_get::<String>("", "fingerprint").map_err(db_err)?,
             created_at_ms: row.try_get::<i64>("", "created_at").map_err(db_err)?,
             updated_at_ms: row.try_get::<i64>("", "updated_at").map_err(db_err)?,
+            version: row.try_get::<i32>("", "version").map_err(db_err)?.max(1) as u32,
+            superseded_at_ms: row
+                .try_get::<Option<i64>>("", "superseded_at_ms")
+                .map_err(db_err)?,
         })
     }
 }
@@ -47,7 +51,8 @@ fn db_err(e: impl std::fmt::Display) -> VaultError {
     }
 }
 
-const SELECT_COLS: &str = "id, vendor_id, label, mask, fingerprint, created_at, updated_at";
+const SELECT_COLS: &str =
+    "id, vendor_id, label, mask, fingerprint, created_at, updated_at, version, superseded_at_ms";
 
 #[async_trait::async_trait]
 impl KeyStore for DbKeyStore {
@@ -74,14 +79,14 @@ impl KeyStore for DbKeyStore {
         let upsert_sql = match backend {
             sea_orm::DatabaseBackend::MySql => {
                 // VALUES() 在 MySQL 8.0.20+ 标记 deprecated 但全版本可用
-                "INSERT INTO vault_keys (id, vendor_id, label, payload, mask, fingerprint, created_at, updated_at) \
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?) \
+                "INSERT INTO vault_keys (id, vendor_id, label, payload, mask, fingerprint, created_at, updated_at, version, superseded_at_ms) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NULL) \
                  ON DUPLICATE KEY UPDATE label = VALUES(label), \
                  mask = VALUES(mask), updated_at = VALUES(updated_at)"
             }
             _ => {
-                "INSERT INTO vault_keys (id, vendor_id, label, payload, mask, fingerprint, created_at, updated_at) \
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?) \
+                "INSERT INTO vault_keys (id, vendor_id, label, payload, mask, fingerprint, created_at, updated_at, version, superseded_at_ms) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NULL) \
                  ON CONFLICT(vendor_id, fingerprint) DO UPDATE SET \
                  label = excluded.label, mask = excluded.mask, \
                  updated_at = excluded.updated_at"
@@ -288,6 +293,44 @@ mod tests {
         b.expect("put b");
         let listed = store.list(Some("openai")).await.expect("list");
         assert_eq!(listed.len(), 1, "并发同键 put 不得产生第二行");
+    }
+
+    /// T008：不含新字段的旧 JSON 反序列化 → version==1 且 superseded==None
+    ///（文件柜旧条目与旧 admin 响应兼容面）。
+    #[test]
+    fn legacy_record_json_defaults_to_active_version_one() {
+        let legacy = serde_json::json!({
+            "id": "legacy-id",
+            "vendor_id": "openai",
+            "label": null,
+            "mask": "sk-***aaaa",
+            "fingerprint": "0123456789abcdef",
+            "created_at_ms": 1,
+            "updated_at_ms": 1
+        });
+        let record: crate::vault::SecretKeyRecord =
+            serde_json::from_value(legacy).expect("旧 JSON 可反序列化");
+        assert_eq!(record.version, 1);
+        assert_eq!(record.superseded_at_ms, None);
+    }
+
+    /// T008：put 新条目落库 version=1 / superseded NULL（经 SELECT_COLS 读回）。
+    #[tokio::test]
+    async fn put_stores_active_version_one() {
+        let store = open_store().await;
+        let record = store
+            .put(
+                "openai",
+                None,
+                &SecretString::new("sk-v10-put-probe-1".into()),
+            )
+            .await
+            .expect("put");
+        assert_eq!(record.version, 1);
+        assert_eq!(record.superseded_at_ms, None);
+        let listed = store.list(Some("openai")).await.expect("list");
+        assert_eq!(listed[0].version, 1);
+        assert_eq!(listed[0].superseded_at_ms, None);
     }
 
     /// T005：reveal 成功后审计缓冲含该条记录，字段零明文（fingerprint

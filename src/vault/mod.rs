@@ -8,7 +8,7 @@
 //! `reveal` 是唯一明文出口，仅供启动装配与 inline 池重注消费。
 
 use secrecy::SecretString;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 mod audit;
 #[cfg(feature = "vendor-management")]
@@ -30,7 +30,7 @@ pub use file_store::{home_vault_path, FileKeyStore};
 pub use master_key::load_or_create_master_key;
 
 /// 柜内条目的对外形态：永不携带明文。
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SecretKeyRecord {
     pub id: String,
     pub vendor_id: String,
@@ -41,6 +41,17 @@ pub struct SecretKeyRecord {
     pub fingerprint: String,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
+    /// 轮换代数（v10 起；put 新条目恒 1，rotate 递增 max+1）。旧 JSON/
+    /// 旧行缺字段落 default 1。
+    #[serde(default = "default_key_version")]
+    pub version: u32,
+    /// 被轮换取代的时间戳（NULL/None = active 条目）。
+    #[serde(default)]
+    pub superseded_at_ms: Option<i64>,
+}
+
+fn default_key_version() -> u32 {
+    1
 }
 
 /// 密钥柜后端抽象：db（默认，`database` feature）与文件（SDK 无库形态）双实现。
