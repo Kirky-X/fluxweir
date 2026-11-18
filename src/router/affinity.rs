@@ -107,7 +107,7 @@ impl AffinityTable {
                         // 但要留可观测线索，不能静默吞掉。
                         tracing::warn!(
                             error = %e,
-                            "affinity value is not valid UTF-8; treating as miss"
+                            "{}", crate::i18n::t("logs-affinity-non-utf8")
                         );
                         None
                     }
@@ -189,7 +189,7 @@ impl AffinityTable {
             Err(e) => {
                 tracing::warn!(
                     error = %e,
-                    "affinity value is not valid UTF-8; treating as miss"
+                    "{}", crate::i18n::t("logs-affinity-non-utf8")
                 );
                 None
             }

@@ -28,7 +28,9 @@ use sdforge::inventory;
 use serde_json::Value;
 use std::path::PathBuf;
 
-use super::{build_report, load_rows, open_pool, ReplayReport, DEFAULT_MAX_ROWS};
+use super::{
+    build_report, load_rows, open_pool, with_report_locale, ReplayReport, DEFAULT_MAX_ROWS,
+};
 
 /// 场景选择。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -202,11 +204,16 @@ async fn run(args: &HandlerArgs) -> Result<String, String> {
     })?;
 
     let report = select_scenarios(build_report(&rows, &catalog, from, to, &config), scenario);
-    Ok(if json {
-        report.render_json()
-    } else {
-        report.render_markdown()
-    })
+    Ok(with_report_locale(
+        crate::i18n::current_locale().language.as_str(),
+        || {
+            if json {
+                report.render_json()
+            } else {
+                report.render_markdown()
+            }
+        },
+    ))
 }
 
 // ---- sdforge CLI 注册（编译期 inventory 登记，无运行时注册调用）----

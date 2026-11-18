@@ -101,7 +101,7 @@ fn grpc_addr(grpc_config: &GrpcConfig) -> Result<SocketAddr, FluxweirError> {
         // 非回环绑定是显式选择，但必须留可观测线索（默认已改为 127.0.0.1）
         tracing::warn!(
             %addr,
-            "gRPC listener binds to a non-loopback address; ensure network exposure is intended"
+            "{}", crate::i18n::t("logs-grpc-non-loopback")
         );
     }
     Ok(addr)

@@ -108,4 +108,40 @@ sdk-json-parse = JSON parse error: { $error }
 sdk-sse-decode = SSE decode error: { $error }
 sdk-input-tokens-model-required = input_tokens requires non-empty `model`
 sdk-input-tokens-input-required = input_tokens requires non-empty `input`
-sdk-extension-key-conflict = vendor extension key `{ $key }` conflicts with a typed request field
+sdk-extension-key-conflict = { $source } key `{ $key }` conflicts with a typed request field
+sdk-invalid-json-response = invalid JSON in response body
+sdk-base-url-not-base = base_url cannot be a base
+sdk-stream-error = stream error
+sdk-error-network = network error: { $error }
+sdk-error-timeout = request timed out: { $error }
+sdk-error-api = api error (status { $status }): { $message }
+sdk-error-protocol = protocol error: { $message }
+sdk-error-stream = stream error: { $message }
+sdk-error-config = config error: { $message }
+console-assets-missing = console assets missing: run `npm run build` in web/console (or rebuild with npm available)
+
+# ---- router/state/stream/grpc: warn/info 级运维日志（走 t()/t_args()）----
+logs-affinity-non-utf8 = affinity value is not valid UTF-8; treating as miss
+logs-state-recovered-from-bak = state file recovered from .bak; primary quarantined
+logs-state-primary-missing-recovered = primary missing; recovered from .bak
+logs-state-bak-write-failed = state .bak write failed
+logs-stream-usage-update-failed = stream usage log update failed
+logs-grpc-non-loopback = gRPC listener binds to a non-loopback address; ensure network exposure is intended
+
+# ---- cost-replay: CLI 报表（Markdown/JSON 双渲染）----
+replay-report-title = # Cost replay report
+replay-report-window = window: { $from }..{ $to } ({ $requests } requests)
+replay-report-pricing-source = pricing source: { $source }
+replay-report-summary-header = | scenario | total (USD) | diff vs baseline (USD) | sessions | requests | cache hits | hit rate | uncataloged |
+replay-report-vendor-header = | scenario | vendor | USD |
+replay-report-model-header = | scenario | model | USD |
+replay-report-by-vendor = ## by vendor
+replay-report-by-model = ## by model
+replay-report-assumptions = ## assumptions
+replay-report-baseline-recomputed = baseline caliber: { $rows } row(s) had no usable logged cost and were recomputed at current catalog prices.
+replay-report-uncataloged = { $rows } row(s) referenced models absent from [[model_catalog]] and fell back to logged cost.
+replay-assumption-1 = NULL-session rows have no cache benefit (each such row is its own session).
+replay-assumption-2 = Upstream cache behavior is approximated by the TTL window (same session + same vendor within TTL).
+replay-assumption-3 = Prices use the current [[model_catalog]]; historical unit prices are not recoverable.
+replay-assumption-4 = On a cache hit the prompt tokens are priced at cache_read_price and the row's cache_write_tokens are charged again at cache_creation_price; a miss prices the prompt tokens at input_price only (no cache_write charge).
+replay-assumption-5 = The logged cache_read_tokens column is not consumed by pricing; only catalog unit prices drive the counterfactual.

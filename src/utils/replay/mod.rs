@@ -35,6 +35,41 @@ pub const ASSUMPTIONS: [&str; 5] = [
     "The logged cache_read_tokens column is not consumed by pricing; only catalog unit prices drive the counterfactual.",
 ];
 
+thread_local! {
+    /// CLI 报表文案 locale（作用域注入；库默认 en 保证报告确定性，
+    /// 不扩展 ReplayReport 结构，测试直接构造仍可编译）。
+    static REPORT_LOCALE: std::cell::RefCell<Option<String>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// 在给定 locale 下渲染报表（CLI 入口调用；作用域结束自动恢复）。
+pub fn with_report_locale<R>(locale: &str, f: impl FnOnce() -> R) -> R {
+    REPORT_LOCALE.with(|slot| {
+        let prev = slot.borrow_mut().replace(locale.to_string());
+        let result = f();
+        *slot.borrow_mut() = prev;
+        result
+    })
+}
+
+/// 报表文案 locale：CLI 注入值优先，库默认 en（确定性）。
+fn report_locale() -> String {
+    REPORT_LOCALE.with(|slot| slot.borrow().clone().unwrap_or_else(|| "en".to_string()))
+}
+
+/// 报表假设披露的本地化形态（ASSUMPTIONS 保留英文原文供契约对照；
+/// 渲染面一律经 FTL，en 值与常量逐字一致）。
+fn localized_assumptions() -> Vec<String> {
+    let locale = report_locale();
+    vec![
+        crate::i18n::t_for_locale(&locale, "replay-assumption-1", &[]),
+        crate::i18n::t_for_locale(&locale, "replay-assumption-2", &[]),
+        crate::i18n::t_for_locale(&locale, "replay-assumption-3", &[]),
+        crate::i18n::t_for_locale(&locale, "replay-assumption-4", &[]),
+        crate::i18n::t_for_locale(&locale, "replay-assumption-5", &[]),
+    ]
+}
+
 /// 单次回放的装载行数上限（默认）。
 ///
 /// 装载按行线性占内存（实测约 1.4 KB/行，release，SQLite）；上限把「整窗
@@ -495,19 +530,43 @@ fn hit_rate(hits: u64, requests: u64) -> String {
 impl ReplayReport {
     /// Markdown 渲染：场景汇总表 + per-vendor/model 分解 + 固定五假设披露。
     pub fn render_markdown(&self) -> String {
+        let locale = report_locale();
         let mut out = String::new();
-        out.push_str("# Cost replay report\n\n");
+        out.push_str(&crate::i18n::t_for_locale(
+            &locale,
+            "replay-report-title",
+            &[],
+        ));
+        out.push_str("\n\n");
         out.push_str(&format!(
-            "window: {}..{} ({} requests)\n\n",
-            self.from, self.to, self.requests
+            "{}\n\n",
+            crate::i18n::t_for_locale(
+                &locale,
+                "replay-report-window",
+                &[
+                    ("from", self.from.to_string()),
+                    ("to", self.to.to_string()),
+                    ("requests", self.requests.to_string()),
+                ]
+            )
         ));
         if !self.source.is_empty() {
-            out.push_str(&format!("pricing source: {}\n\n", md_cell(&self.source)));
+            out.push_str(&format!(
+                "{}\n\n",
+                crate::i18n::t_for_locale(
+                    &locale,
+                    "replay-report-pricing-source",
+                    &[("source", md_cell(&self.source))]
+                )
+            ));
         }
 
-        out.push_str(
-            "| scenario | total (USD) | diff vs baseline (USD) | sessions | requests | cache hits | hit rate | uncataloged |\n",
-        );
+        out.push_str(&crate::i18n::t_for_locale(
+            &locale,
+            "replay-report-summary-header",
+            &[],
+        ));
+        out.push('\n');
         out.push_str("| --- | --- | --- | --- | --- | --- | --- | --- |\n");
         let base = self.baseline.total_micro_usd;
         for s in std::iter::once(&self.baseline).chain(self.scenarios.iter()) {
@@ -524,7 +583,19 @@ impl ReplayReport {
             ));
         }
 
-        out.push_str("\n## by vendor\n\n| scenario | vendor | USD |\n| --- | --- | --- |\n");
+        out.push('\n');
+        out.push_str(&crate::i18n::t_for_locale(
+            &locale,
+            "replay-report-by-vendor",
+            &[],
+        ));
+        out.push_str("\n\n");
+        out.push_str(&crate::i18n::t_for_locale(
+            &locale,
+            "replay-report-vendor-header",
+            &[],
+        ));
+        out.push_str("\n| --- | --- | --- |\n");
         for s in std::iter::once(&self.baseline).chain(self.scenarios.iter()) {
             for (vendor, micro) in &s.by_vendor {
                 out.push_str(&format!(
@@ -536,7 +607,19 @@ impl ReplayReport {
             }
         }
 
-        out.push_str("\n## by model\n\n| scenario | model | USD |\n| --- | --- | --- |\n");
+        out.push('\n');
+        out.push_str(&crate::i18n::t_for_locale(
+            &locale,
+            "replay-report-by-model",
+            &[],
+        ));
+        out.push_str("\n\n");
+        out.push_str(&crate::i18n::t_for_locale(
+            &locale,
+            "replay-report-model-header",
+            &[],
+        ));
+        out.push_str("\n| --- | --- | --- |\n");
         for s in std::iter::once(&self.baseline).chain(self.scenarios.iter()) {
             for (model, micro) in &s.by_model {
                 out.push_str(&format!(
@@ -548,21 +631,35 @@ impl ReplayReport {
             }
         }
 
-        out.push_str("\n## assumptions\n\n");
-        for a in ASSUMPTIONS {
+        out.push('\n');
+        out.push_str(&crate::i18n::t_for_locale(
+            &locale,
+            "replay-report-assumptions",
+            &[],
+        ));
+        out.push_str("\n\n");
+        for a in localized_assumptions() {
             out.push_str(&format!("- {a}\n"));
         }
 
         if self.baseline.recomputed > 0 {
             out.push_str(&format!(
-                "\n> baseline caliber: {} row(s) had no usable logged cost and were recomputed at current catalog prices.\n",
-                self.baseline.recomputed
+                "\n> {}\n",
+                crate::i18n::t_for_locale(
+                    &locale,
+                    "replay-report-baseline-recomputed",
+                    &[("rows", self.baseline.recomputed.to_string())]
+                )
             ));
         }
         if self.baseline.uncataloged > 0 {
             out.push_str(&format!(
-                "\n> {} row(s) referenced models absent from [[model_catalog]] and fell back to logged cost.\n",
-                self.baseline.uncataloged
+                "\n> {}\n",
+                crate::i18n::t_for_locale(
+                    &locale,
+                    "replay-report-uncataloged",
+                    &[("rows", self.baseline.uncataloged.to_string())]
+                )
             ));
         }
         out
@@ -581,7 +678,7 @@ impl ReplayReport {
                 .expect("ScenarioCost is Serialize"),
             "scenarios": serde_json::to_value(&self.scenarios)
                 .expect("Vec<ScenarioCost> is Serialize"),
-            "assumptions": ASSUMPTIONS,
+            "assumptions": localized_assumptions(),
             "baseline_recomputed_rows": self.baseline.recomputed,
             "baseline_uncataloged_rows": self.baseline.uncataloged,
         });

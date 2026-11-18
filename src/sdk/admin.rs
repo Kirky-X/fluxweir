@@ -13,7 +13,7 @@ use crate::sdk::transport::send_with_retry;
 /// 2xx + 非 JSON：协议面故障（如 HTML 错误页），不是网络故障。
 fn non_json_protocol(_e: reqwest::Error) -> crate::sdk::error::FluxweirSdkError {
     crate::sdk::error::FluxweirSdkError::Protocol {
-        message: "invalid JSON in response body".to_string(),
+        message: crate::i18n::t("sdk-invalid-json-response"),
     }
 }
 
@@ -249,7 +249,7 @@ fn admin_model_url(base_url: &url::Url, model_id: &str) -> Result<url::Url, Flux
     let mut url = base_url.clone();
     url.path_segments_mut()
         .map_err(|_| FluxweirSdkError::Config {
-            message: "base_url cannot be a base".into(),
+            message: crate::i18n::t("sdk-base-url-not-base"),
         })?
         .push("admin")
         .push("models")
@@ -354,7 +354,7 @@ impl FluxweirClient {
             self.base_url
                 .join("admin/sessions")
                 .map_err(|e| FluxweirSdkError::Config {
-                    message: format!("invalid URL: {e}"),
+                    message: crate::i18n::t_args("sdk-url-invalid", &[("error", e.to_string())]),
                 })?;
         if let Some(limit) = limit {
             url.query_pairs_mut()
@@ -378,7 +378,7 @@ impl FluxweirClient {
             self.base_url
                 .join("admin/context-stats")
                 .map_err(|e| FluxweirSdkError::Config {
-                    message: format!("invalid URL: {e}"),
+                    message: crate::i18n::t_args("sdk-url-invalid", &[("error", e.to_string())]),
                 })?;
 
         let request = self
@@ -423,7 +423,7 @@ impl FluxweirClient {
             self.base_url
                 .join("admin/quota/ledger")
                 .map_err(|e| FluxweirSdkError::Config {
-                    message: format!("invalid URL: {e}"),
+                    message: crate::i18n::t_args("sdk-url-invalid", &[("error", e.to_string())]),
                 })?;
         if let Some(key) = key {
             url.query_pairs_mut().append_pair("key", key);
@@ -446,7 +446,7 @@ impl FluxweirClient {
             self.base_url
                 .join("admin/vendor-budgets")
                 .map_err(|e| FluxweirSdkError::Config {
-                    message: format!("invalid URL: {e}"),
+                    message: crate::i18n::t_args("sdk-url-invalid", &[("error", e.to_string())]),
                 })?;
 
         let request = self
@@ -471,7 +471,7 @@ impl FluxweirClient {
             self.base_url
                 .join("admin/catalog/sync")
                 .map_err(|e| FluxweirSdkError::Config {
-                    message: format!("invalid URL: {e}"),
+                    message: crate::i18n::t_args("sdk-url-invalid", &[("error", e.to_string())]),
                 })?;
 
         let request = self

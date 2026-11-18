@@ -103,7 +103,7 @@ export default function VendorsPage() {
             <TableHead>{t("vendors.queue")}</TableHead>
             <TableHead>{t("vendors.keyPool")}</TableHead>
             <TableHead>{t("vendors.priority")}</TableHead>
-            <TableHead>API Base</TableHead>
+            <TableHead>{t("vendors.apiBase")}</TableHead>
             <TableHead>{t("vendors.actions")}</TableHead>
           </TableRow>
         </TableHeader>
@@ -152,7 +152,7 @@ export default function VendorsPage() {
         {editing && (
           <form onSubmit={(e) => void doSave(e)} className="space-y-3">
             <label className="block space-y-1">
-              <span className="text-sm text-text-muted">API Base</span>
+              <span className="text-sm text-text-muted">{t("vendors.apiBase")}</span>
               <Input
                 value={editing.api_base}
                 onChange={(e) => patchEditing({ api_base: e.target.value })}

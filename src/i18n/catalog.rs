@@ -159,6 +159,15 @@ pub fn t_args(key: &str, args: &[(&str, String)]) -> String {
     translate(key, args)
 }
 
+/// 指定 locale 翻译（库级 API 默认 en、CLI 层注入用户 locale 的场景）。
+///
+/// 与 [`t_args`] 共用注册表与回退链，仅 locale 来源显式化；键位/实参仍由
+/// 同一套 FTL 守卫覆盖（键必须在 en 登记，en/zh 齐性由 parity 测试断言）。
+pub fn t_for_locale(locale: &str, key: &str, args: &[(&str, String)]) -> String {
+    ensure_registered();
+    sdforge::i18n::translate_for(locale, key, args)
+}
+
 /// 动态键本地化 — 仅供错误载荷锚点路由（键名来自语言中性锚点，
 /// 非字面调用点）。锚点键的存在性由 `error::app` 的契约守卫静态校验。
 pub fn t_dynamic(key: &str, args: &[(&str, String)]) -> String {

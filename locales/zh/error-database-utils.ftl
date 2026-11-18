@@ -108,4 +108,40 @@ sdk-json-parse = JSON 解析错误: { $error }
 sdk-sse-decode = SSE 解码错误: { $error }
 sdk-input-tokens-model-required = input_tokens 需要非空 `model`
 sdk-input-tokens-input-required = input_tokens 需要非空 `input`
-sdk-extension-key-conflict = 厂商扩展键 `{ $key }` 与类型化请求字段冲突
+sdk-extension-key-conflict = { $source } 键 `{ $key }` 与类型化请求字段冲突
+sdk-invalid-json-response = 响应体 JSON 非法
+sdk-base-url-not-base = base_url 不能作为基址
+sdk-stream-error = 流错误
+sdk-error-network = 网络错误：{ $error }
+sdk-error-timeout = 请求超时：{ $error }
+sdk-error-api = API 错误（状态 { $status }）：{ $message }
+sdk-error-protocol = 协议错误：{ $message }
+sdk-error-stream = 流错误：{ $message }
+sdk-error-config = 配置错误：{ $message }
+console-assets-missing = 控制台静态资源缺失：请在 web/console 运行 `npm run build`（或在 npm 可用时重新构建）
+
+# ---- router/state/stream/grpc: warn/info 级运维日志（走 t()/t_args()）----
+logs-affinity-non-utf8 = 亲和值不是合法 UTF-8，按未命中处理
+logs-state-recovered-from-bak = 状态文件已从 .bak 恢复，主文件已隔离
+logs-state-primary-missing-recovered = 主文件缺失，已从 .bak 恢复
+logs-state-bak-write-failed = 状态 .bak 写入失败
+logs-stream-usage-update-failed = 流式用量日志更新失败
+logs-grpc-non-loopback = gRPC 监听器绑定到非回环地址，请确认网络暴露是有意为之
+
+# ---- cost-replay: CLI 报表（Markdown/JSON 双渲染）----
+replay-report-title = # 成本回放报告
+replay-report-window = 时间窗：{ $from }..{ $to }（{ $requests } 个请求）
+replay-report-pricing-source = 计价来源：{ $source }
+replay-report-summary-header = | 场景 | 总额 (USD) | 相对基线差异 (USD) | 会话数 | 请求数 | 缓存命中 | 命中率 | 未计价 |
+replay-report-vendor-header = | 场景 | 厂商 | USD |
+replay-report-model-header = | 场景 | 模型 | USD |
+replay-report-by-vendor = ## 按厂商
+replay-report-by-model = ## 按模型
+replay-report-assumptions = ## 假设
+replay-report-baseline-recomputed = 基线口径：{ $rows } 行没有可用的日志成本，已按当前目录单价重算。
+replay-report-uncataloged = { $rows } 行引用的模型不在 [[model_catalog]] 中，已回退到日志成本。
+replay-assumption-1 = session 为 NULL 的行没有缓存收益（每行自成一个会话）。
+replay-assumption-2 = 上游缓存行为以 TTL 窗口近似（TTL 内同会话 + 同厂商视为命中）。
+replay-assumption-3 = 单价取当前 [[model_catalog]]，历史单价不可还原。
+replay-assumption-4 = 缓存命中时 prompt token 按 cache_read_price 计价，该行 cache_write_tokens 再按 cache_creation_price 计费；未命中时 prompt token 仅按 input_price 计价（不收 cache_write 费用）。
+replay-assumption-5 = 日志中的 cache_read_tokens 列不参与计价，反事实结果仅由目录单价驱动。

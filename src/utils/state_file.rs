@@ -46,7 +46,7 @@ where
                         bad = %bad.display(),
                         quarantined,
                         primary_len = bytes.len(),
-                        "state file recovered from .bak; primary quarantined"
+                        "{}", crate::i18n::t("logs-state-recovered-from-bak")
                     );
                     StateFileOutcome::RecoveredFromBak {
                         bytes: bak_bytes,
@@ -72,7 +72,11 @@ where
             // 连 .bak 也没有 → Missing，调用方自决（vault=空柜首装、config=报错）
             match std::fs::read(&bak) {
                 Ok(bak_bytes) if validator(&bak_bytes) => {
-                    tracing::warn!(bak = %bak.display(), "primary missing; recovered from .bak");
+                    tracing::warn!(
+                        bak = %bak.display(),
+                        "{}",
+                        crate::i18n::t("logs-state-primary-missing-recovered")
+                    );
                     StateFileOutcome::RecoveredFromBak {
                         bytes: bak_bytes,
                         bad_path: path.to_path_buf(),
@@ -104,7 +108,12 @@ pub fn write_backup(path: &Path, bytes: &[u8]) {
     let bak = bak_sibling(path);
     let tmp = bak.with_extension("bak.tmp");
     if let Err(e) = std::fs::write(&tmp, bytes).and_then(|_| std::fs::rename(&tmp, &bak)) {
-        tracing::warn!(bak = %bak.display(), error = %e, "state .bak write failed");
+        tracing::warn!(
+            bak = %bak.display(),
+            error = %e,
+            "{}",
+            crate::i18n::t("logs-state-bak-write-failed")
+        );
     }
 }
 

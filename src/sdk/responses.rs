@@ -20,7 +20,7 @@ use crate::sdk::transport::send_with_retry;
 /// 2xx + 非 JSON：协议面故障（如 HTML 错误页），不是网络故障。
 fn non_json_protocol(_e: reqwest::Error) -> crate::sdk::error::FluxweirSdkError {
     crate::sdk::error::FluxweirSdkError::Protocol {
-        message: "invalid JSON in response body".to_string(),
+        message: crate::i18n::t("sdk-invalid-json-response"),
     }
 }
 

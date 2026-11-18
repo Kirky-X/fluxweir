@@ -175,7 +175,7 @@ impl FluxweirClient {
             // 2xx + 非 JSON 是协议面故障（如 HTML 错误页），不是网络故障
             // 只给固定分类：reqwest Display 可能带调用方自配 URL
             FluxweirSdkError::Protocol {
-                message: "invalid JSON in response body".to_string(),
+                message: crate::i18n::t("sdk-invalid-json-response"),
             }
         })?;
         Ok(embed_resp)

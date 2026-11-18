@@ -343,7 +343,7 @@ impl StreamUsageRecorder {
                     tracing::warn!(
                         request_id = %inner.request_id,
                         error = %e,
-                        "stream usage log update failed"
+                        "{}", crate::i18n::t("logs-stream-usage-update-failed")
                     );
                 }
             }

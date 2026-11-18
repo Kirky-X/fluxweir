@@ -77,7 +77,7 @@ pub enum I18nError {
     },
 }
 
-pub use catalog::{has_key, init, t, t_args, t_dynamic};
+pub use catalog::{has_key, init, t, t_args, t_dynamic, t_for_locale};
 pub use locale::{current_locale, detected_locale};
 
 /// 设置全局 locale 覆盖位，并单向同步 sdforge active locale。

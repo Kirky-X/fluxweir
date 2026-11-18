@@ -366,7 +366,10 @@ fn merge_request_extensions(
             .find(|key| RESERVED_KEYS.contains(&key.as_str()))
         {
             return Err(FluxweirSdkError::Protocol {
-                message: format!("{source} key `{key}` conflicts with a typed request field"),
+                message: crate::i18n::t_args(
+                    "sdk-extension-key-conflict",
+                    &[("source", source.to_string()), ("key", key.clone())],
+                ),
             });
         }
     }
@@ -487,7 +490,7 @@ impl FluxweirClient {
             self.base_url
                 .join("v1/chat/completions")
                 .map_err(|e| FluxweirSdkError::Config {
-                    message: format!("invalid URL: {e}"),
+                    message: crate::i18n::t_args("sdk-url-invalid", &[("error", e.to_string())]),
                 })?;
 
         let request = self
@@ -506,7 +509,7 @@ impl FluxweirClient {
             // 2xx + 非 JSON 是协议面故障（如 HTML 错误页），不是网络故障
             // 只给固定分类：reqwest Display 可能带调用方自配 URL
             FluxweirSdkError::Protocol {
-                message: "invalid JSON in response body".to_string(),
+                message: crate::i18n::t("sdk-invalid-json-response"),
             }
         })?;
         ChatResponse::from_wire(&v)
@@ -533,7 +536,7 @@ impl FluxweirClient {
             self.base_url
                 .join("v1/chat/completions")
                 .map_err(|e| FluxweirSdkError::Config {
-                    message: format!("invalid URL: {e}"),
+                    message: crate::i18n::t_args("sdk-url-invalid", &[("error", e.to_string())]),
                 })?;
 
         let request = self

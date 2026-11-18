@@ -124,7 +124,7 @@ pub(crate) fn stream_error_message(data: &str) -> String {
     }
     let raw = data.trim();
     if raw.is_empty() {
-        "stream error".to_string()
+        crate::i18n::t("sdk-stream-error")
     } else {
         raw.chars()
             .take(crate::sdk::error::MAX_ERROR_MESSAGE_CHARS)
@@ -197,12 +197,15 @@ impl ChatStream {
                             }))
                         }
                         Err(e) => Some(Err(FluxweirSdkError::Stream {
-                            message: format!("JSON parse error: {e}"),
+                            message: crate::i18n::t_args(
+                                "sdk-json-parse",
+                                &[("error", e.to_string())],
+                            ),
                         })),
                     }
                 }
                 Err(e) => Some(Err(FluxweirSdkError::Stream {
-                    message: format!("SSE decode error: {e}"),
+                    message: crate::i18n::t_args("sdk-sse-decode", &[("error", e.to_string())]),
                 })),
             }
         });

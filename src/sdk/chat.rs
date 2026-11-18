@@ -521,7 +521,10 @@ impl ChatRequest {
         let key = key.into();
         if RESERVED_KEYS.contains(&key.as_str()) {
             return Err(FluxweirSdkError::Protocol {
-                message: crate::i18n::t_args("sdk-extension-key-conflict", &[("key", key)]),
+                message: crate::i18n::t_args(
+                    "sdk-extension-key-conflict",
+                    &[("source", "vendor extension".to_string()), ("key", key)],
+                ),
             });
         }
         self.vendor_extensions.insert(key, value);

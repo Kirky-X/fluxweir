@@ -14,30 +14,60 @@
 use std::time::Duration;
 
 use reqwest::header::HeaderMap;
-use thiserror::Error;
 
 use crate::sdk::retry::parse_retry_after;
 
 /// SDK 错误。
-#[derive(Error, Debug)]
+///
+/// Display 即终态用户消息（无服务端双层轨道），前缀经 FTL 本地化；
+/// 各变体 message 字段在构造点本地化，Display 只做模板渲染。
+#[derive(Debug)]
 pub enum FluxweirSdkError {
-    #[error("network error: {source}")]
     Network { source: reqwest::Error },
-
-    #[error("request timed out: {source}")]
     Timeout { source: reqwest::Error },
-
-    #[error("api error (status {}): {}", .0.status, .0.message)]
     Api(ApiError),
-
-    #[error("protocol error: {message}")]
     Protocol { message: String },
-
-    #[error("stream error: {message}")]
     Stream { message: String },
-
-    #[error("config error: {message}")]
     Config { message: String },
+}
+
+impl std::fmt::Display for FluxweirSdkError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = match self {
+            Self::Network { source } => {
+                crate::i18n::t_args("sdk-error-network", &[("error", source.to_string())])
+            }
+            Self::Timeout { source } => {
+                crate::i18n::t_args("sdk-error-timeout", &[("error", source.to_string())])
+            }
+            Self::Api(api) => crate::i18n::t_args(
+                "sdk-error-api",
+                &[
+                    ("status", api.status.to_string()),
+                    ("message", api.message.clone()),
+                ],
+            ),
+            Self::Protocol { message } => {
+                crate::i18n::t_args("sdk-error-protocol", &[("message", message.clone())])
+            }
+            Self::Stream { message } => {
+                crate::i18n::t_args("sdk-error-stream", &[("message", message.clone())])
+            }
+            Self::Config { message } => {
+                crate::i18n::t_args("sdk-error-config", &[("message", message.clone())])
+            }
+        };
+        f.write_str(&text)
+    }
+}
+
+impl std::error::Error for FluxweirSdkError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Network { source } | Self::Timeout { source } => Some(source),
+            _ => None,
+        }
+    }
 }
 
 impl From<reqwest::Error> for FluxweirSdkError {
@@ -135,7 +165,13 @@ impl ApiError {
 
 impl std::fmt::Display for ApiError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "api error (status {}): {}", self.status, self.message)
+        f.write_str(&crate::i18n::t_args(
+            "sdk-error-api",
+            &[
+                ("status", self.status.to_string()),
+                ("message", self.message.clone()),
+            ],
+        ))
     }
 }
 

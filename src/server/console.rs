@@ -75,7 +75,7 @@ fn serve(path: &str, req_headers: &HeaderMap) -> Response {
             None => {
                 return (
                     StatusCode::NOT_FOUND,
-                    "console assets missing: run `npm run build` in web/console (or rebuild with npm available)",
+                    crate::i18n::t("console-assets-missing"),
                 )
                     .into_response()
             }
