@@ -182,6 +182,43 @@ pub fn attribution_snapshot(limit: usize, request_id: Option<&str>) -> Vec<Arc<Q
         .collect()
 }
 
+/// vendor_type → 出站协议（与 config.example.toml `type_` 取值同口径）。
+/// 未知值回落到 OpenAI 兼容面（rerank 不在结算面）。
+pub fn protocol_of_vendor_type(vendor_type: &str) -> Protocol {
+    match vendor_type {
+        "anthropic" => Protocol::Anthropic,
+        "gemini" => Protocol::Gemini,
+        _ => Protocol::OpenAI,
+    }
+}
+
+// 当前请求的预留痕迹：reserve 中间件在 Admitted 分支的 `next.run` 作用域内
+// 写入；settle 钩同任务读回。无作用域（如直接单测 settle）→ None，不伪造。
+tokio::task_local! {
+    static RESERVATION: ReservationTrace;
+}
+
+/// 读当前请求预留痕迹（settle 钩用；不可得返回 None）。
+pub fn current_reservation() -> Option<ReservationTrace> {
+    RESERVATION.try_with(|trace| *trace).ok()
+}
+
+/// 在预留痕迹作用域内跑请求后续链（reserve 中间件调用）。
+pub async fn with_reservation<F: std::future::Future>(
+    trace: ReservationTrace,
+    fut: F,
+) -> F::Output {
+    RESERVATION.scope(trace, fut).await
+}
+
+/// 当前请求 id：sdforge context 中间件（最外层）已挂 task_local；无上下文
+/// （如直接单测）回落到稳定占位串，归因记录不缺 request_id 字段。
+pub fn current_request_id() -> String {
+    sdforge::context::current()
+        .map(|ctx| ctx.request_id().to_string())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
 #[cfg(test)]
 mod attribution_tests {
     use super::*;
@@ -230,5 +267,29 @@ mod attribution_tests {
             all.iter().any(|a| a.request_id == "req-t005-beta"),
             "无过滤时含 beta"
         );
+    }
+
+    /// vendor_type 四取值映射：anthropic/gemini 直连，openai 与未知值兜底 OpenAI（T008）。
+    #[test]
+    fn protocol_of_vendor_type_maps_known_and_unknown() {
+        assert_eq!(protocol_of_vendor_type("openai"), Protocol::OpenAI);
+        assert_eq!(protocol_of_vendor_type("anthropic"), Protocol::Anthropic);
+        assert_eq!(protocol_of_vendor_type("gemini"), Protocol::Gemini);
+        // 未知值（含 rerank/空串）回落 OpenAI 兼容面
+        assert_eq!(protocol_of_vendor_type("rerank"), Protocol::OpenAI);
+        assert_eq!(protocol_of_vendor_type(""), Protocol::OpenAI);
+    }
+
+    /// 预留痕迹 task_local：作用域内可读回，作用域外为 None（T009 支撑）。
+    #[tokio::test]
+    async fn reservation_task_local_scoped() {
+        let trace = ReservationTrace {
+            est_millicents: 100,
+            reserved_at_ms: 200,
+        };
+        assert!(current_reservation().is_none(), "作用域外无痕迹");
+        let inside = with_reservation(trace, async { current_reservation() }).await;
+        assert_eq!(inside, Some(trace));
+        assert!(current_reservation().is_none(), "作用域结束即失效");
     }
 }
