@@ -477,6 +477,10 @@ path = "tests/routing/routing_benchmark_test.rs"
 [[test]]
 name = "cache_cost_test"
 path = "tests/routing/cache_cost_test.rs"
+[[test]]
+name = "audit_bus"
+path = "tests/audit_bus/main.rs"
+required-features = ["logging"]
 
 # Bench 注册表（autobenches = false）：name = 文件 stem；各基准均 harness = false（criterion 自带 harness）
 
