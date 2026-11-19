@@ -230,3 +230,5 @@ api-openapi-admin-model-delete-description = 删除目录条目
 api-openapi-health-description = forge 注册的存活探针端点
 api-openapi-readyz-description = 聚合组件就绪度（DB、缓存、厂商）
 api-openapi-metrics-description = Prometheus 文本暴露格式的 RED 指标
+admin-quota-forecast-key-hash-invalid = key_hash 须为 64 位十六进制摘要
+admin-quota-forecast-horizon-invalid = horizon_hours 须在 1..=720 范围内

@@ -230,3 +230,5 @@ api-openapi-admin-model-delete-description = Remove a catalog entry.
 api-openapi-health-description = Forge-registered liveness endpoint.
 api-openapi-readyz-description = Aggregated component readiness (DB, cache, vendors).
 api-openapi-metrics-description = RED metrics in Prometheus text exposition format.
+admin-quota-forecast-key-hash-invalid = key_hash must be a 64-character hex digest
+admin-quota-forecast-horizon-invalid = horizon_hours must be within 1..=720
