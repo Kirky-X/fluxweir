@@ -183,6 +183,44 @@ Example output (full mode, `full,db-sqlite` build, master key via env — `--sec
 
 Doctor is a static check: it reflects this build's feature face and this config snapshot; it does not prove runtime behavior (e.g. that the master key actually decrypts existing ciphertext). The doctor subcommand is always available in `full` builds (the bin's `required-features`); library consumers with custom feature sets use the item table above for self-audit.
 
+### 🧭 Route preview (`fluxweir route-explain`)
+
+`fluxweir route-explain` forwards to the running gateway's `POST /admin/route/explain` and prints each candidate as an aligned text table. It performs no local routing computation — the gateway must be up.
+
+| Flag | Meaning |
+|---|---|
+| `--model <id>` | Required. Model id to explain. |
+| `--gateway <url>` | Gateway base URL; default `http://127.0.0.1:8080`. |
+| `--admin-key <token>` | Optional `x-api-key` header value (admin auth). |
+| `--session-id <id>` | Optional session id for affinity-aware preview. |
+
+```bash
+cargo run -p fluxweir --features full,db-sqlite -- route-explain \
+  --model gpt-4o --gateway http://127.0.0.1:8080 --admin-key "$ADMIN_KEY"
+```
+
+Example output:
+
+```
+VENDOR               DECISION   REASON_CODE              WEIGHT
+vendor-a             eligible   ok                       1.5
+    factors total: 3.5
+    selection: primary
+vendor-b             excluded   no_budget                0
+```
+
+Exit codes: `0` success · `1` gateway unreachable / HTTP error (stderr says "start the gateway or pass --gateway") · `2` usage error.
+
+### 📡 Audit event channels
+
+Security audit events (vault reveal, quota fail-open, quota attribution) are emitted with target `fluxweir::audit` and reach three channels:
+
+- **In-memory ring buffer** — read by the admin endpoints `GET /admin/quota/failopen` and `GET /admin/quota/attribution` (bounded, latest-first, zero plaintext key material).
+- **Tracing → log pipeline** — structured events are bridged by `tracing-log` into the unified inklog bus for on-disk archival (`logging` feature).
+- **stdout rendering** — CLI/doctor output surfaces posture and diagnostics in text form.
+
+`tests/audit_bus` pins the tracing→bus path: emitting a reveal and a fail-open event yields two capturable `fluxweir::audit` events with intact `kind` and key fields.
+
 ---
 
 ## ⚙️ Configuration Overview

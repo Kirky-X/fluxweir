@@ -181,6 +181,44 @@ cargo run -p fluxweir --features full,db-sqlite -- doctor --security --config co
 
 doctor 是静态检查：反映本次构建的 feature 编译面与这份配置快照，不证明运行期行为（如主钥确实可解密既有密文）。doctor 子命令在 `full` 构建内恒可用（bin 的 `required-features`）；库形态自选 feature 组合的用户按上表自查。
 
+### 🧭 路由预演（`fluxweir route-explain`）
+
+`fluxweir route-explain` 转发到运行中网关的 `POST /admin/route/explain`，把每个候选打印为对齐文本表。它不做本地路由计算——网关必须已启动。
+
+| 参数 | 含义 |
+|---|---|
+| `--model <id>` | 必填。要解释的模型 id。 |
+| `--gateway <url>` | 网关基址；缺省 `http://127.0.0.1:8080`。 |
+| `--admin-key <token>` | 可选 `x-api-key` 头值（admin 认证）。 |
+| `--session-id <id>` | 可选会话 id，用于带亲和的预演。 |
+
+```bash
+cargo run -p fluxweir --features full,db-sqlite -- route-explain \
+  --model gpt-4o --gateway http://127.0.0.1:8080 --admin-key "$ADMIN_KEY"
+```
+
+示例输出：
+
+```
+VENDOR               DECISION   REASON_CODE              WEIGHT
+vendor-a             eligible   ok                       1.5
+    factors total: 3.5
+    selection: primary
+vendor-b             excluded   no_budget                0
+```
+
+退出码：`0` 成功 · `1` 网关不可达 / HTTP 错误（stderr 提示"start the gateway or pass --gateway"）· `2` 用法错误。
+
+### 📡 审计事件三通道
+
+安全审计事件（vault reveal、quota fail-open、quota attribution）以 target=`fluxweir::audit` 发出，抵达三个通道：
+
+- **内存环形缓冲**——由 admin 端点 `GET /admin/quota/failopen` 与 `GET /admin/quota/attribution` 读取（有界、最新在前、零明文密钥）。
+- **Tracing → 日志管道**——结构化事件经 `tracing-log` 桥并入统一 inklog 总落库（`logging` feature）。
+- **stdout 渲染**——CLI/doctor 输出以文本呈现姿态与诊断。
+
+`tests/audit_bus` 钉住 tracing→总线路径：发出一条 reveal 与一条 fail-open 事件后，可捕获两条 `fluxweir::audit` 事件，且 `kind` 与 key 字段完整。
+
 ---
 
 ## ⚙️ 配置概览
