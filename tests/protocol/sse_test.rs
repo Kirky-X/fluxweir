@@ -644,8 +644,9 @@ mod sdk_client_coverage {
         let err = client.chat(&ChatRequest::new("m", "hi")).await.unwrap_err();
         match err {
             FluxweirSdkError::Config { message } => {
+                // locale-neutral：i18n 文案中英双形态均视为有效断言
                 assert!(
-                    message.contains("invalid URL"),
+                    message.contains("invalid URL") || message.contains("URL 非法"),
                     "须指明 URL 拼接失败: {message}"
                 );
             }
