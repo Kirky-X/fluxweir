@@ -664,6 +664,9 @@ pub(crate) async fn assemble_with_database(
     crate::api::init_global_state(api_state.clone());
     tracing::info!("{}", t("main-global-state-initialized"));
 
+    // fail_open 启动姿态提示（quota-attribution-and-failopen-audit T012）。
+    warn_fail_open_rules(&config_manager.read());
+
     // 会话粘性启动恢复（`[routing.affinity]` 为 auto/turn 时）：把未过期的
     // 粘性按剩余 TTL 灌回内存亲和表，避免重启后刚建好的前缀缓存作废。
     {
@@ -962,6 +965,20 @@ async fn restore_cost_tracker(
     }
 }
 
+/// fail_open 启动姿态提示（T012）：配置 fail_open=true 的 key 预算规则逐条
+/// 告警，key 摘要取前 8 字符（非明文，运维可辨识即可）。
+fn warn_fail_open_rules(config: &crate::config::Config) {
+    for rule in &config.key_budgets.rules {
+        if rule.fail_open {
+            let key_prefix: String = rule.api_key_hash.chars().take(8).collect();
+            tracing::warn!(
+                "{}",
+                t_args("log-key-budget-fail-open-enabled", &[("key", key_prefix)])
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1194,5 +1211,54 @@ mod tests {
         // flush/shutdown 委托路径：RecordingSink 实现体此前从未被驱动
         futures::executor::block_on(gate_sink.flush()).expect("flush 委托");
         futures::executor::block_on(gate_sink.shutdown()).expect("shutdown 委托");
+    }
+
+    /// fail_open 启动姿态提示（T012）：含 fail_open=true 规则的配置装配时
+    /// 逐条 warn，fail_closed 规则不告警；key 摘要只露前 8 字符。
+    #[test]
+    fn warn_fail_open_rules_emits_for_fail_open_only() {
+        use std::sync::Mutex;
+
+        struct MsgExtractor(String);
+        impl tracing::field::Visit for MsgExtractor {
+            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+                if field.name() == "message" {
+                    self.0 = format!("{value:?}");
+                }
+            }
+        }
+
+        struct Capture(Arc<Mutex<Vec<String>>>);
+        impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Capture {
+            fn on_event(
+                &self,
+                event: &tracing::Event<'_>,
+                _ctx: tracing_subscriber::layer::Context<'_, S>,
+            ) {
+                if *event.metadata().level() != tracing::Level::WARN {
+                    return;
+                }
+                let mut extractor = MsgExtractor(String::new());
+                event.record(&mut extractor);
+                self.0.lock().expect("not poisoned").push(extractor.0);
+            }
+        }
+
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let subscriber = tracing_subscriber::registry().with(Capture(captured.clone()));
+        // 低熵占位摘要（64 hex，避免 detect-secrets 误报；测试只用其前 8 字符）
+        let full_hash = "1111111111111111111111111111111111111111111111111111111111111111";
+        let toml = format!(
+            "vendors = []\n[server]\nhost = \"127.0.0.1\"\nport = 8080\n\n[database]\npath = \":memory:\"\n\n[[key_budgets.rules]]\napi_key_hash = \"{full_hash}\"\ncost_limit_millicents = 1000\nwindow = \"daily\"\nfail_open = true\n\n[[key_budgets.rules]]\napi_key_hash = \"1111111111111111111111111111111111111111111111111111111111111111\"\ncost_limit_millicents = 1000\nwindow = \"daily\"\nfail_open = false\n"
+        );
+        let config: crate::config::Config =
+            crate::config::parse_config_content(std::path::Path::new("memory.toml"), &toml)
+                .expect("配置解析");
+        tracing::subscriber::with_default(subscriber, || warn_fail_open_rules(&config));
+
+        let msgs = captured.lock().expect("not poisoned");
+        assert_eq!(msgs.len(), 1, "仅 fail_open=true 规则告警");
+        assert!(msgs[0].contains("11111111"), "key 摘要前 8 字符可见");
+        assert!(!msgs[0].contains(full_hash), "完整摘要不泄漏");
     }
 }

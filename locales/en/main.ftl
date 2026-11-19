@@ -85,3 +85,4 @@ log-session-key-truncated = session key header exceeds { $max } bytes; truncated
 log-stream-usage-skip-no-runtime = stream usage settlement skipped: no tokio runtime
 log-linucb-diag-fallback = linucb arm matrix singular/non-finite; diagonal approximation engaged
 log-sla-v-no-pricing = [routing].sla_v>0 but no candidate has a [[pricing]] entry; cost term neutralized to 0 (pure virtual-queue mode)
+log-key-budget-fail-open-enabled = gateway key budget rule { $key } has fail_open=true: requests will be admitted when the budget is exhausted

@@ -85,3 +85,4 @@ log-session-key-truncated = 会话键头超过 { $max } 字节，已截断到 { 
 log-stream-usage-skip-no-runtime = 流式用量结算跳过：无 tokio 运行时
 log-linucb-diag-fallback = LinUCB 臂矩阵奇异/非有限，已切换对角近似
 log-sla-v-no-pricing = [routing].sla_v>0 但没有候选带 [[pricing]] 条目；成本项归零（纯虚拟队列模式）
+log-key-budget-fail-open-enabled = 网关关键预算规则 { $key } 配置 fail_open=true：预算耗尽时请求将放行
