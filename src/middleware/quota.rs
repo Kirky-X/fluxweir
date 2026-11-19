@@ -1607,12 +1607,20 @@ pub async fn quota_middleware(
             }
         }
     }
-    // 预扣成功：body 原样重装交 handler。
-    next.run(Request::from_parts(
+    // 预扣成功：body 原样重装交 handler。归因预留痕迹既写 extensions（T006）
+    // 也经 task_local 透传给同任务的结算钩（T009）；无预留则直接透传。
+    let reservation = parts
+        .extensions
+        .get::<crate::middleware::attribution::ReservationTrace>()
+        .copied();
+    let fut = next.run(Request::from_parts(
         parts,
         axum::body::Body::from(body_bytes),
-    ))
-    .await
+    ));
+    match reservation {
+        Some(trace) => crate::middleware::attribution::with_reservation(trace, fut).await,
+        None => fut.await,
+    }
 }
 
 /// 非流式回补钩（响应后）：有 usage 才结算（无 usage 保持预扣）。
@@ -1627,7 +1635,7 @@ pub fn settle_nonstream(
     vendor_type: &str,
     vendor_id: &str,
     metrics: Option<&std::sync::Arc<crate::utils::metrics::GlobalMetrics>>,
-    _inbound: crate::protocol::Protocol,
+    inbound: crate::protocol::Protocol,
 ) {
     // O2 命中率观测：厂商维度缓存 token 记账（先于 quota 门控——无限额
     // 租户同样计入，避免 cache_hit_ratio 系统性失真）
@@ -1697,6 +1705,17 @@ pub fn settle_nonstream(
             actual_cost,
         );
     }
+    // 全链路归因（T009）：结算完成后落一条五段记录。reservation 从请求
+    // task_local 读回（不可达 → None，不伪造）。
+    crate::middleware::attribution::finish_attribution(
+        vendor_id,
+        model,
+        inbound,
+        vendor_type,
+        crate::middleware::attribution::current_reservation(),
+        actual_cost,
+        tenant,
+    );
 }
 
 /// 缓存 HIT 结算：命中无上游往返、实际用量为 0，以 0 结算回补预扣；
@@ -1808,7 +1827,7 @@ impl SettlementCtx {
 pub fn settle_stream<S>(
     stream: S,
     ctx: Option<SettlementCtx>,
-    _inbound: crate::protocol::Protocol,
+    inbound: crate::protocol::Protocol,
 ) -> impl futures::Stream<Item = Result<crate::protocol::StreamChunk, crate::error::GateError>>
 where
     S: futures::Stream<Item = Result<crate::protocol::StreamChunk, crate::error::GateError>>
@@ -1889,6 +1908,17 @@ where
                     actual_cost,
                 );
             }
+            // 流式归因（T009/T010）：流末实际结算值入账。响应体流在 next.run
+            // 作用域外被轮询，预留痕迹 task_local 不可达 → None（不伪造）。
+            crate::middleware::attribution::finish_attribution(
+                &ctx.vendor_id,
+                &ctx.model,
+                inbound,
+                &ctx.vendor_type,
+                crate::middleware::attribution::current_reservation(),
+                actual_cost,
+                &ctx.tenant,
+            );
         }
     }
 }
@@ -3825,6 +3855,144 @@ mod tests {
             "extensions 内 est 与 reserve 入参一致（占用于 reserve 后即 est）"
         );
         assert!(trace.reserved_at_ms > 0, "预留时间戳有效");
+    }
+
+    /// reserve→settle_nonstream 全链路：归因快照含完整五段记录（T009）。
+    /// 用独立 request_id（sdforge context 注入）过滤，避免全局缓冲串扰。
+    #[tokio::test]
+    async fn attribution_nonstream_chain_records_complete_segments() {
+        use tower::ServiceExt as _;
+
+        let request_id = "req-t009-nonstream-chain";
+        let vendor = "vendor-t009";
+        let model = "m"; // pricing() 中登记的模型，保证实际成本 > 0
+
+        // handler 在 with_reservation 作用域内调 settle_nonstream，使预留痕迹可读回。
+        let quota = Arc::new(QuotaState::new());
+        let gate = middleware_gate(
+            key_budget_config(1_000_000, false),
+            Some(quota.clone()),
+            None,
+        );
+        let config = Arc::new(ConfigManager::new(key_budget_config(1_000_000, false)));
+        let router = axum::Router::new()
+            .route(
+                "/v1/chat/completions",
+                axum::routing::post(move || {
+                    let config = config.clone();
+                    let quota = quota.clone();
+                    async move {
+                        let body = serde_json::json!({ "model": model });
+                        let response = serde_json::json!({
+                            "usage": {"prompt_tokens": 50, "completion_tokens": 20}
+                        });
+                        settle_nonstream(
+                            &config,
+                            Some(&quota),
+                            &anonymous_tenant(),
+                            &body,
+                            &response,
+                            "openai",
+                            vendor,
+                            None,
+                            crate::protocol::Protocol::OpenAI,
+                        );
+                        "ok"
+                    }
+                }),
+            )
+            .layer(axum::middleware::from_fn_with_state(gate, quota_middleware));
+
+        let ctx = sdforge::context::RequestContext::with_ids(
+            request_id.to_string(),
+            "trace-t009".to_string(),
+        );
+        sdforge::context::scope(ctx, async {
+            let body = serde_json::to_vec(&chat_body("hello!", 10)).expect("serialize");
+            let response = router
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method("POST")
+                        .uri("/v1/chat/completions")
+                        .header("content-type", "application/json")
+                        .body(axum::body::Body::from(body))
+                        .expect("request"),
+                )
+                .await
+                .expect("router response");
+            assert_eq!(response.status(), axum::http::StatusCode::OK);
+        })
+        .await;
+
+        let snapshot = crate::middleware::attribution::attribution_snapshot(256, Some(request_id));
+        let record = snapshot.first().expect("归因记录已落缓冲");
+        assert_eq!(record.request_id, request_id);
+        assert_eq!(record.route.selected_vendor, vendor);
+        assert_eq!(record.route.selected_model, model);
+        assert_eq!(record.route.selection_tier, None);
+        assert_eq!(
+            record.protocol_hop.inbound,
+            crate::protocol::Protocol::OpenAI
+        );
+        assert_eq!(
+            record.protocol_hop.outbound,
+            crate::protocol::Protocol::OpenAI
+        );
+        assert!(record.reservation.is_some(), "reserve 痕迹可读回");
+        let settlement = record.settlement.as_ref().expect("结算段存在");
+        assert!(settlement.actual_millicents > 0);
+        assert_eq!(settlement.key_hash, anonymous_tenant());
+        assert!(record.finalized_at_ms > 0);
+    }
+
+    /// 流式归因：settle_stream 流末按实际结算值记 settlement；无预留作用域
+    /// 时 reservation 为 None 且记录仍产生（不伪造）（T010）。
+    #[tokio::test]
+    async fn attribution_stream_records_settlement_without_reservation() {
+        use futures::StreamExt as _;
+
+        let request_id = "req-t010-stream";
+        let config = Arc::new(ConfigManager::new(key_budget_config(1_000_000, false)));
+        let quota = Arc::new(QuotaState::new());
+        let body = chat_body("hello!", 10);
+        let ctx = crate::middleware::quota::SettlementCtx::for_request(
+            &config,
+            Some(&quota),
+            &anonymous_tenant(),
+            &body,
+            "openai",
+            "vendor-t010",
+            None,
+        )
+        .expect("key 预算在位必须构建上下文");
+
+        let chunks = vec![Ok(crate::protocol::StreamChunk::Usage {
+            prompt_tokens: 30,
+            completion_tokens: 10,
+            total_tokens: 40,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+            cache_creation_1h_tokens: 0,
+            finish_reason: None,
+        })];
+        let stream = futures::stream::iter(chunks);
+        let mut attributed = Box::pin(crate::middleware::quota::settle_stream(
+            stream,
+            Some(ctx),
+            crate::protocol::Protocol::OpenAI,
+        ));
+        while attributed.next().await.is_some() {}
+
+        let snap = crate::middleware::attribution::attribution_snapshot(256, None);
+        let record = snap
+            .iter()
+            .find(|r| r.route.selected_vendor == "vendor-t010")
+            .expect("流式归因记录已落缓冲");
+        assert_eq!(record.route.selected_model, "m");
+        assert!(record.reservation.is_none(), "无预留作用域 → None");
+        let settlement = record.settlement.as_ref().expect("结算段存在");
+        assert!(settlement.actual_millicents > 0, "流末实际结算值入账");
+        let _ = request_id;
     }
 
     /// key 预算：预算内放行并落预留；超额 429。

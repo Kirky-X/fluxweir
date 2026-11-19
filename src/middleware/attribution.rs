@@ -192,6 +192,41 @@ pub fn protocol_of_vendor_type(vendor_type: &str) -> Protocol {
     }
 }
 
+/// 结算钩收尾：组装五段归因并落缓冲（T009）。`selection_tier` 未透传恒 None；
+/// `reservation` 从请求 task_local 读（不可达 → None，不伪造）；`settlement`
+/// 恒 Some（本函数只在真实结算完成后调用）。
+#[allow(clippy::too_many_arguments)]
+pub fn finish_attribution(
+    vendor_id: &str,
+    model: &str,
+    inbound: Protocol,
+    vendor_type: &str,
+    reservation: Option<ReservationTrace>,
+    actual_millicents: u64,
+    key_hash: &str,
+) {
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    record_attribution(QuotaAttribution {
+        request_id: current_request_id(),
+        route: RouteSnapshot {
+            selected_vendor: vendor_id.to_string(),
+            selected_model: model.to_string(),
+            selection_tier: None,
+        },
+        protocol_hop: ProtocolHop {
+            inbound,
+            outbound: protocol_of_vendor_type(vendor_type),
+        },
+        reservation,
+        settlement: Some(SettlementRecord {
+            actual_millicents,
+            settled_at_ms: now_ms,
+            key_hash: key_hash.to_string(),
+        }),
+        finalized_at_ms: now_ms,
+    });
+}
+
 // 当前请求的预留痕迹：reserve 中间件在 Admitted 分支的 `next.run` 作用域内
 // 写入；settle 钩同任务读回。无作用域（如直接单测 settle）→ None，不伪造。
 tokio::task_local! {
