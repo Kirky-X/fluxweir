@@ -341,6 +341,8 @@ impl KeyBudgetLedger {
             cost_limit: limit,
             reset_secs: (period.reset_at(start, 0).saturating_sub(now)).max(1) as u64,
             window: name,
+            // now / start 均为 Unix 秒；窗首秒 elapsed=0 → forecast rate=0。
+            elapsed_secs: now.saturating_sub(start) as u64,
         })
     }
 

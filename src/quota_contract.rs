@@ -56,6 +56,52 @@ pub struct VendorBudgetView {
     pub not_started: bool,
 }
 
+/// 预测时域：小时粒度（与 admin 查询参数 horizon_hours 对齐）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ForecastHorizon {
+    pub hours: u32,
+}
+
+/// 预算耗尽预测（成本维确定性线性外推，零隐藏 IO）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BudgetForecast {
+    /// 每 h 消耗速率（millicents/h）；elapsed=0 → 0.0。
+    pub burn_rate_millicents_per_hour: f64,
+    /// 预计耗尽还需秒数；余量 ≤0 或速率=0 → None。
+    pub projected_depletion_secs: Option<u64>,
+    /// 耗尽时点是否落在给定时域内。
+    pub within_horizon: bool,
+}
+
+/// 成本维线性外推共享口径：rate = cost_used / elapsed_hours（elapsed=0 → 0）；
+/// depletion = (cost_limit - cost_used) / rate_per_sec（余量 ≤0 或 rate=0 → None）。
+/// 纯函数，供两类 view 复用（契约与 admin 面口径一致）。
+fn budget_forecast(
+    cost_used: u64,
+    cost_limit: u64,
+    elapsed_secs: u64,
+    horizon: &ForecastHorizon,
+) -> BudgetForecast {
+    let rate = if elapsed_secs == 0 {
+        0.0
+    } else {
+        cost_used as f64 * 3600.0 / elapsed_secs as f64
+    };
+    let remaining = cost_limit.saturating_sub(cost_used);
+    let depletion = if rate <= 0.0 || remaining == 0 {
+        None
+    } else {
+        Some((remaining as f64 / (rate / 3600.0)).round() as u64)
+    };
+    let horizon_secs = (horizon.hours as u64).saturating_mul(3600);
+    let within_horizon = depletion.is_some_and(|secs| secs <= horizon_secs);
+    BudgetForecast {
+        burn_rate_millicents_per_hour: rate,
+        projected_depletion_secs: depletion,
+        within_horizon,
+    }
+}
+
 impl VendorBudgetView {
     /// 预算耗尽：任一已判维度 used ≥ limit（摘除判据）
     pub fn depleted(&self) -> bool {
@@ -108,6 +154,11 @@ impl VendorBudgetView {
         }
         remaining
     }
+
+    /// 成本维耗尽预测：纯函数线性外推，与 pace_ratio 同约束（零隐藏 IO）。
+    pub fn forecast(&self, horizon: &ForecastHorizon) -> BudgetForecast {
+        budget_forecast(self.cost_used, self.cost_limit, self.elapsed_secs, horizon)
+    }
 }
 
 /// 预算读侧端口：router 只依赖本 trait，不依赖记账实现。
@@ -143,6 +194,15 @@ pub struct KeyBudgetView {
     pub reset_secs: u64,
     /// 窗名：daily | monthly
     pub window: String,
+    /// 窗已流逝秒数（forecast 的 burn rate 分母；now - window_start）
+    pub elapsed_secs: u64,
+}
+
+impl KeyBudgetView {
+    /// 成本维耗尽预测：与 [`VendorBudgetView::forecast`] 同口径（纯函数）。
+    pub fn forecast(&self, horizon: &ForecastHorizon) -> BudgetForecast {
+        budget_forecast(self.cost_used, self.cost_limit, self.elapsed_secs, horizon)
+    }
 }
 
 /// 预留句柄：`reserve` 成功产物，`settle` 凭它回冲。**每个 Admitted 预留
@@ -257,5 +317,40 @@ mod tests {
         v.period_secs = 0;
         // 除零防护：分母取下界 1
         assert!(v.pace_ratio().is_finite());
+    }
+
+    /// 成本维线性外推——500 毫分/1h → burn_rate=500/h、
+    /// 余量 500 → 再 3600s 耗尽，2h 时域内 true。
+    #[test]
+    fn forecast_linear_extrapolation() {
+        let v = VendorBudgetView {
+            tokens_used: 0,
+            tokens_limit: 0,
+            cost_used: 500,
+            cost_limit: 1000,
+            reset_secs: 7200,
+            period_secs: 86400,
+            elapsed_secs: 3600,
+            not_started: false,
+        };
+        let f = v.forecast(&ForecastHorizon { hours: 2 });
+        assert!((f.burn_rate_millicents_per_hour - 500.0).abs() < 1e-9);
+        assert_eq!(f.projected_depletion_secs, Some(3600));
+        assert!(f.within_horizon);
+    }
+
+    /// elapsed=0 → rate=0、depletion=None；已耗尽 → None。
+    #[test]
+    fn forecast_zero_rate_or_surplus_yields_none() {
+        let mut v = view(0, 0, 500, 1000);
+        v.elapsed_secs = 0;
+        let f = v.forecast(&ForecastHorizon { hours: 24 });
+        assert_eq!(f.burn_rate_millicents_per_hour, 0.0);
+        assert_eq!(f.projected_depletion_secs, None);
+        assert!(!f.within_horizon);
+
+        let v2 = view(0, 0, 1000, 1000);
+        let f2 = v2.forecast(&ForecastHorizon { hours: 24 });
+        assert_eq!(f2.projected_depletion_secs, None, "已耗尽不再预测耗尽时点");
     }
 }
