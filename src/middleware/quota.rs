@@ -1627,6 +1627,7 @@ pub fn settle_nonstream(
     vendor_type: &str,
     vendor_id: &str,
     metrics: Option<&std::sync::Arc<crate::utils::metrics::GlobalMetrics>>,
+    _inbound: crate::protocol::Protocol,
 ) {
     // O2 命中率观测：厂商维度缓存 token 记账（先于 quota 门控——无限额
     // 租户同样计入，避免 cache_hit_ratio 系统性失真）
@@ -1706,6 +1707,7 @@ pub fn settle_nonstream_cached(
     quota: Option<&Arc<QuotaState>>,
     tenant: &str,
     body: &Value,
+    _inbound: crate::protocol::Protocol,
 ) {
     let Some(state) = quota else {
         return;
@@ -1806,6 +1808,7 @@ impl SettlementCtx {
 pub fn settle_stream<S>(
     stream: S,
     ctx: Option<SettlementCtx>,
+    _inbound: crate::protocol::Protocol,
 ) -> impl futures::Stream<Item = Result<crate::protocol::StreamChunk, crate::error::GateError>>
 where
     S: futures::Stream<Item = Result<crate::protocol::StreamChunk, crate::error::GateError>>
@@ -2619,6 +2622,7 @@ mod tests {
             "openai",
             "budgeted",
             None,
+            crate::protocol::Protocol::OpenAI,
         );
         let (tokens, cost) = quota.vendor_snapshot("budgeted", &vendor_window_id("budgeted"));
         assert_eq!(tokens, 70, "实际 usage（50+20）进预算态");
@@ -2796,7 +2800,13 @@ mod tests {
             (pre_tokens, pre_cost)
         );
 
-        settle_nonstream_cached(&config, Some(&quota), "tenant-digest", &body);
+        settle_nonstream_cached(
+            &config,
+            Some(&quota),
+            "tenant-digest",
+            &body,
+            crate::protocol::Protocol::OpenAI,
+        );
         assert_eq!(
             quota.snapshot("tenant-digest", "default"),
             (0, 0),
@@ -2805,7 +2815,13 @@ mod tests {
 
         // 门控形态：未接线 → no-op（不 panic、不建账）。
         let other = QuotaState::new();
-        settle_nonstream_cached(&config, None, "tenant-digest", &body);
+        settle_nonstream_cached(
+            &config,
+            None,
+            "tenant-digest",
+            &body,
+            crate::protocol::Protocol::OpenAI,
+        );
         assert_eq!(other.tracked_keys(), 0);
     }
 
@@ -2870,6 +2886,7 @@ mod tests {
             "gemini",
             "v",
             None,
+            crate::protocol::Protocol::OpenAI,
         );
         let (tokens, cost) = quota.snapshot("tenant-digest", "default");
         assert_eq!(tokens, 3, "按实际 prompt+completion 结算");
@@ -3979,6 +3996,7 @@ mod tests {
             "openai",
             "v",
             None,
+            crate::protocol::Protocol::OpenAI,
         );
         assert_eq!(quota.tracked_keys(), 0, "无适用范围零账面");
 
@@ -3993,6 +4011,7 @@ mod tests {
             "openai",
             "v",
             None,
+            crate::protocol::Protocol::OpenAI,
         );
         assert_eq!(quota.tracked_keys(), 0, "无 usage 不结算、不建账");
     }
@@ -4014,6 +4033,7 @@ mod tests {
             Some(&quota),
             "tenant-digest",
             &chat_body("hello!", 10),
+            crate::protocol::Protocol::OpenAI,
         );
         assert_eq!(quota.tracked_keys(), 0, "配额关闭时零账面");
     }

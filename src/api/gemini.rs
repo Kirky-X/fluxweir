@@ -484,7 +484,11 @@ async fn stream_ir(
         &decision.vendor.id,
         Some(Arc::clone(state.vendor_manager.metrics())),
     );
-    let chunk_stream = crate::middleware::quota::settle_stream(chunk_stream, settle_ctx);
+    let chunk_stream = crate::middleware::quota::settle_stream(
+        chunk_stream,
+        settle_ctx,
+        crate::protocol::Protocol::Gemini,
+    );
     // 转换流用量记账：IR `StreamChunk::Usage` 已结构化——占位日志行终止补写
     // 与 keyed 分账（分账 model 维度取上游 model_id，与非流式同口径）。
     let chunk_stream = crate::api::stream_usage::record_converted_stream(
@@ -859,6 +863,7 @@ async fn settle_nonstream(
         &decision.vendor.type_,
         &decision.vendor.id,
         Some(state.vendor_manager.metrics()),
+        crate::protocol::Protocol::Gemini,
     );
 }
 

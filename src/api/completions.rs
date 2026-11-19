@@ -460,6 +460,7 @@ async fn chat_passthrough_json(
             state.quota.as_ref(),
             &ctx.api_key_hash,
             body,
+            crate::protocol::Protocol::OpenAI,
         );
         log_success_dispatch(state, ctx, &decision, body, &flow.value).await;
         let response = (
@@ -490,6 +491,7 @@ async fn chat_passthrough_json(
         &final_route.decision.vendor.type_,
         &final_route.decision.vendor.id,
         Some(state.vendor_manager.metrics()),
+        crate::protocol::Protocol::OpenAI,
     );
 
     Ok(crate::api::with_fallback_headers(
@@ -592,7 +594,11 @@ async fn chat_convert_stream(
         &decision.vendor.id,
         Some(std::sync::Arc::clone(state.vendor_manager.metrics())),
     );
-    let chunk_stream = crate::middleware::quota::settle_stream(chunk_stream, settle_ctx);
+    let chunk_stream = crate::middleware::quota::settle_stream(
+        chunk_stream,
+        settle_ctx,
+        crate::protocol::Protocol::OpenAI,
+    );
     // 转换流用量记账：IR `StreamChunk::Usage` 已结构化——占位日志行终止补写
     // 与 keyed 分账（分账 model 维度取上游 model_id，与非流式同口径）。
     let chunk_stream = crate::api::stream_usage::record_converted_stream(
@@ -717,6 +723,7 @@ async fn chat_convert_json(
             state.quota.as_ref(),
             &ctx.api_key_hash,
             body,
+            crate::protocol::Protocol::OpenAI,
         );
         log_success_dispatch(state, ctx, &decision, body, &flow.value).await;
         let response = (
@@ -746,6 +753,7 @@ async fn chat_convert_json(
         &final_route.decision.vendor.type_,
         &final_route.decision.vendor.id,
         Some(state.vendor_manager.metrics()),
+        crate::protocol::Protocol::OpenAI,
     );
 
     // 缓存参与 → 响应带 X-Cache 头；回退观测头叠加（开关关闭为空表）。
@@ -1463,6 +1471,7 @@ pub(crate) async fn execute_embeddings(
             &decision.vendor.type_,
             &decision.vendor.id,
             Some(state.vendor_manager.metrics()),
+            crate::protocol::Protocol::OpenAI,
         );
     }
 
