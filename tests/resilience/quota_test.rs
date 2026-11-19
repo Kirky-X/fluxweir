@@ -1942,3 +1942,104 @@ async fn attribution_endpoint_filters_by_request_id() {
     assert!(rows.iter().any(|r| r["request_id"] == rid_a));
     assert!(rows.iter().any(|r| r["request_id"] == rid_b));
 }
+
+/// 配额耗尽预测端点（forecast T003）：含规则 key 返回 burn_rate/depletion 字段；
+/// 无规则 key 返回 404 `{"error":"no-budget-rule"}`；非法 horizon（0/800）校验拒绝。
+#[tokio::test]
+async fn forecast_endpoint_returns_prediction_and_validates() {
+    let mut config = quota_config(
+        vec![common::base_vendor("v", "http://127.0.0.1:1".to_string())],
+        1_000_000,
+        3600,
+    );
+    config.key_budgets.rules = vec![fluxweir::config::KeyBudgetRule {
+        api_key_hash: GOOD_KEY_DIGEST.to_string(),
+        cost_limit_millicents: 1_000_000,
+        window: "daily".into(),
+        fail_open: false,
+    }];
+    let config_manager = Arc::new(ConfigManager::new(config));
+    let quota_state = fluxweir::middleware::quota::QuotaState::new();
+    // 直接结算一笔实际用量，令 view 的 cost_used > 0、elapsed_secs ≥ 0。
+    quota_state
+        .key_budgets
+        .settle_fifo(&config_manager.read(), GOOD_KEY_DIGEST, 500_000, 100);
+
+    let view = quota_state
+        .key_budgets
+        .view(&config_manager.read(), GOOD_KEY_DIGEST)
+        .expect("有规则即有视图");
+    assert_eq!(view.cost_used, 500_000);
+
+    // 建一个最小 router 只挂 forecast 端点（用真实 ApiState 装配以免重复全栈）。
+    let vendor_manager = Arc::new(VendorManager::new(config_manager.clone()));
+    let pool = dbnexus::DbPool::with_config(dbnexus::DbConfig {
+        url: "sqlite::memory:".to_string(),
+        pool_config: dbnexus::PoolConfig {
+            max_connections: 1,
+            min_connections: 1,
+            ..Default::default()
+        },
+        admin_role: "admin".to_string(),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    let repository = Arc::new(fluxweir::database::Repository::new(pool.clone()));
+    repository.initialize().await.expect("schema init");
+    let state = Arc::new(ApiState {
+        affinity_writer: None,
+        auth_cache: std::sync::Arc::new(Default::default()),
+        config: config_manager.clone(),
+        vendor_manager: vendor_manager.clone(),
+        router: Arc::new(NexusRouter::new(
+            config_manager.clone(),
+            vendor_manager.clone(),
+        )),
+        openai_converter: Arc::new(OpenAIConverter::new()),
+        anthropic_converter: Arc::new(AnthropicConverter::new()),
+        database: Arc::new(Database { pool, repository }),
+        logger: None,
+        pre_aggregator: None,
+        affinity: None,
+        response_cache: None,
+        bandit: None,
+        quota: Some(Arc::new(quota_state)),
+        difficulty: None,
+        responses: None,
+        #[cfg(feature = "web-search")]
+        web_search: None,
+    });
+    let app = axum::Router::new()
+        .route(
+            "/admin/quota/forecast",
+            axum::routing::get(fluxweir::api::admin::quota_forecast),
+        )
+        .with_state(state);
+
+    // 有规则：字段齐全
+    let uri = format!("/admin/quota/forecast?key_hash={GOOD_KEY_DIGEST}&horizon_hours=24");
+    let (status, body) = read_json(get_app(&app, &uri).await).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.get("burn_rate_millicents_per_hour").is_some());
+    assert!(body.get("projected_depletion_secs").is_some());
+    assert!(body.get("within_horizon").is_some());
+    assert_eq!(body["window"], "daily");
+
+    // 无规则 key：404 + error 字段
+    let no_rule = "0000000000000000000000000000000000000000000000000000000000000000";
+    let uri = format!("/admin/quota/forecast?key_hash={no_rule}");
+    let (status, body) = read_json(get_app(&app, &uri).await).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"], "no-budget-rule");
+
+    // 非法 horizon（0 / 800）校验拒绝
+    for h in [0, 800] {
+        let uri = format!("/admin/quota/forecast?key_hash={GOOD_KEY_DIGEST}&horizon_hours={h}");
+        let response = get_app(&app, &uri).await;
+        assert!(
+            response.status().is_client_error(),
+            "horizon={h} 须校验拒绝"
+        );
+    }
+}

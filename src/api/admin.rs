@@ -351,6 +351,57 @@ pub async fn quota_attribution(
     Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
+/// GET /admin/quota/forecast?key_hash=&horizon_hours= — 成本维耗尽预测
+/// （quota-forecast-and-route-explain-cli）。key_hash 必填 64 hex，horizon_hours
+/// 缺省 24、域 1..=720；无预算规则 → 404 形态 `{"error":"no-budget-rule"}`。
+pub async fn quota_forecast(
+    State(state): State<Arc<ApiState>>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Result<axum::response::Response, FluxweirError> {
+    use crate::quota_contract::ForecastHorizon;
+    use axum::response::IntoResponse;
+
+    let key_hash = params.get("key_hash").map(|v| v.trim()).unwrap_or("");
+    let is_hex64 = key_hash.len() == 64 && key_hash.bytes().all(|b| b.is_ascii_hexdigit());
+    if !is_hex64 {
+        return Err(FluxweirError::from(GateError::Validation {
+            field: "admin-quota-forecast-key-hash-invalid".to_string(),
+        }));
+    }
+    let hours = match params.get("horizon_hours") {
+        None => 24,
+        Some(value) => match value.parse::<u32>() {
+            Ok(h @ 1..=720) => h,
+            _ => {
+                return Err(FluxweirError::from(GateError::Validation {
+                    field: "admin-quota-forecast-horizon-invalid".to_string(),
+                }));
+            }
+        },
+    };
+    let snapshot = state.config.read();
+    let view = state
+        .quota
+        .as_ref()
+        .and_then(|quota| quota.key_budgets.view(&snapshot, key_hash));
+    let Some(view) = view else {
+        return Ok((
+            axum::http::StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "no-budget-rule" })),
+        )
+            .into_response());
+    };
+    let forecast = view.forecast(&ForecastHorizon { hours });
+    Ok(Json(serde_json::json!({
+        "key_hash": key_hash,
+        "window": view.window,
+        "burn_rate_millicents_per_hour": forecast.burn_rate_millicents_per_hour,
+        "projected_depletion_secs": forecast.projected_depletion_secs,
+        "within_horizon": forecast.within_horizon,
+    }))
+    .into_response())
+}
+
 /// GET /admin/quota/ledger?key={digest} — 配额账本读侧（quota-aware-routing）：
 /// 逐窗 used/重置时刻/作用域（tenant/global/vendor）。`key` 可选过滤租户
 /// 摘要（脱敏口径：digest 本就是不可逆摘要，无 key 原文）；账本未接线或
