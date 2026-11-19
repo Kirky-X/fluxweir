@@ -310,6 +310,47 @@ pub async fn quota_failopen(
     Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
+/// GET /admin/quota/attribution?request_id=&limit= — 配额全链路归因快照
+/// （quota-attribution-and-failopen-audit，最新在前）。`request_id` 精确过滤，
+/// limit 缺省 64、上限 4096；零明文（key_hash 为 SHA256 摘要）。
+pub async fn quota_attribution(
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<Value>, FluxweirError> {
+    let limit = params
+        .get("limit")
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(64)
+        .clamp(1, 4096) as usize;
+    let request_id = params.get("request_id").map(|value| value.as_str());
+    let rows: Vec<Value> = crate::middleware::attribution::attribution_snapshot(limit, request_id)
+        .iter()
+        .map(|record| {
+            serde_json::json!({
+                "request_id": record.request_id,
+                "route": {
+                    "selected_vendor": record.route.selected_vendor,
+                    "selected_model": record.route.selected_model,
+                },
+                "protocol_hop": {
+                    "inbound": format!("{:?}", record.protocol_hop.inbound),
+                    "outbound": format!("{:?}", record.protocol_hop.outbound),
+                },
+                "reservation": record.reservation.as_ref().map(|trace| serde_json::json!({
+                    "est_millicents": trace.est_millicents,
+                    "reserved_at_ms": trace.reserved_at_ms,
+                })),
+                "settlement": record.settlement.as_ref().map(|settlement| serde_json::json!({
+                    "actual_millicents": settlement.actual_millicents,
+                    "settled_at_ms": settlement.settled_at_ms,
+                    "key_hash": settlement.key_hash,
+                })),
+                "finalized_at_ms": record.finalized_at_ms,
+            })
+        })
+        .collect();
+    Ok(Json(serde_json::json!({ "rows": rows })))
+}
+
 /// GET /admin/quota/ledger?key={digest} — 配额账本读侧（quota-aware-routing）：
 /// 逐窗 used/重置时刻/作用域（tenant/global/vendor）。`key` 可选过滤租户
 /// 摘要（脱敏口径：digest 本就是不可逆摘要，无 key 原文）；账本未接线或

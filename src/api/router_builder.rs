@@ -587,6 +587,7 @@ fn metrics_route_label(path: &str) -> &'static str {
             "/admin/metrics",
             "/admin/quota/ledger",
             "/admin/quota/failopen",
+            "/admin/quota/attribution",
             "/admin/vendor-budgets",
             "/admin/vendors",
             "/admin/vendors/config",
@@ -808,6 +809,7 @@ pub async fn create_router(state: Arc<ApiState>) -> Router {
         .route("/admin/metrics", get(admin::metrics))
         .route("/admin/quota/ledger", get(admin::quota_ledger))
         .route("/admin/quota/failopen", get(admin::quota_failopen))
+        .route("/admin/quota/attribution", get(admin::quota_attribution))
         .route("/admin/vendor-budgets", get(admin::vendor_budgets))
         .route("/admin/vendors", get(admin::vendors))
         // 原始配置视图（Vec<VendorConfig>）与按 id 原子更新：与上面的状态

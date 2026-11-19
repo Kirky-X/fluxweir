@@ -1875,3 +1875,70 @@ async fn failopen_endpoint_returns_admitted_event() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["rows"].as_array().expect("rows").len(), 1);
 }
+
+/// 归因查询端点（quota-attribution-and-failopen-audit T011）：两条不同
+/// request_id 的归因落缓冲后，按 request_id 精确过滤只返一条。
+#[tokio::test]
+async fn attribution_endpoint_filters_by_request_id() {
+    use axum::routing::get;
+    use fluxweir::middleware::attribution::{
+        record_attribution, ProtocolHop, QuotaAttribution, ReservationTrace, RouteSnapshot,
+        SettlementRecord,
+    };
+    use fluxweir::protocol::Protocol;
+
+    let rid_a = "req-t011-alpha";
+    let rid_b = "req-t011-beta";
+    for rid in [rid_a, rid_b] {
+        record_attribution(QuotaAttribution {
+            request_id: rid.to_string(),
+            route: RouteSnapshot {
+                selected_vendor: "v".into(),
+                selected_model: "m".into(),
+                selection_tier: None,
+            },
+            protocol_hop: ProtocolHop {
+                inbound: Protocol::OpenAI,
+                outbound: Protocol::OpenAI,
+            },
+            reservation: Some(ReservationTrace {
+                est_millicents: 100,
+                reserved_at_ms: 1,
+            }),
+            settlement: Some(SettlementRecord {
+                actual_millicents: 90,
+                settled_at_ms: 2,
+                key_hash: "digest".into(),
+            }),
+            finalized_at_ms: 2,
+        });
+    }
+
+    let app = axum::Router::new().route(
+        "/admin/quota/attribution",
+        get(fluxweir::api::admin::quota_attribution),
+    );
+
+    // 按 id 过滤只返一条
+    let (status, body) = read_json(
+        get_app(
+            &app,
+            &format!("/admin/quota/attribution?request_id={rid_a}"),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let rows = body["rows"].as_array().expect("rows");
+    assert_eq!(rows.len(), 1, "按 request_id 过滤只剩一条");
+    assert_eq!(rows[0]["request_id"], rid_a);
+    assert_eq!(rows[0]["route"]["selected_vendor"], "v");
+    assert_eq!(rows[0]["settlement"]["actual_millicents"], 90);
+
+    // 无过滤返回至少两条（含 alpha 与 beta）
+    let (status, body) = read_json(get_app(&app, "/admin/quota/attribution?limit=256").await).await;
+    assert_eq!(status, StatusCode::OK);
+    let rows = body["rows"].as_array().expect("rows");
+    assert!(rows.iter().any(|r| r["request_id"] == rid_a));
+    assert!(rows.iter().any(|r| r["request_id"] == rid_b));
+}
