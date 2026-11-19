@@ -30,6 +30,14 @@ async fn main() -> Result<(), fluxweir::error::FluxweirError> {
         let code = fluxweir::utils::doctor::run_doctor_from_args(std::env::args().skip(2));
         std::process::exit(code);
     }
+    // route-explain 子命令：路由预演薄 CLI（转发既有 admin explain 端点）。
+    // 与模块同门控（reqwest 复用 vendor-management/sdk 的 optional 面）。
+    #[cfg(any(feature = "vendor-management", feature = "sdk"))]
+    if std::env::args().nth(1).as_deref() == Some("route-explain") {
+        let args: Vec<String> = std::env::args().skip(2).collect();
+        let code = fluxweir::utils::route_explain_cli::run_route_explain(args).await;
+        std::process::exit(code);
+    }
     // 仅读 CLI 配置路径，不进 exec/网络面；扫描器 INFO 按误报行内豁免
     let config_path = std::env::args().nth(1); // nosemgrep
     fluxweir::server::run(config_path).await

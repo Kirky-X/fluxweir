@@ -38,6 +38,11 @@ pub mod doctor;
 // 不设 feature 门；reveal/fail-open/归因三类审计记录的内存面。
 pub mod audit_buffer;
 
+// 路由预演 CLI（quota-forecast-and-route-explain-cli）：薄 HTTP 客户端转发
+// 既有 /admin/route/explain；reqwest 复用 vendor-management/sdk 的 optional 面。
+#[cfg(any(feature = "vendor-management", feature = "sdk"))]
+pub mod route_explain_cli;
+
 // 离线成本回放（cost-replay）：feature 门控的只读分析引擎，随独立 bin 提供。
 #[cfg(feature = "cost-replay")]
 pub mod replay;
