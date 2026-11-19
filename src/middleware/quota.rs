@@ -1464,7 +1464,7 @@ pub async fn quota_middleware(
             );
         (gemini, applicable)
     };
-    let (parts, body) = request.into_parts();
+    let (mut parts, body) = request.into_parts();
     // 非适用路径：body 未触碰，原样透传（零拷贝）。
     if !applicable {
         return next.run(Request::from_parts(parts, body)).await;
@@ -1560,8 +1560,17 @@ pub async fn quota_middleware(
             budget_lease.cold_start_output_millicents,
         );
         match quota_state.key_budgets.reserve(snapshot, &tenant, est) {
-            crate::quota_contract::ReserveOutcome::Admitted(_)
-            | crate::quota_contract::ReserveOutcome::NoBudget => {}
+            crate::quota_contract::ReserveOutcome::Admitted(_) => {
+                // 归因预留痕迹（T006）：写入请求 extensions，供结算钩回读。
+                // 与 est 同口径：est 即本次 reserve 入参，零重算。
+                parts
+                    .extensions
+                    .insert(crate::middleware::attribution::ReservationTrace {
+                        est_millicents: est,
+                        reserved_at_ms: chrono::Utc::now().timestamp_millis(),
+                    });
+            }
+            crate::quota_contract::ReserveOutcome::NoBudget => {}
             crate::quota_contract::ReserveOutcome::Exceeded { retry_after_secs } => {
                 let window = quota_state
                     .key_budgets
@@ -3744,6 +3753,61 @@ mod tests {
             fail_open,
         }];
         config
+    }
+
+    /// Admitted 预留把 ReservationTrace 写入请求 extensions，handler 可读回
+    /// 且 est 与 reserve 入参一致（T006）。
+    #[tokio::test]
+    async fn middleware_reserve_writes_reservation_trace_to_extensions() {
+        let captured: Arc<
+            std::sync::Mutex<Option<crate::middleware::attribution::ReservationTrace>>,
+        > = Arc::new(std::sync::Mutex::new(None));
+        let captured_handler = captured.clone();
+
+        let quota = Arc::new(QuotaState::new());
+        let gate = middleware_gate(
+            key_budget_config(1_000_000, false),
+            Some(quota.clone()),
+            None,
+        );
+        let router = axum::Router::new()
+            .route(
+                "/v1/chat/completions",
+                axum::routing::post(move |req: Request| {
+                    let captured = captured_handler.clone();
+                    async move {
+                        if let Some(trace) =
+                            req.extensions()
+                                .get::<crate::middleware::attribution::ReservationTrace>()
+                        {
+                            *captured.lock().unwrap_or_else(|p| p.into_inner()) = Some(*trace);
+                        }
+                        "ok"
+                    }
+                }),
+            )
+            .layer(axum::middleware::from_fn_with_state(gate, quota_middleware));
+
+        let body = serde_json::to_vec(&chat_body("hello!", 10)).expect("serialize");
+        let response = post_json_bytes(router, "/v1/chat/completions", body).await;
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+        let trace = captured
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .expect("extensions 内含 ReservationTrace");
+        let view = quota
+            .key_budgets
+            .view(
+                &ConfigManager::new(key_budget_config(1_000_000, false)).read(),
+                &anonymous_tenant(),
+            )
+            .expect("有预算规则即有视图");
+        assert_eq!(
+            trace.est_millicents, view.cost_used,
+            "extensions 内 est 与 reserve 入参一致（占用于 reserve 后即 est）"
+        );
+        assert!(trace.reserved_at_ms > 0, "预留时间戳有效");
     }
 
     /// key 预算：预算内放行并落预留；超额 429。
