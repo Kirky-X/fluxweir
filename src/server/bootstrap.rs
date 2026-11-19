@@ -1249,7 +1249,7 @@ mod tests {
         // 低熵占位摘要（64 hex，避免 detect-secrets 误报；测试只用其前 8 字符）
         let full_hash = "1111111111111111111111111111111111111111111111111111111111111111";
         let toml = format!(
-            "vendors = []\n[server]\nhost = \"127.0.0.1\"\nport = 8080\n\n[database]\npath = \":memory:\"\n\n[[key_budgets.rules]]\napi_key_hash = \"{full_hash}\"\ncost_limit_millicents = 1000\nwindow = \"daily\"\nfail_open = true\n\n[[key_budgets.rules]]\napi_key_hash = \"1111111111111111111111111111111111111111111111111111111111111111\"\ncost_limit_millicents = 1000\nwindow = \"daily\"\nfail_open = false\n"
+            "vendors = []\n[server]\nhost = \"127.0.0.1\"\nport = 8080\n\n[database]\npath = \":memory:\"\n\n[[key_budgets.rules]]\napi_key_hash = \"{full_hash}\"\ncost_limit_millicents = 1000\nwindow = \"daily\"\nfail_open = true\n\n[[key_budgets.rules]]\napi_key_hash = \"2222222222222222222222222222222222222222222222222222222222222222\"\ncost_limit_millicents = 1000\nwindow = \"daily\"\nfail_open = false\n"
         );
         let config: crate::config::Config =
             crate::config::parse_config_content(std::path::Path::new("memory.toml"), &toml)
