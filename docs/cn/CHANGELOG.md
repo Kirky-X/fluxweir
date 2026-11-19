@@ -10,6 +10,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **同库部署迁移短路（网关表不建、启动必挂）**：核心迁移沿用 dbnexus 默认历史表 `dbnexus_migrations`，与同库其他组件（garrison 先跑完 v1..=18）共用时，fluxweir 的 v1..=10 全部命中"已应用"被跳过 → `request_logs` 等网关表一张不建。修复：`apply_core_migrations` 与 `rollback_core_all` 统一改用独立历史表 `fluxweir_migrations`（dbnexus `MigrationExecutor::with_history_table`）。存量单组件部署升级由**历史接管**兼容：独立表为空时，把旧表里 `file_path LIKE 'embedded:core_v%'` 的记录一次性迁入（更名前 fluxgate 与更名后 fluxweir 的 path 格式一致），因此不会重放非幂等的 V2（sqlite 重建 token_usage / postgres 无 `IF NOT EXISTS` 的 ADD COLUMN，重放会直接失败并挂住启动）。新增两条回归测试：①外部组件已占用默认表时网关五表仍全部建出、历史只写自己的命名空间且幂等；②存量部署历史被接管、零重放。
+
 ## [0.1.2] - 2026-11-14
 
 ### Changed（依赖线稳定化）

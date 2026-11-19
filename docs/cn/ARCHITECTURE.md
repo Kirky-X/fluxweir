@@ -501,7 +501,7 @@ SQLite，8 张表（迁移 V1↔V9 定义于 `src/database/migrations/core/`（`
 | `affinity_sticks` | 亲和粘性落盘（V6 迁移建表，启动恢复灌回）          | 读写                    |
 | `quota_ledger`  | 配额账本（V7 迁移建表，30s flush）                   | 读写                    |
 
-表结构经 dbnexus `MigrationExecutor` 版本化管理：启动装配链执行 V1..V9 迁移（UP 建表 + 索引，DOWN 对应回滚），迁移历史记录于 dbnexus 默认历史表；存量库（表已存在、历史为空）由基线化检查兼容，不重复建表。三方言（sqlite/postgres/mysql）各有 FROZEN V1；`schema.sql`（sqlite）的表集合与迁移全集的一致性由守卫测试锁定（`schema.postgres.sql` / `schema.mysql.sql` 为可读方言文档，无守卫）。
+表结构经 dbnexus `MigrationExecutor` 版本化管理：启动装配链执行 V1..V10 迁移（UP 建表 + 索引，DOWN 对应回滚），迁移历史记录在 fluxweir 独立历史表 `fluxweir_migrations`（不复用 dbnexus 默认表，避免与同库其他组件——如 garrison——的版本号互相"已应用"短路）；存量库（表已存在、历史为空）由基线化检查兼容，不重复建表。三方言（sqlite/postgres/mysql）各有 FROZEN V1；`schema.sql`（sqlite）的表集合与迁移全集的一致性由守卫测试锁定（`schema.postgres.sql` / `schema.mysql.sql` 为可读方言文档，无守卫）。
 
 ### 异步写入管线
 

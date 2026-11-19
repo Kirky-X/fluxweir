@@ -27,12 +27,24 @@
 //! 存量库基线 = 幂等重放（V1 UP 全 `IF NOT EXISTS`）；迁移失败直接上浮（无静默降级）。
 
 use dbnexus::{DatabaseType, DbError, DbPool, MigrationExecutor, MigrationFile};
-use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 /// 核心表迁移最新版本（V10：vault_keys 版本化轮换列 `version`/`superseded_at_ms`）。
 pub(crate) const CORE_SCHEMA_VERSION: u32 = 10;
+
+/// 迁移历史表名——fluxweir 在库内的独立命名空间。
+///
+/// 默认表名 `dbnexus_migrations` 是库级共享的：与 garrison（同库部署，
+/// sinnan 即此形态）共用时，garrison 先跑完 v1..=v18 后，fluxweir 的
+/// v1..=v10 全部命中"已应用"被短路 → request_logs 等网关表一张不建 →
+/// 启动必挂。历史表必须与具体组件的迁移命名空间一一对应。
+pub(crate) const MIGRATION_HISTORY_TABLE: &str = "fluxweir_migrations";
+
+/// 切到独立历史表之前的旧位置（dbnexus 默认表，与同库其他组件共用）。
+/// 仅用于一次性接管（[`adopt_legacy_history`]）。
+const LEGACY_HISTORY_TABLE: &str = "dbnexus_migrations";
 
 /// V1 UP（sqlite，FROZEN；含 cost 列与 4 索引）。
 const UP_V1_SQLITE: &str = include_str!("migrations/core/v1_sqlite.up.sql");
@@ -289,6 +301,119 @@ pub(crate) fn core_migration_file(
     ))
 }
 
+/// 独立历史表的建表 DDL（与 dbnexus `ensure_migration_table_exists` 同款，
+/// 保证接管后 `load_history` 看到的表形态一致）。
+fn create_history_table_sql(backend: DatabaseBackend) -> String {
+    let applied_at = match backend {
+        DatabaseBackend::Postgres | DatabaseBackend::MySql => {
+            "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"
+        }
+        _ => "TEXT NOT NULL DEFAULT (datetime('now'))",
+    };
+    let version_type = match backend {
+        DatabaseBackend::MySql => "INT",
+        _ => "INTEGER",
+    };
+    format!(
+        "CREATE TABLE IF NOT EXISTS {MIGRATION_HISTORY_TABLE} (\
+         version {version_type} PRIMARY KEY, \
+         description TEXT NOT NULL, \
+         applied_at {applied_at}, \
+         file_path TEXT)"
+    )
+}
+
+/// 读取 `SELECT COUNT(*) AS cnt` 的单值；读不出数是数据库异常，fail-fast
+/// 而不是默认 0 继续（默认 0 会让非幂等迁移被误重放）。
+async fn scalar_count(
+    conn: &DatabaseConnection,
+    backend: DatabaseBackend,
+    sql: &str,
+) -> Result<i64, DbError> {
+    let rows = conn
+        .query_all_raw(Statement::from_string(backend, sql.to_string()))
+        .await?;
+    let row = rows
+        .first()
+        .ok_or_else(|| DbError::Config(format!("COUNT probe returned no rows: {sql}")))?;
+    row.try_get::<i64>("", "cnt")
+        .map_err(|e| DbError::Config(format!("COUNT probe unreadable ({sql}): {e}")))
+}
+
+/// 表存在性探针（三方言）。
+async fn table_exists(
+    conn: &DatabaseConnection,
+    backend: DatabaseBackend,
+    table: &str,
+) -> Result<bool, DbError> {
+    let sql = match backend {
+        DatabaseBackend::Postgres => format!(
+            "SELECT COUNT(*) AS cnt FROM information_schema.tables \
+             WHERE table_schema = current_schema() AND table_name = '{table}'"
+        ),
+        DatabaseBackend::MySql => format!(
+            "SELECT COUNT(*) AS cnt FROM information_schema.tables \
+             WHERE table_schema = DATABASE() AND table_name = '{table}'"
+        ),
+        _ => format!(
+            "SELECT COUNT(*) AS cnt FROM sqlite_master \
+             WHERE type = 'table' AND name = '{table}'"
+        ),
+    };
+    Ok(scalar_count(conn, backend, &sql).await? > 0)
+}
+
+/// 历史表接管：把共享默认表里属于 fluxweir 的版本记录迁入独立表。
+///
+/// 为什么必须接管：切换历史表后若不接管，存量部署会把 V1..=V10 全部重放
+/// ——V2 非幂等（sqlite 重建 token_usage / postgres 无 `IF NOT EXISTS` 的
+/// ADD COLUMN），重放必然失败并把启动挂住。
+///
+/// 只在独立表为空时执行一次。识别口径 `file_path LIKE 'embedded:core_v%'`
+/// （更名前 fluxgate 与更名后 fluxweir 的 path 格式一致；garrison 等外部
+/// 组件的迁移路径不匹配）。
+async fn adopt_legacy_history(
+    conn: &DatabaseConnection,
+    backend: DatabaseBackend,
+) -> Result<(), DbError> {
+    conn.execute_raw(Statement::from_string(
+        backend,
+        create_history_table_sql(backend),
+    ))
+    .await?;
+
+    let existing = scalar_count(
+        conn,
+        backend,
+        &format!("SELECT COUNT(*) AS cnt FROM {MIGRATION_HISTORY_TABLE}"),
+    )
+    .await?;
+    if existing > 0 {
+        return Ok(());
+    }
+
+    if !table_exists(conn, backend, LEGACY_HISTORY_TABLE).await? {
+        return Ok(());
+    }
+
+    let insert_sql = format!(
+        "INSERT INTO {MIGRATION_HISTORY_TABLE} (version, description, applied_at, file_path) \
+         SELECT version, description, applied_at, file_path FROM {LEGACY_HISTORY_TABLE} \
+         WHERE file_path LIKE 'embedded:core_v%'"
+    );
+    let inserted = conn
+        .execute_raw(Statement::from_string(backend, insert_sql))
+        .await?
+        .rows_affected();
+    if inserted > 0 {
+        tracing::info!(
+            adopted = inserted,
+            "adopted legacy migration history into {MIGRATION_HISTORY_TABLE}"
+        );
+    }
+    Ok(())
+}
+
 /// 应用核心迁移 V1..=V2（幂等：已在历史中的版本跳过不重放），返回本次应用的迁移数。
 /// Err 上浮为启动 fail-fast；未知后端回落旧 DDL（见 `init_schema`）。
 pub(crate) async fn apply_core_migrations(pool: &DbPool) -> Result<u32, DbError> {
@@ -311,7 +436,9 @@ pub(crate) async fn apply_core_migrations(pool: &DbPool) -> Result<u32, DbError>
             ));
         }
     };
-    let mut executor = MigrationExecutor::new(conn, db_type);
+    adopt_legacy_history(&conn, backend).await?;
+    let mut executor =
+        MigrationExecutor::new(conn, db_type).with_history_table(MIGRATION_HISTORY_TABLE)?;
     executor.load_history().await?;
     let mut applied = 0;
     for version in 1..=CORE_SCHEMA_VERSION {
@@ -454,7 +581,8 @@ pub(crate) async fn rollback_core_all(pool: &DbPool) -> Result<(), DbError> {
             ));
         }
     };
-    let mut executor = MigrationExecutor::new(conn, db_type);
+    let mut executor =
+        MigrationExecutor::new(conn, db_type).with_history_table(MIGRATION_HISTORY_TABLE)?;
     executor.load_history().await?;
     for version in (1..=CORE_SCHEMA_VERSION).rev() {
         if !executor.get_all_versions().contains(&version) {
@@ -788,7 +916,9 @@ mod live_tests {
             let session = pool.get_session("admin").await.expect("session");
             session.connection().expect("conn").clone()
         };
-        let mut executor = MigrationExecutor::new(conn, DatabaseType::Sqlite);
+        let mut executor = MigrationExecutor::new(conn, DatabaseType::Sqlite)
+            .with_history_table(MIGRATION_HISTORY_TABLE)
+            .expect("历史表名为合法标识符");
         executor.load_history().await.expect("history");
         executor.get_all_versions()
     }
@@ -859,7 +989,10 @@ mod live_tests {
         ] {
             assert!(tables.contains(t), "缺表 {t}");
         }
-        assert!(tables.contains("dbnexus_migrations"), "缺迁移历史表");
+        assert!(
+            tables.contains(MIGRATION_HISTORY_TABLE),
+            "缺迁移历史表 {MIGRATION_HISTORY_TABLE}"
+        );
         assert_eq!(applied_versions(&pool).await, all_core_versions());
 
         let repo = Repository::new(pool.clone());
@@ -1142,6 +1275,103 @@ mod live_tests {
         for index in ["idx_token_usage_date", "idx_token_usage_key_date"] {
             assert!(indexes.contains(index), "成本查询索引缺失 {index}");
         }
+    }
+
+    /// 同库共存回归：外部组件先占用默认历史表 `dbnexus_migrations`
+    /// （garrison 形态：记录 v1..=18）后，fluxweir 的 v1..=10 不得被
+    /// "已应用"误判短路——网关表必须全部建出，历史只写入自己的命名空间。
+    #[tokio::test]
+    async fn foreign_default_history_table_does_not_short_circuit_migrations() {
+        let pool = memory_pool().await;
+        // 模拟 garrison 先跑完：默认历史表记录 v1..=18，迁移体只建标记表。
+        {
+            let conn = {
+                let session = pool.get_session("admin").await.expect("session");
+                session.connection().expect("conn").clone()
+            };
+            let mut executor = MigrationExecutor::new(conn, DatabaseType::Sqlite);
+            executor.load_history().await.expect("history");
+            for version in 1..=CORE_SCHEMA_VERSION + 8 {
+                let file = MigrationFile::new(
+                    version,
+                    format!("garrison placeholder v{version}"),
+                    PathBuf::from(format!("embedded:garrison_v{version}.sql")),
+                    "-- UP garrison placeholder\nCREATE TABLE IF NOT EXISTS garrison_only (id INTEGER);\n-- DOWN garrison placeholder\nDROP TABLE IF EXISTS garrison_only;\n"
+                        .to_string(),
+                );
+                executor
+                    .apply_migration_file_public(&file)
+                    .await
+                    .expect("garrison placeholder");
+            }
+        }
+        assert!(
+            !table_names(&pool).await.contains("request_logs"),
+            "前置：默认历史表占位期间网关表不应存在"
+        );
+
+        assert_eq!(
+            apply_core_migrations(&pool).await.expect("apply"),
+            CORE_SCHEMA_VERSION,
+            "外部组件的默认历史表不得让 fluxweir 迁移短路"
+        );
+
+        let tables = table_names(&pool).await;
+        for t in [
+            "request_logs",
+            "token_usage",
+            "vendor_status",
+            "model_stats",
+            "vault_keys",
+        ] {
+            assert!(tables.contains(t), "缺网关表 {t}");
+        }
+        assert!(
+            tables.contains("dbnexus_migrations"),
+            "外部组件的默认历史表应原样保留"
+        );
+        assert!(
+            tables.contains(MIGRATION_HISTORY_TABLE),
+            "缺 fluxweir 独立历史表 {MIGRATION_HISTORY_TABLE}"
+        );
+        assert_eq!(applied_versions(&pool).await, all_core_versions());
+
+        // 幂等：同一库再跑不重放。
+        assert_eq!(apply_core_migrations(&pool).await.expect("re-apply"), 0);
+    }
+
+    /// 升级回归：历史仍在默认表里的存量部署，切到独立表时必须接管而不是
+    /// 重放——V2 非幂等（sqlite 重建 token_usage），重放会直接失败挂住启动。
+    #[tokio::test]
+    async fn legacy_history_is_adopted_without_replaying() {
+        let pool = memory_pool().await;
+        // 模拟升级前部署：迁移记录写在 dbnexus 默认历史表。
+        {
+            let conn = {
+                let session = pool.get_session("admin").await.expect("session");
+                session.connection().expect("conn").clone()
+            };
+            let mut executor = MigrationExecutor::new(conn, DatabaseType::Sqlite);
+            executor.load_history().await.expect("history");
+            for version in 1..=CORE_SCHEMA_VERSION {
+                executor
+                    .apply_migration_file_public(
+                        &core_migration_file(DatabaseBackend::Sqlite, version).expect("file"),
+                    )
+                    .await
+                    .expect("legacy apply");
+            }
+        }
+
+        assert_eq!(
+            apply_core_migrations(&pool).await.expect("upgrade"),
+            0,
+            "存量部署升级不得重放任何迁移"
+        );
+        assert_eq!(applied_versions(&pool).await, all_core_versions());
+        let tables = table_names(&pool).await;
+        assert!(tables.contains("dbnexus_migrations"), "旧历史表应原样保留");
+        assert!(tables.contains(MIGRATION_HISTORY_TABLE), "独立历史表应建出");
     }
 
     /// DOWN 可执行：v2→v1 逆序回滚后四表消失、历史行清空。

@@ -10,6 +10,10 @@ This format is based on [Keep a Changelog 1.0.0](https://keepachangelog.com/en/1
 
 ## [Unreleased]
 
+### Fixed
+
+- **Migration short-circuit in shared-database deployments (gateway tables never created, startup always fails)**: core migrations used dbnexus's default history table `dbnexus_migrations`. When another component in the same database ran first (garrison applies v1..=18), every fluxweir version v1..=10 matched "already applied" and was skipped — zero gateway tables such as `request_logs` were created. Fix: `apply_core_migrations` and `rollback_core_all` now use the dedicated history table `fluxweir_migrations` (dbnexus `MigrationExecutor::with_history_table`). Existing single-component deployments are handled by **history adoption**: when the dedicated table is empty, rows from the old table matching `file_path LIKE 'embedded:core_v%'` are copied over once (the pre-rename fluxgate and post-rename fluxweir path formats are identical), so the non-idempotent V2 is never replayed (sqlite rebuilds `token_usage`; postgres uses ADD COLUMN without `IF NOT EXISTS` — a replay fails outright and hangs startup). Two regression tests added: ① a foreign component occupying the default table still yields all five gateway tables, history stays in fluxweir's own namespace, and re-runs are idempotent; ② an existing deployment's history is adopted with zero replay.
+
 ## [0.1.2] - 2026-11-14
 
 ### Changed (dependency-line stabilization)
