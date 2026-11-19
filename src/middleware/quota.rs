@@ -1726,7 +1726,9 @@ pub fn settle_nonstream_cached(
     quota: Option<&Arc<QuotaState>>,
     tenant: &str,
     body: &Value,
-    _inbound: crate::protocol::Protocol,
+    inbound: crate::protocol::Protocol,
+    vendor_type: &str,
+    vendor_id: &str,
 ) {
     let Some(state) = quota else {
         return;
@@ -1735,16 +1737,27 @@ pub fn settle_nonstream_cached(
     if !snapshot.key_budgets.rules.is_empty() {
         state.key_budgets.settle_fifo(&snapshot, tenant, 0, 0);
     }
-    let Some(lease) = quota_applies_config(&snapshot, state, tenant) else {
-        return;
-    };
-    let snapshot = lease.config;
-    let cpt = snapshot.quota.est_chars_per_token.max(1);
-    let (pre_tokens, pre_cost) =
-        precharge_for(body, &snapshot.model_catalog, &snapshot.pricing, cpt);
-    lease
-        .quota
-        .recompense(tenant, &lease.windows, pre_tokens, pre_cost, 0, 0);
+    if let Some(lease) = quota_applies_config(&snapshot, state, tenant) {
+        let snapshot = lease.config;
+        let cpt = snapshot.quota.est_chars_per_token.max(1);
+        let (pre_tokens, pre_cost) =
+            precharge_for(body, &snapshot.model_catalog, &snapshot.pricing, cpt);
+        lease
+            .quota
+            .recompense(tenant, &lease.windows, pre_tokens, pre_cost, 0, 0);
+    }
+    // 缓存 HIT 归因（收敛 T014）：实际用量 0，settlement 段记 0；
+    // reservation 从 task_local 读（不可达 → None，不伪造）。
+    let model = body.get("model").and_then(Value::as_str).unwrap_or("");
+    crate::middleware::attribution::finish_attribution(
+        vendor_id,
+        model,
+        inbound,
+        vendor_type,
+        crate::middleware::attribution::current_reservation(),
+        0,
+        tenant,
+    );
 }
 
 /// 结算上下文（转换流）：账本句柄、租户与预扣口径一次构造，上下文不持有请求体
@@ -2836,6 +2849,8 @@ mod tests {
             "tenant-digest",
             &body,
             crate::protocol::Protocol::OpenAI,
+            "openai",
+            "v",
         );
         assert_eq!(
             quota.snapshot("tenant-digest", "default"),
@@ -2851,6 +2866,8 @@ mod tests {
             "tenant-digest",
             &body,
             crate::protocol::Protocol::OpenAI,
+            "openai",
+            "v",
         );
         assert_eq!(other.tracked_keys(), 0);
     }
@@ -3995,6 +4012,37 @@ mod tests {
         let _ = request_id;
     }
 
+    /// 缓存 HIT 归因（收敛 T014）：settle_nonstream_cached 结算后落记录，
+    /// settlement 段 actual_millicents=0（无上游用量），五段仍完整。
+    #[test]
+    fn attribution_cached_hit_records_zero_settlement() {
+        let config = Arc::new(ConfigManager::new(key_budget_config(1_000_000, false)));
+        let quota = Arc::new(QuotaState::new());
+        let body = chat_body("hello!", 10);
+        settle_nonstream_cached(
+            &config,
+            Some(&quota),
+            "tenant-digest",
+            &body,
+            crate::protocol::Protocol::OpenAI,
+            "openai",
+            "vendor-t014",
+        );
+        let snap = crate::middleware::attribution::attribution_snapshot(256, None);
+        let record = snap
+            .iter()
+            .find(|r| r.route.selected_vendor == "vendor-t014")
+            .expect("缓存 HIT 归因记录已落缓冲");
+        assert_eq!(record.route.selected_model, "m");
+        assert_eq!(
+            record.protocol_hop.outbound,
+            crate::protocol::Protocol::OpenAI
+        );
+        let settlement = record.settlement.as_ref().expect("结算段存在");
+        assert_eq!(settlement.actual_millicents, 0, "缓存 HIT 实际用量为 0");
+        assert_eq!(settlement.key_hash, "tenant-digest");
+    }
+
     /// key 预算：预算内放行并落预留；超额 429。
     #[tokio::test]
     async fn middleware_key_budget_admits_then_rejects_exceeded() {
@@ -4202,6 +4250,8 @@ mod tests {
             "tenant-digest",
             &chat_body("hello!", 10),
             crate::protocol::Protocol::OpenAI,
+            "openai",
+            "v",
         );
         assert_eq!(quota.tracked_keys(), 0, "配额关闭时零账面");
     }

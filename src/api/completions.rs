@@ -461,6 +461,8 @@ async fn chat_passthrough_json(
             &ctx.api_key_hash,
             body,
             crate::protocol::Protocol::OpenAI,
+            &decision.vendor.type_,
+            &decision.vendor.id,
         );
         log_success_dispatch(state, ctx, &decision, body, &flow.value).await;
         let response = (
@@ -724,6 +726,8 @@ async fn chat_convert_json(
             &ctx.api_key_hash,
             body,
             crate::protocol::Protocol::OpenAI,
+            &decision.vendor.type_,
+            &decision.vendor.id,
         );
         log_success_dispatch(state, ctx, &decision, body, &flow.value).await;
         let response = (
